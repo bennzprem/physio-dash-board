@@ -1206,7 +1206,6 @@ export default function Transfer() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Clinical Team"
 					title="Transfer Patients"
 					description="Reassign patients between therapists. Select a new therapist from the dropdown and click Transfer to send a transfer request. The receiving therapist must accept the request."
 				/>

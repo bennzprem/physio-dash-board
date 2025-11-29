@@ -776,7 +776,6 @@ export default function Reports() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Admin"
 					title="Patient Reports"
 					description="View comprehensive patient reports and analytics across all registered patients."
 					actions={

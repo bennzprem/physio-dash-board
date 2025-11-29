@@ -122,7 +122,7 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 	};
 
 	return (
-		<div className="min-h-svh bg-slate-50">
+		<div className="min-h-svh bg-purple-50">
 			<Sidebar
 				title="Clinical Team"
 				links={clinicalTeamLinks}
@@ -130,7 +130,7 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 				activeHref={`#${activePage}`}
 				onProfileClick={handleProfileClick}
 			/>
-			<main className="ml-64 min-h-svh overflow-y-auto bg-white">{renderPage()}</main>
+			<main className="ml-64 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
 		</div>
 	);
 }

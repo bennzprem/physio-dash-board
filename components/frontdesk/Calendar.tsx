@@ -535,7 +535,6 @@ export default function Calendar() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Front Desk"
 					title="Clinical Team Schedule"
 					description="View all clinical team schedules and appointments. Filter by doctor to focus on specific clinicians."
 					actions={

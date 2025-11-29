@@ -120,13 +120,13 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="relative min-h-svh overflow-hidden bg-gradient-to-br from-black via-slate-900 via-purple-900 to-purple-300">
+		<div className="relative min-h-svh overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-600">
 			{/* Animated gradient overlays */}
 			<div className="pointer-events-none absolute inset-0">
-				<div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,_rgba(139,92,246,0.15),_transparent_50%)]" />
-				<div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_70%,_rgba(192,132,252,0.1),_transparent_50%)]" />
-				<div className="absolute top-0 left-0 w-[600px] h-[600px] bg-purple-600 rounded-full blur-[120px] opacity-15" />
-				<div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-purple-400 rounded-full blur-[100px] opacity-10" />
+				<div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,_rgba(23,37,84,0.15),_transparent_50%)]" />
+				<div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_70%,_rgba(30,64,175,0.1),_transparent_50%)]" />
+				<div className="absolute top-0 left-0 w-[600px] h-[600px] bg-blue-800 rounded-full blur-[120px] opacity-15" />
+				<div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-blue-600 rounded-full blur-[100px] opacity-10" />
 			</div>
 
 			<div className="relative flex min-h-svh">
@@ -190,7 +190,7 @@ export default function LoginPage() {
 											value={formState.email}
 											onChange={event => setFormState(current => ({ ...current, email: event.target.value }))}
 											disabled={loading}
-											className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition-all focus:border-purple-400 focus:ring-4 focus:ring-purple-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70"
+											className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-900 outline-none transition-all focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70"
 										/>
 									</div>
 
@@ -208,12 +208,12 @@ export default function LoginPage() {
 												value={formState.password}
 												onChange={event => setFormState(current => ({ ...current, password: event.target.value }))}
 												disabled={loading}
-												className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3.5 pr-12 text-sm text-slate-900 outline-none transition-all focus:border-purple-400 focus:ring-4 focus:ring-purple-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70"
+												className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3.5 pr-12 text-sm text-slate-900 outline-none transition-all focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70"
 											/>
 											<button
 												type="button"
 												onClick={() => setShowPassword(prev => !prev)}
-												className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-purple-600 transition-colors"
+												className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
 												disabled={loading}
 											>
 												{showPassword ? (
@@ -246,7 +246,7 @@ export default function LoginPage() {
 									<button
 										type="submit"
 										disabled={loading}
-										className="w-full rounded-xl bg-gradient-to-r from-purple-900 via-purple-800 to-purple-700 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-purple-900/40 transition-all hover:from-purple-800 hover:via-purple-700 hover:to-purple-600 hover:shadow-xl hover:shadow-purple-900/50 hover:scale-[1.02] focus:outline-none focus:ring-4 focus:ring-purple-300 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100"
+										className="w-full rounded-xl bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-900/40 transition-all hover:from-blue-800 hover:via-blue-700 hover:to-blue-600 hover:shadow-xl hover:shadow-blue-900/50 hover:scale-[1.02] focus:outline-none focus:ring-4 focus:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100"
 									>
 										{loading ? (
 											<span className="flex items-center justify-center gap-2">
@@ -264,9 +264,9 @@ export default function LoginPage() {
 
 								{/* Forgot Password */}
 								<div className="mt-6 text-center">
-									<Link href="/(auth)/forgot-password" className="text-sm text-slate-600 hover:text-purple-600 transition-colors">
+									<Link href="/(auth)/forgot-password" className="text-sm text-slate-600 hover:text-blue-600 transition-colors">
 										Forgot password ?
-									</Link>
+							</Link>
 								</div>
 							</div>
 						</div>

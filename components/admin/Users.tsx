@@ -9,6 +9,11 @@ import {
 	setDoc,
 	updateDoc,
 	Timestamp,
+	addDoc,
+	query,
+	where,
+	getDocs,
+	getDoc,
 } from 'firebase/firestore';
 
 import { db, auth } from '@/lib/firebase';
@@ -107,6 +112,8 @@ export default function Users() {
 	>>({});
 	const [showEmployeeDetails, setShowEmployeeDetails] = useState(false);
 	const [showDeletedEmployees, setShowDeletedEmployees] = useState(false);
+	const [showActionsDropdown, setShowActionsDropdown] = useState(false);
+	const [deleteConfirmation, setDeleteConfirmation] = useState<{ employee: Employee | null; nameInput: string }>({ employee: null, nameInput: '' });
 
 	useEffect(() => {
 		setLoading(true);
@@ -231,26 +238,169 @@ export default function Users() {
 		// Don't close the view profile when closing edit dialog
 	};
 
-	const handleDelete = async (employee: Employee) => {
-		const confirmed = window.confirm(
-			`Are you sure you want to remove ${employee.userName || employee.userEmail}? This will mark them as a past employee.`
-		);
-		if (!confirmed) return;
+	// Function to notify all admins (excluding the current admin)
+	const notifyAllAdmins = async (title: string, message: string, category: string, metadata?: Record<string, any>) => {
+		if (!user?.uid) {
+			console.warn('Cannot send notifications: user not logged in');
+			return;
+		}
+
+		try {
+			// Get all active admins from staff collection
+			// Note: We query for Admin role and Active status, then filter out deleted in code
+			// This avoids needing a composite index for deleted field
+			const staffQuery = query(
+				collection(db, 'staff'),
+				where('role', '==', 'Admin'),
+				where('status', '==', 'Active')
+			);
+			const staffSnapshot = await getDocs(staffQuery);
+			
+			const adminIds: string[] = [];
+			staffSnapshot.forEach((docSnap) => {
+				const data = docSnap.data();
+				// Exclude deleted admins and the current admin
+				if (!data.deleted && docSnap.id !== user.uid) {
+					adminIds.push(docSnap.id);
+				}
+			});
+
+			if (adminIds.length === 0) {
+				console.log('No other admins to notify');
+				return;
+			}
+
+			// Create notifications for all other admins
+			const notificationPromises = adminIds.map((adminId) =>
+				addDoc(collection(db, 'notifications'), {
+					userId: adminId,
+					title,
+					message,
+					category,
+					status: 'unread',
+					createdAt: serverTimestamp(),
+					channels: {
+						inApp: true,
+					},
+					metadata: metadata || {},
+				})
+			);
+
+			await Promise.all(notificationPromises);
+			console.log(`✅ Notifications sent to ${adminIds.length} admin(s)`);
+		} catch (error: any) {
+			console.error('Failed to send admin notifications:', error);
+			// Log more details for debugging
+			if (error?.code === 'permission-denied') {
+				console.error('Permission denied. Make sure Firestore rules allow notifications collection access.');
+			} else if (error?.code === 'failed-precondition') {
+				console.error('Firestore index required. The query may need a composite index.');
+			}
+			// Don't throw - notification failure shouldn't block the operation
+		}
+	};
+
+	// Function to disable/enable Firebase Auth user
+	const updateAuthUserStatus = async (uid: string, disabled: boolean) => {
+		if (!user?.uid) {
+			throw new Error('You must be logged in to update authentication status.');
+		}
+
+		const currentUser = auth.currentUser;
+		if (!currentUser) {
+			throw new Error('Your admin session expired. Please sign in again and retry.');
+		}
+
+		const token = await currentUser.getIdToken();
+		const response = await fetch('/api/admin/users', {
+			method: 'PATCH',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({
+				uid,
+				disabled,
+			}),
+		});
+
+		const data = await response.json();
+		if (!response.ok || data?.status !== 'ok') {
+			throw new Error(data?.message || 'Failed to update authentication status.');
+		}
+		return data;
+	};
+
+	const handleDeleteClick = (employee: Employee) => {
+		setError(null);
+		setDeleteConfirmation({ employee, nameInput: '' });
+	};
+
+	const handleDeleteConfirm = async () => {
+		if (!deleteConfirmation.employee) return;
+
+		const employee = deleteConfirmation.employee;
+		const enteredName = deleteConfirmation.nameInput.trim();
+		const correctName = employee.userName.trim();
+
+		// Check if the entered name matches exactly (case-insensitive)
+		if (enteredName.toLowerCase() !== correctName.toLowerCase()) {
+			setError('The name you entered does not match. Please type the employee name exactly as shown.');
+			return;
+		}
 
 		setSaving(true);
 		setError(null);
+		setDeleteConfirmation({ employee: null, nameInput: '' });
+
 		try {
+			// Soft delete the employee in Firestore
 			await updateDoc(doc(db, 'staff', employee.id), {
 				deleted: true,
 				deletedAt: serverTimestamp(),
 				status: 'Inactive', // Also set status to Inactive
 			});
+
+			// Disable Firebase Auth user if they have an authUid
+			const employeeDoc = await getDoc(doc(db, 'staff', employee.id));
+			const employeeData = employeeDoc.data();
+			const authUid = employeeData?.authUid || employee.id; // Use authUid if available, otherwise use employee.id
+
+			try {
+				await updateAuthUserStatus(authUid, true); // Disable the user
+				console.log(`✅ Firebase Auth user disabled for ${employee.userName}`);
+			} catch (authError: any) {
+				console.warn('Failed to disable Firebase Auth user:', authError);
+				// Don't fail the entire operation if auth update fails
+				// The employee is already soft-deleted in Firestore
+			}
+
+			// Notify all other admins
+			const currentAdminName = user?.displayName || user?.email || 'An admin';
+			await notifyAllAdmins(
+				'👤 Employee Removed',
+				`${currentAdminName} has removed employee "${employee.userName}" (${employee.userEmail}) from the system.`,
+				'employee-deleted',
+				{
+					employeeId: employee.id,
+					employeeName: employee.userName,
+					employeeEmail: employee.userEmail,
+					employeeRole: employee.role,
+					deletedBy: user.uid,
+					deletedByName: currentAdminName,
+				}
+			);
 		} catch (err) {
 			console.error('Failed to delete employee', err);
 			setError('Unable to remove employee. Please try again.');
 		} finally {
 			setSaving(false);
 		}
+	};
+
+	const handleDeleteCancel = () => {
+		setDeleteConfirmation({ employee: null, nameInput: '' });
+		setError(null);
 	};
 
 	const createAuthAccount = async (params: {
@@ -263,21 +413,71 @@ export default function Users() {
 		if (!currentUser) {
 			throw new Error('Your admin session expired. Please sign in again and retry.');
 		}
-		const token = await currentUser.getIdToken();
-		const response = await fetch('/api/admin/users', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${token}`,
-			},
-			body: JSON.stringify({
-				...params,
-				requestingUserRole: user?.role ?? undefined,
-			}),
-		});
-		const data = await response.json();
+		
+		// Verify user is admin (case-insensitive check)
+		// Note: The API route will also verify admin access, so this is a client-side check
+		const userRole = user?.role?.trim();
+		if (!userRole || (userRole !== 'Admin' && userRole.toLowerCase() !== 'admin')) {
+			console.warn('User role check failed:', { 
+				userRole, 
+				userId: user?.uid, 
+				userEmail: user?.email,
+				hasUser: !!user 
+			});
+			// Still allow the request to proceed - the API route will verify admin access
+			// This provides a better UX by catching obvious issues early
+			if (!userRole) {
+				throw new Error('Unable to verify admin access. Your role information is missing. Please refresh the page and try again. If the problem persists, contact your administrator.');
+			}
+			throw new Error(`Only admins can create employee accounts. Your current role is: ${userRole}. Please contact an administrator if you believe this is an error.`);
+		}
+		
+		let token: string;
+		try {
+			token = await currentUser.getIdToken();
+		} catch (tokenError: any) {
+			throw new Error('Failed to get authentication token. Please sign in again and retry.');
+		}
+		
+		let response: Response;
+		try {
+			response = await fetch('/api/admin/users', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${token}`,
+				},
+				body: JSON.stringify({
+					...params,
+					requestingUserRole: user?.role ?? undefined,
+				}),
+			});
+		} catch (fetchError: any) {
+			// Network error (fetch failed)
+			if (fetchError?.message?.includes('fetch') || fetchError?.message?.includes('network') || fetchError?.code === 'auth/network-request-failed') {
+				throw new Error('Network error: Unable to connect to the server. Please check your internet connection and try again. If the problem persists, the server may be down or Firebase Admin SDK may not be configured.');
+			}
+			throw fetchError;
+		}
+		
+		let data: any;
+		try {
+			data = await response.json();
+		} catch (jsonError) {
+			throw new Error(`Server returned invalid response (status: ${response.status}). Please try again or contact support.`);
+		}
+		
 		if (!response.ok || data?.status !== 'ok') {
-			throw new Error(data?.message || 'Failed to create authentication user.');
+			const errorMsg = data?.message || 'Failed to create authentication user.';
+			// Provide more helpful error messages
+			if (errorMsg.includes('network') || errorMsg.includes('timeout') || errorMsg.includes('connect')) {
+				throw new Error('Network error: Unable to connect to Firebase servers. This may be due to:\n' +
+					'• Network connectivity issues\n' +
+					'• Firebase Admin SDK not configured (see FIREBASE_ADMIN_SETUP.md)\n' +
+					'• Server firewall blocking connections\n\n' +
+					'Please check your internet connection and ensure Firebase Admin credentials are properly configured.');
+			}
+			throw new Error(errorMsg);
 		}
 		return data.user as { uid: string; email: string; displayName: string; role: string };
 	};
@@ -309,12 +509,86 @@ export default function Users() {
 		setSaving(true);
 		try {
 			if (editingEmployee) {
+				// Track what changed
+				const previousStatus = editingEmployee.status;
+				const previousRole = editingEmployee.role;
+				const previousName = editingEmployee.userName;
+				const newStatus = formState.userStatus;
+				const newRole = formState.userRole;
+				const statusChanged = previousStatus !== newStatus;
+				const roleChanged = previousRole !== newRole;
+				const nameChanged = previousName !== trimmedName;
+				const hasChanges = statusChanged || roleChanged || nameChanged;
+
 				// Update existing employee
 				await updateDoc(doc(db, 'staff', editingEmployee.id), {
 					userName: trimmedName,
 					role: formState.userRole,
 					status: formState.userStatus,
 				});
+
+				// Update Firebase Auth user status if status changed
+				if (statusChanged) {
+					// Get the authUid from the document (use employee.id as fallback)
+					const employeeDoc = await getDoc(doc(db, 'staff', editingEmployee.id));
+					const employeeData = employeeDoc.data();
+					const authUid = employeeData?.authUid || editingEmployee.id;
+					
+					try {
+						// Disable if status changed to Inactive, enable if changed to Active
+						const shouldDisable = newStatus === 'Inactive';
+						await updateAuthUserStatus(authUid, shouldDisable);
+						console.log(`✅ Firebase Auth user ${shouldDisable ? 'disabled' : 'enabled'} for ${trimmedName}`);
+					} catch (authError: any) {
+						console.warn('Failed to update Firebase Auth user status:', authError);
+						// Don't fail the entire operation if auth update fails
+						// The employee status is already updated in Firestore
+					}
+				}
+
+				// Notify all other admins about the employee update
+				if (hasChanges) {
+					const currentAdminName = user?.displayName || user?.email || 'An admin';
+					const changes: string[] = [];
+					
+					if (nameChanged) {
+						changes.push(`name from "${previousName}" to "${trimmedName}"`);
+					}
+					if (roleChanged) {
+						changes.push(`role from "${previousRole}" to "${newRole}"`);
+					}
+					if (statusChanged) {
+						changes.push(`status from "${previousStatus}" to "${newStatus}"`);
+					}
+					
+					const changeMessage = changes.length > 0 
+						? `Updated ${changes.join(', ')}`
+						: 'Updated employee details';
+					
+					await notifyAllAdmins(
+						'📝 Employee Updated',
+						`${currentAdminName} has updated employee "${trimmedName}" (${editingEmployee.userEmail}): ${changeMessage}.`,
+						'employee-updated',
+						{
+							employeeId: editingEmployee.id,
+							employeeName: trimmedName,
+							employeeEmail: editingEmployee.userEmail,
+							previousRole,
+							newRole,
+							previousStatus,
+							newStatus,
+							previousName,
+							newName: trimmedName,
+							updatedBy: user?.uid,
+							updatedByName: currentAdminName,
+							changes: {
+								name: nameChanged,
+								role: roleChanged,
+								status: statusChanged,
+							},
+						}
+					);
+				}
 			} else {
 				try {
 					const authUser = await createAuthAccount({
@@ -332,6 +606,22 @@ export default function Users() {
 						status: formState.userStatus,
 						createdAt: serverTimestamp(),
 					});
+
+					// Notify all other admins about the new employee
+					const currentAdminName = user?.displayName || user?.email || 'An admin';
+					await notifyAllAdmins(
+						'✅ New Employee Added',
+						`${currentAdminName} has added a new employee: "${trimmedName}" (${trimmedEmail}) as ${formState.userRole}.`,
+						'employee-added',
+						{
+							employeeId: authUser.uid,
+							employeeName: trimmedName,
+							employeeEmail: trimmedEmail,
+							employeeRole: formState.userRole,
+							addedBy: user?.uid,
+							addedByName: currentAdminName,
+						}
+					);
 				} catch (err: any) {
 					console.error('Failed to create employee login:', err);
 					const errorMsg = err?.message || err?.toString() || 'Unknown error';
@@ -548,9 +838,7 @@ export default function Users() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Admin"
 					title="Employee Management"
-					description="Register and manage Front Desk and Clinical Team staff members."
 				/>
 
 				<div className="border-t border-slate-200" />
@@ -558,10 +846,7 @@ export default function Users() {
 				<section className="rounded-2xl border-2 border-sky-600 bg-white px-6 py-6 shadow-[0_10px_35px_rgba(20,90,150,0.12)] space-y-4">
 					<div className="sm:flex sm:items-center sm:justify-between sm:space-x-6">
 						<div>
-							<h2 className="text-xl font-semibold text-sky-700">All Employees</h2>
-							<p className="mt-1 text-sm text-sky-700/80">
-								Search the directory or create a new employee profile.
-							</p>
+							<h2 className="text-xl font-semibold text-blue-900">All Employees</h2>
 						</div>
 						<div className="mt-4 flex flex-col items-center justify-end gap-3 sm:mt-0 sm:flex-row">
 							<input
@@ -569,62 +854,113 @@ export default function Users() {
 								value={searchTerm}
 								onChange={event => setSearchTerm(event.target.value)}
 								placeholder="Search employees…"
-								className="w-full min-w-[220px] rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 sm:w-auto"
+								className="w-full min-w-[220px] rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:w-auto"
 							/>
-							<button
-								type="button"
-								onClick={() => setShowDeletedEmployees(!showDeletedEmployees)}
-								className={`inline-flex items-center rounded-lg border px-4 py-2 text-sm font-semibold shadow-md transition focus-visible:outline-2 focus-visible:outline-offset-2 ${
-									showDeletedEmployees
-										? 'border-amber-600 bg-amber-50 text-amber-700 hover:bg-amber-100 focus-visible:bg-amber-100 focus-visible:outline-amber-600'
-										: 'border-slate-400 bg-white text-slate-600 hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-slate-400'
-								}`}
-							>
-								<i className={`fas ${showDeletedEmployees ? 'fa-eye-slash' : 'fa-history'} mr-2 text-sm`} aria-hidden="true" />
-								{showDeletedEmployees ? 'Show Active Employees' : `Past Employees (${analytics.deletedCount})`}
-							</button>
-							<button
-								type="button"
-								onClick={() => setShowEmployeeDetails(true)}
-								className="inline-flex items-center rounded-lg border border-indigo-600 bg-white px-4 py-2 text-sm font-semibold text-indigo-600 shadow-md transition hover:bg-indigo-50 focus-visible:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-							>
-								<i className="fas fa-id-card mr-2 text-sm" aria-hidden="true" />
-								Employee Details
-							</button>
-							<button
-								type="button"
-								onClick={handleExportCSV}
-								disabled={filteredEmployees.length === 0}
-								className="inline-flex items-center rounded-lg border border-sky-600 bg-white px-4 py-2 text-sm font-semibold text-sky-600 shadow-md transition hover:bg-sky-50 focus-visible:bg-sky-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
-							>
-								<i className="fas fa-file-csv mr-2 text-sm" aria-hidden="true" />
-								Export CSV
-							</button>
-							{!showDeletedEmployees && (
+							{/* Actions Dropdown */}
+							<div className="relative actions-dropdown-container">
 								<button
 									type="button"
-									onClick={openCreateDialog}
-									className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-500 focus-visible:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+									onClick={() => setShowActionsDropdown(!showActionsDropdown)}
+									className="inline-flex items-center rounded-lg bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-900/40 transition-all hover:from-blue-800 hover:via-blue-700 hover:to-blue-600 hover:shadow-xl hover:shadow-blue-900/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
 								>
-									<i className="fas fa-user-plus mr-2 text-sm" aria-hidden="true" />
-									Add New Employee
+									<i className="fas fa-ellipsis-v mr-2 text-sm" aria-hidden="true" />
+									Actions
+									<i className={`fas fa-chevron-${showActionsDropdown ? 'up' : 'down'} ml-2 text-xs`} aria-hidden="true" />
 								</button>
-							)}
+								
+								{showActionsDropdown && (
+									<>
+										<div 
+											className="fixed inset-0 z-10" 
+											onClick={() => setShowActionsDropdown(false)}
+											aria-hidden="true"
+										/>
+										<div className="absolute right-0 z-20 mt-2 w-56 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 border border-blue-200">
+											<div className="py-1" role="menu" aria-orientation="vertical">
+												{!showDeletedEmployees && (
+													<button
+														type="button"
+														onClick={() => {
+															openCreateDialog();
+															setShowActionsDropdown(false);
+														}}
+														className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+														role="menuitem"
+													>
+														<i className="fas fa-user-plus text-emerald-600" aria-hidden="true" />
+														<span className="font-medium">Add New Employee</span>
+													</button>
+												)}
+												<button
+													type="button"
+													onClick={() => {
+														setShowDeletedEmployees(!showDeletedEmployees);
+														setShowActionsDropdown(false);
+													}}
+													className={`flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+														showDeletedEmployees
+															? 'bg-amber-50 text-amber-700'
+															: 'text-slate-700 hover:bg-amber-50 hover:text-amber-700'
+													}`}
+													role="menuitem"
+												>
+													<i className={`fas ${showDeletedEmployees ? 'fa-eye-slash' : 'fa-history'} text-amber-600`} aria-hidden="true" />
+													<span className="font-medium">
+														{showDeletedEmployees ? 'Show Active Employees' : `Past Employees (${analytics.deletedCount})`}
+													</span>
+												</button>
+												<button
+													type="button"
+													onClick={() => {
+														setShowEmployeeDetails(true);
+														setShowActionsDropdown(false);
+													}}
+													className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+													role="menuitem"
+												>
+													<i className="fas fa-id-card text-indigo-600" aria-hidden="true" />
+													<span className="font-medium">Employee Details</span>
+												</button>
+												<button
+													type="button"
+													onClick={() => {
+														handleExportCSV();
+														setShowActionsDropdown(false);
+													}}
+													disabled={filteredEmployees.length === 0}
+													className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+													role="menuitem"
+												>
+													<i className="fas fa-file-csv text-blue-600" aria-hidden="true" />
+													<span className="font-medium">Export CSV</span>
+												</button>
+											</div>
+										</div>
+									</>
+								)}
+							</div>
 						</div>
 					</div>
 					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-						<div>
-							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Filter by role</label>
-							<select
-								value={roleFilter}
-								onChange={event => setRoleFilter(event.target.value as 'all' | EmployeeRole)}
-								className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-							>
-								<option value="all">All roles</option>
-								<option value="FrontDesk">Front Desk</option>
-								<option value="ClinicalTeam">Clinical Team</option>
-								<option value="Admin">Admin</option>
-							</select>
+						<div className="relative">
+							<div className="relative">
+								<select
+									value={roleFilter}
+									onChange={event => setRoleFilter(event.target.value as 'all' | EmployeeRole)}
+									className="w-full appearance-none rounded-xl border-2 border-blue-200 bg-white px-4 py-3 pl-10 pr-10 text-sm font-medium text-blue-900 shadow-md transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 hover:border-blue-300 hover:shadow-lg"
+								>
+									<option value="all">All Roles</option>
+									<option value="FrontDesk">Front Desk</option>
+									<option value="ClinicalTeam">Clinical Team</option>
+									<option value="Admin">Admin</option>
+								</select>
+								<div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+									<i className="fas fa-chevron-down text-blue-600 text-xs" aria-hidden="true" />
+								</div>
+								<div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+									<i className="fas fa-user-tag text-blue-500 text-sm" aria-hidden="true" />
+								</div>
+							</div>
 						</div>
 					</div>
 					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -735,12 +1071,12 @@ export default function Users() {
 													{!showDeletedEmployees && !employee.deleted && (
 														<button
 															type="button"
-															onClick={() => handleDelete(employee)}
-															className="inline-flex items-center rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 transition hover:border-rose-400 hover:text-rose-700 focus-visible:border-rose-400 focus-visible:text-rose-700 focus-visible:outline-none"
+															onClick={() => handleDeleteClick(employee)}
+															className="inline-flex items-center justify-center rounded-full border border-rose-200 px-2.5 py-1.5 text-rose-600 transition hover:border-rose-400 hover:bg-rose-50 hover:text-rose-700 focus-visible:border-rose-400 focus-visible:text-rose-700 focus-visible:outline-none"
 															disabled={saving}
+															title="Delete employee"
 														>
-															<i className="fas fa-trash mr-1 text-[11px]" aria-hidden="true" />
-															Delete
+															<i className="fas fa-trash text-xs" aria-hidden="true" />
 														</button>
 													)}
 												</div>
@@ -1296,6 +1632,107 @@ export default function Users() {
 				</div>
 			)}
 			</div>
+
+			{/* Delete Confirmation Modal */}
+			{deleteConfirmation.employee && (
+				<div
+					role="dialog"
+					aria-modal="true"
+					className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 px-4 py-6"
+					onClick={handleDeleteCancel}
+				>
+					<div
+						className="w-full max-w-md rounded-2xl bg-white shadow-2xl"
+						onClick={event => event.stopPropagation()}
+					>
+						<div className="px-6 py-5 border-b border-slate-200">
+							<div className="flex items-center gap-3">
+								<div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+									<i className="fas fa-exclamation-triangle text-rose-600 text-xl" aria-hidden="true" />
+								</div>
+								<div>
+									<h3 className="text-lg font-semibold text-slate-900">Delete Employee</h3>
+									<p className="text-sm text-slate-600">This action cannot be undone</p>
+								</div>
+							</div>
+						</div>
+
+						<div className="px-6 py-5 space-y-4">
+							<div className="rounded-lg bg-rose-50 border border-rose-200 p-4">
+								<p className="text-sm font-medium text-rose-900 mb-2">
+									You are about to delete:
+								</p>
+								<p className="text-base font-semibold text-slate-900">
+									{deleteConfirmation.employee.userName}
+								</p>
+								<p className="text-sm text-slate-600 mt-1">
+									{deleteConfirmation.employee.userEmail}
+								</p>
+							</div>
+
+							<div>
+								<label className="block text-sm font-semibold text-slate-700 mb-2">
+									To confirm, please type the employee's name:
+									<span className="font-mono text-blue-600 ml-2">
+										{deleteConfirmation.employee.userName}
+									</span>
+								</label>
+								<input
+									type="text"
+									value={deleteConfirmation.nameInput}
+									onChange={event => setDeleteConfirmation(prev => ({ ...prev, nameInput: event.target.value }))}
+									placeholder="Enter employee name"
+									className="w-full rounded-lg border-2 border-slate-300 px-4 py-3 text-sm text-slate-900 transition focus:border-rose-500 focus:outline-none focus:ring-4 focus:ring-rose-100"
+									autoFocus
+									onKeyDown={event => {
+										if (event.key === 'Enter' && deleteConfirmation.nameInput.trim().toLowerCase() === deleteConfirmation.employee?.userName.trim().toLowerCase()) {
+											handleDeleteConfirm();
+										}
+									}}
+								/>
+								{error && deleteConfirmation.employee && (
+									<p className="mt-2 text-sm text-rose-600 flex items-center gap-2">
+										<i className="fas fa-exclamation-circle" aria-hidden="true" />
+										{error}
+									</p>
+								)}
+							</div>
+						</div>
+
+						<div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+							<button
+								type="button"
+								onClick={handleDeleteCancel}
+								className="px-4 py-2 text-sm font-semibold text-slate-700 rounded-lg border border-slate-300 hover:bg-slate-50 transition focus:outline-none focus:ring-2 focus:ring-slate-300"
+								disabled={saving}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleDeleteConfirm}
+								disabled={
+									saving ||
+									deleteConfirmation.nameInput.trim().toLowerCase() !== deleteConfirmation.employee?.userName.trim().toLowerCase()
+								}
+								className="px-4 py-2 text-sm font-semibold text-white rounded-lg bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 transition focus:outline-none focus:ring-4 focus:ring-rose-200 disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{saving ? (
+									<span className="flex items-center gap-2">
+										<i className="fas fa-spinner fa-spin" aria-hidden="true" />
+										Deleting...
+									</span>
+								) : (
+									<span className="flex items-center gap-2">
+										<i className="fas fa-trash" aria-hidden="true" />
+										Delete Employee
+									</span>
+								)}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

@@ -1025,7 +1025,6 @@ export default function Appointments() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Clinical Team"
 					title="Appointments"
 					description="Review scheduled visits, update statuses in real time, and manage appointments with the same layout used in the legacy Super Admin console."
 					actions={

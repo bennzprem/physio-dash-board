@@ -82,7 +82,7 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 	};
 
 	return (
-		<div className="min-h-svh bg-slate-50">
+		<div className="min-h-svh bg-purple-50">
 			<Sidebar
 				title="Front Desk"
 				links={frontdeskLinks}
@@ -90,7 +90,7 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 				activeHref={`#${activePage}`}
 				onProfileClick={handleProfileClick}
 			/>
-			<main className="ml-64 min-h-svh overflow-y-auto bg-white">{renderPage()}</main>
+			<main className="ml-64 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
 		</div>
 	);
 }

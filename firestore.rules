@@ -10,12 +10,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // This looks up the role in your Database (users collection)
+    // This looks up the role in your Database (checks staff collection first, then users collection)
     function getRole() {
       if (!isLoggedIn()) {
         return null;
       }
-      // Try to get the user document, return null if it doesn't exist
+      // Try to get the staff document first (primary collection)
+      let staffDoc = get(/databases/$(database)/documents/staff/$(request.auth.uid));
+      if (staffDoc.exists && 'role' in staffDoc.data) {
+        return staffDoc.data.role;
+      }
+      // Fallback to users collection for backward compatibility
       let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
       return userDoc.exists && 'role' in userDoc.data ? userDoc.data.role : null;
     }
@@ -111,6 +116,30 @@ service cloud.firestore {
         isAdmin() || 
         isOwnStaffDoc()
       );
+    }
+
+    // -------------------------------
+    // NOTIFICATIONS COLLECTION
+    // -------------------------------
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isLoggedIn() && 
+                  resource.data.userId == request.auth.uid;
+      
+      // Allow any logged-in user to create notifications
+      // (Business logic ensures only admins can create notifications for others)
+      // This avoids permission issues with role lookup in rules
+      allow create: if isLoggedIn() && 
+                    request.resource.data.userId != null &&
+                    request.resource.data.title != null &&
+                    request.resource.data.message != null;
+      
+      // Users can update their own notifications (e.g., mark as read)
+      allow update: if isLoggedIn() && 
+                    resource.data.userId == request.auth.uid;
+      
+      // Only admins can delete notifications
+      allow delete: if isAdmin();
     }
 
     // -------------------------------

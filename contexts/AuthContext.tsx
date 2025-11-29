@@ -31,22 +31,38 @@ const AuthContext = createContext<AuthContextValue>({
 
 async function fetchUserProfile(firebaseUser: FirebaseUser): Promise<AuthUser | null> {
 	try {
-		const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-		if (!snap.exists()) {
+		// Check staff collection first (primary collection)
+		let snap = await getDoc(doc(db, 'staff', firebaseUser.uid));
+		if (snap.exists()) {
+			const data = snap.data() as { role?: string; status?: string; userName?: string; deleted?: boolean };
 			return {
 				uid: firebaseUser.uid,
 				email: firebaseUser.email,
-				displayName: firebaseUser.displayName,
-				role: null,
+				displayName: data.userName ?? firebaseUser.displayName ?? null,
+				role: data.role ?? null,
+				status: data.status,
 			};
 		}
-		const data = snap.data() as { role?: string; status?: string; userName?: string };
+		
+		// Fallback to users collection for backward compatibility
+		snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+		if (snap.exists()) {
+			const data = snap.data() as { role?: string; status?: string; userName?: string; displayName?: string };
+			return {
+				uid: firebaseUser.uid,
+				email: firebaseUser.email,
+				displayName: data.userName ?? data.displayName ?? firebaseUser.displayName ?? null,
+				role: data.role ?? null,
+				status: data.status,
+			};
+		}
+		
+		// No profile found in either collection
 		return {
 			uid: firebaseUser.uid,
 			email: firebaseUser.email,
-			displayName: data.userName ?? firebaseUser.displayName ?? null,
-			role: data.role ?? null,
-			status: data.status,
+			displayName: firebaseUser.displayName,
+			role: null,
 		};
 	} catch (error) {
 		console.error('Failed to load user profile', error);
@@ -72,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		setLoading(true);
 		try {
 			const profile = await fetchUserProfile(firebaseUser);
+			// Check if account is inactive or deleted
 			if (profile?.status === 'Inactive') {
 				setError('Your account is inactive.');
 				await signOut(auth);

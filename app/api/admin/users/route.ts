@@ -86,10 +86,18 @@ async function requireAdmin(request: NextRequest, fallbackRole?: string) {
 			try {
 				// Only try Firestore if Admin SDK is properly initialized
 				if (dbAdmin) {
-					const userDoc = await dbAdmin.collection('users').doc(decoded.uid).get();
-					if (userDoc.exists) {
-						const userData = userDoc.data();
-						role = userData?.role;
+					// Check staff collection first (primary collection)
+					const staffDoc = await dbAdmin.collection('staff').doc(decoded.uid).get();
+					if (staffDoc.exists) {
+						const staffData = staffDoc.data();
+						role = staffData?.role;
+					} else {
+						// Fallback to users collection for backward compatibility
+						const userDoc = await dbAdmin.collection('users').doc(decoded.uid).get();
+						if (userDoc.exists) {
+							const userData = userDoc.data();
+							role = userData?.role;
+						}
 					}
 				}
 			} catch (firestoreError: any) {
@@ -165,15 +173,28 @@ export async function GET(request: NextRequest) {
 		const result = await authAdmin.listUsers(100);
 		const users = await Promise.all(
 			result.users.map(async user => {
-				let profile: { role?: string; displayName?: string } = {};
+				let profile: { role?: string; displayName?: string; userName?: string } = {};
 				try {
-					const snap = await dbAdmin.collection('users').doc(user.uid).get();
-					if (snap.exists) {
-						const data = snap.data() as any;
+					// Check staff collection first (primary)
+					const staffSnap = await dbAdmin.collection('staff').doc(user.uid).get();
+					if (staffSnap.exists) {
+						const data = staffSnap.data() as any;
 						profile = {
 							role: data?.role,
-							displayName: data?.displayName,
+							displayName: data?.userName || data?.displayName,
+							userName: data?.userName,
 						};
+					} else {
+						// Fallback to users collection
+						const userSnap = await dbAdmin.collection('users').doc(user.uid).get();
+						if (userSnap.exists) {
+							const data = userSnap.data() as any;
+							profile = {
+								role: data?.role,
+								displayName: data?.displayName || data?.userName,
+								userName: data?.userName,
+							};
+						}
 					}
 				} catch (e) {
 					// swallow, non-blocking
@@ -182,7 +203,7 @@ export async function GET(request: NextRequest) {
 				return {
 					uid: user.uid,
 					email: user.email,
-					displayName: profile.displayName || user.displayName || '',
+					displayName: profile.displayName || profile.userName || user.displayName || '',
 					disabled: user.disabled ?? false,
 					customClaims: claims,
 					role: (claims.role as string) || profile.role || '',
@@ -254,7 +275,25 @@ export async function POST(request: NextRequest) {
 		// Update custom claims (role)
 		await authAdmin.setCustomUserClaims(userRecord.uid, { role });
 
-		// Update/create Firestore profile
+		// Update/create Firestore profile in staff collection
+		const staffProfileData: any = {
+			authUid: userRecord.uid,
+			userEmail: email,
+			userName: displayName,
+			role,
+			status: 'Active',
+			updatedAt: new Date().toISOString(),
+		};
+		
+		// Only set createdAt for new users
+		if (isNewUser) {
+			staffProfileData.createdAt = new Date().toISOString();
+		}
+		
+		// Write to staff collection (primary)
+		await dbAdmin.collection('staff').doc(userRecord.uid).set(staffProfileData, { merge: true });
+		
+		// Also write to users collection for backward compatibility
 		const userProfileData: any = {
 			email,
 			displayName,
@@ -263,12 +302,9 @@ export async function POST(request: NextRequest) {
 			userName: displayName,
 			updatedAt: new Date().toISOString(),
 		};
-		
-		// Only set createdAt for new users
 		if (isNewUser) {
 			userProfileData.createdAt = new Date().toISOString();
 		}
-		
 		await dbAdmin.collection('users').doc(userRecord.uid).set(userProfileData, { merge: true });
 
 		return new Response(
@@ -281,9 +317,28 @@ export async function POST(request: NextRequest) {
 		);
 	} catch (err: any) {
 		console.error('POST /api/admin/users failed', err);
-		const errorMessage = err?.code === 'auth/email-already-exists' 
-			? 'Email address is already in use'
-			: err?.message || 'Failed to create/update user';
+		
+		// Handle specific Firebase Auth errors
+		let errorMessage: string;
+		if (err?.code === 'auth/email-already-exists') {
+			errorMessage = 'Email address is already in use';
+		} else if (err?.code === 'auth/invalid-email') {
+			errorMessage = 'Invalid email address format';
+		} else if (err?.code === 'auth/weak-password') {
+			errorMessage = 'Password is too weak. Please use a stronger password.';
+		} else if (err?.code === 'auth/network-request-failed' || err?.message?.includes('network') || err?.message?.includes('timeout') || err?.message?.includes('ETIMEDOUT') || err?.message?.includes('ECONNREFUSED')) {
+			errorMessage = 'Network error: Unable to connect to Firebase servers. This may be due to:\n' +
+				'• Network connectivity issues\n' +
+				'• Firebase Admin SDK not properly configured (see FIREBASE_ADMIN_SETUP.md)\n' +
+				'• Server firewall blocking connections\n' +
+				'• IPv6 connectivity problems\n\n' +
+				'Please check your internet connection and ensure Firebase Admin credentials are properly configured.';
+		} else if (err?.message?.includes('Admin SDK') || err?.message?.includes('credential')) {
+			errorMessage = 'Firebase Admin SDK configuration error. Please verify FIREBASE_SERVICE_ACCOUNT_KEY is correctly set and restart the server. See FIREBASE_ADMIN_SETUP.md for details.';
+		} else {
+			errorMessage = err?.message || 'Failed to create/update user';
+		}
+		
 		return new Response(JSON.stringify({ status: 'error', message: errorMessage }), {
 			status: 500,
 		});
@@ -310,6 +365,8 @@ export async function PATCH(request: NextRequest) {
 		}
 		if (role) {
 			await authAdmin.setCustomUserClaims(uid, { role });
+			// Update both collections for consistency
+			await dbAdmin.collection('staff').doc(uid).set({ role }, { merge: true });
 			await dbAdmin.collection('users').doc(uid).set({ role }, { merge: true });
 			updated.role = role;
 		}

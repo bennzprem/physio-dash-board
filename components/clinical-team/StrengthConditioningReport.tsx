@@ -458,7 +458,6 @@ export default function StrengthConditioningReport() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10 print:px-4 print:py-4">
 			<div className="mx-auto max-w-6xl space-y-6">
 				<PageHeader
-					badge="Strength & Conditioning"
 					title="Strength and Conditioning Assessment"
 					description="Complete the strength and conditioning assessment report with editable fields for all metrics."
 				/>

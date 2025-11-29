@@ -12,9 +12,10 @@ import Calendar from '@/components/admin/Calendar';
 import Seed from '@/components/admin/Seed';
 import AuditLogs from '@/components/admin/AuditLogs';
 import HeaderManagement from '@/components/admin/HeaderManagement';
+import Notifications from '@/components/admin/Notifications';
 import Profile from '@/components/Profile';
 
-type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'reports' | 'calendar' | 'audit' | 'seed' | 'headers' | 'profile';
+type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'reports' | 'calendar' | 'audit' | 'seed' | 'headers' | 'notifications' | 'profile';
 
 const adminLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-columns' },
@@ -24,6 +25,7 @@ const adminLinks: SidebarLink[] = [
 	{ href: '#calendar', label: 'Calendar', icon: 'fas fa-calendar-alt' },
 	{ href: '#billing', label: 'Billing & Payments', icon: 'fas fa-file-invoice-dollar' },
 	{ href: '#reports', label: 'Reports & Analytics', icon: 'fas fa-chart-pie' },
+	{ href: '#notifications', label: 'Notifications', icon: 'fas fa-bell' },
 	{ href: '#headers', label: 'Header Management', icon: 'fas fa-heading' },
 	{ href: '#audit', label: 'Audit Logs', icon: 'fas fa-clipboard-list' },
 	{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
@@ -61,17 +63,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 				return <HeaderManagement />;
 			case 'seed':
 				return <Seed />;
-			case 'audit':
-				return <AuditLogs />;
-			case 'profile':
-				return <Profile />;
-			default:
-				return <Dashboard onNavigate={handleLinkClick} />;
+		case 'audit':
+			return <AuditLogs />;
+		case 'notifications':
+			return <Notifications />;
+		case 'profile':
+			return <Profile />;
+		default:
+			return <Dashboard onNavigate={handleLinkClick} />;
 		}
 	};
 
 	return (
-		<div className="min-h-svh bg-slate-50">
+		<div className="min-h-svh bg-purple-50">
 			<Sidebar 
 				title="Admin" 
 				links={adminLinks} 
@@ -79,7 +83,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 				activeHref={`#${activePage}`}
 				onProfileClick={handleProfileClick}
 			/>
-			<main className="ml-64 min-h-svh overflow-y-auto bg-white">{renderPage()}</main>
+			<main className="ml-64 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
 		</div>
 	);
 }

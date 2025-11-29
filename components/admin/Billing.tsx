@@ -1970,7 +1970,6 @@ export default function Billing() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Admin"
 					title="Billing & Payments"
 					description="Track outstanding invoices, post collections, and generate payment receipts."
 					actions={

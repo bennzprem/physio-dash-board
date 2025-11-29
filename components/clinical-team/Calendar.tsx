@@ -903,7 +903,6 @@ export default function Calendar() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Clinical Team"
 					title="My Calendar & Notifications"
 					description="View your scheduled appointments and manage upcoming reminders and notifications."
 				/>

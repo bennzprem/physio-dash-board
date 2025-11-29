@@ -27,6 +27,9 @@ import {
 } from '@/lib/adminMockData';
 import { db } from '@/lib/firebase';
 import PageHeader from '@/components/PageHeader';
+import { sendSMSNotification, isValidPhoneNumber } from '@/lib/sms';
+import { sendEmailNotification } from '@/lib/email';
+import ReportModal from '@/components/frontdesk/ReportModal';
 
 const genderOptions: Array<{ value: AdminGenderOption; label: string }> = [
 	{ value: '', label: 'Select' },
@@ -58,6 +61,12 @@ const formatDate = (iso: string) => {
 	} catch {
 		return '—';
 	}
+};
+
+const formatPatientIdShort = (patientId?: string | null, length: number = 8) => {
+	if (!patientId) return '—';
+	if (patientId.length <= length) return patientId;
+	return '...' + patientId.slice(-length);
 };
 
 const formatDateTime = (iso: string) => {
@@ -156,10 +165,18 @@ export default function Patients() {
 	const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
 	const [patientExtras, setPatientExtras] = useState<Record<string, PatientExtras>>({});
 	const [loadingExtras, setLoadingExtras] = useState<Record<string, boolean>>({});
+	const [patientBilling, setPatientBilling] = useState<any[]>([]);
+	const [patientAppointments, setPatientAppointments] = useState<any[]>([]);
+	const [showReports, setShowReports] = useState(false);
+	const [showReportModal, setShowReportModal] = useState(false);
+	const [reportModalPatientId, setReportModalPatientId] = useState<string | null>(null);
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [noteContent, setNoteContent] = useState('');
 	const [isAddingNote, setIsAddingNote] = useState(false);
+	const [showActionsDropdown, setShowActionsDropdown] = useState(false);
+	const [showDeletedPatients, setShowDeletedPatients] = useState(false);
+	const [deleteConfirmation, setDeleteConfirmation] = useState<{ patient: (AdminPatientRecord & { id?: string }) | null; nameInput: string }>({ patient: null, nameInput: '' });
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [formState, setFormState] = useState<Omit<AdminPatientRecord, 'registeredAt'>>({
 		patientId: '',
@@ -187,6 +204,7 @@ export default function Patients() {
 				const mapped = snapshot.docs.map(docSnap => {
 					const data = docSnap.data() as Record<string, unknown>;
 					const created = (data.registeredAt as Timestamp | undefined)?.toDate?.();
+					const deleted = (data.deletedAt as Timestamp | undefined)?.toDate?.();
 					return {
 						id: docSnap.id,
 						patientId: data.patientId ? String(data.patientId) : '',
@@ -199,7 +217,14 @@ export default function Patients() {
 						complaint: data.complaint ? String(data.complaint) : '',
 						status: (data.status as AdminPatientStatus) ?? 'pending',
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined) || new Date().toISOString(),
-					} as AdminPatientRecord & { id: string };
+						deleted: data.deleted === true,
+						deletedAt: deleted ? deleted.toISOString() : (data.deletedAt as string | undefined) || null,
+						patientType: data.patientType ? String(data.patientType) : '',
+						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
+						totalSessionsRequired: typeof data.totalSessionsRequired === 'number' ? data.totalSessionsRequired : (data.totalSessionsRequired ? Number(data.totalSessionsRequired) : undefined),
+						remainingSessions: typeof data.remainingSessions === 'number' ? data.remainingSessions : (data.remainingSessions ? Number(data.remainingSessions) : undefined),
+						feedback: data.feedback ? String(data.feedback) : undefined,
+					} as AdminPatientRecord & { id: string; deleted?: boolean; deletedAt?: string | null; patientType?: string; assignedDoctor?: string; totalSessionsRequired?: number; remainingSessions?: number; feedback?: string };
 				});
 				setPatients(mapped);
 				setLoading(false);
@@ -228,6 +253,11 @@ export default function Patients() {
 		return patients
 			.map((patient, index) => ({ patient, index, id: (patient as AdminPatientRecord & { id?: string }).id || '' }))
 			.filter(({ patient }) => {
+				// Filter by deleted status
+				const isDeleted = (patient as any).deleted === true;
+				if (showDeletedPatients && !isDeleted) return false;
+				if (!showDeletedPatients && isDeleted) return false;
+
 				const matchesSearch =
 					!query ||
 					(patient.name || '').toLowerCase().includes(query) ||
@@ -246,7 +276,7 @@ export default function Patients() {
 				const matchesDoctor = doctorFilter === 'all' || assignedDoctor === doctorFilter;
 				return matchesSearch && matchesStatus && matchesDateFrom && matchesDateTo && matchesDoctor;
 			});
-	}, [patients, searchTerm, statusFilter, dateFrom, dateTo, doctorFilter]);
+	}, [patients, searchTerm, statusFilter, dateFrom, dateTo, doctorFilter, showDeletedPatients]);
 
 	// Presets removed per request
 
@@ -254,6 +284,29 @@ export default function Patients() {
 		if (!selectedPatientId) return null;
 		return patients.find(patient => (patient as AdminPatientRecord & { id?: string }).id === selectedPatientId) || null;
 	}, [patients, selectedPatientId]);
+
+	// Calculate billing totals
+	const billingSummary = useMemo(() => {
+		const totalAmount = patientBilling.reduce((sum, bill) => sum + (bill.packageAmount || bill.amount || 0), 0);
+		const totalPaid = patientBilling.reduce((sum, bill) => sum + (bill.amountPaid || 0), 0);
+		const totalPending = totalAmount - totalPaid;
+		return { totalAmount, totalPaid, totalPending };
+	}, [patientBilling]);
+
+	// Get next session
+	const nextSession = useMemo(() => {
+		if (!patientAppointments.length) return null;
+		const today = new Date().toISOString().split('T')[0];
+		const upcoming = patientAppointments
+			.filter(apt => apt.status !== 'cancelled' && apt.date >= today)
+			.sort((a, b) => {
+				const dateA = new Date(a.date + 'T' + (a.time || '00:00'));
+				const dateB = new Date(b.date + 'T' + (b.time || '00:00'));
+				return dateA.getTime() - dateB.getTime();
+			});
+		return upcoming.length > 0 ? upcoming[0] : null;
+	}, [patientAppointments]);
+
 
 	useEffect(() => {
 		if (selectedPatient) {
@@ -278,6 +331,65 @@ export default function Patients() {
 	}, [selectedPatient]);
 
 	const closeProfile = () => setSelectedPatientId(null);
+
+	// Load patient billing and appointments
+	useEffect(() => {
+		if (!selectedPatientId || !selectedPatient) {
+			setPatientBilling([]);
+			setPatientAppointments([]);
+			return;
+		}
+		
+		const patientId = selectedPatient.patientId;
+		
+		// Load billing records
+		const billingUnsubscribe = onSnapshot(
+			query(collection(db, 'billing'), where('patientId', '==', patientId)),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data();
+					return {
+						id: docSnap.id,
+						amount: typeof data.amount === 'number' ? data.amount : Number(data.amount) || 0,
+						amountPaid: typeof data.amountPaid === 'number' ? data.amountPaid : Number(data.amountPaid) || 0,
+						packageAmount: typeof data.packageAmount === 'number' ? data.packageAmount : (data.packageAmount ? Number(data.packageAmount) : null),
+						status: data.status || 'Pending',
+					};
+				});
+				setPatientBilling(mapped);
+			},
+			error => {
+				console.error('Failed to load billing', error);
+				setPatientBilling([]);
+			}
+		);
+
+		// Load appointments
+		const appointmentsUnsubscribe = onSnapshot(
+			query(collection(db, 'appointments'), where('patientId', '==', patientId)),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data();
+					return {
+						id: docSnap.id,
+						date: data.date || '',
+						time: data.time || '',
+						status: data.status || '',
+					};
+				});
+				setPatientAppointments(mapped);
+			},
+			error => {
+				console.error('Failed to load appointments', error);
+				setPatientAppointments([]);
+			}
+		);
+
+		return () => {
+			billingUnsubscribe();
+			appointmentsUnsubscribe();
+		};
+	}, [selectedPatientId, selectedPatient]);
 
 	// Load patient extras (notes, attachments, history)
 	useEffect(() => {
@@ -645,14 +757,26 @@ export default function Patients() {
 		setEditingId(null);
 	};
 
-	const handleDelete = async (id: string) => {
+	const handleDeleteClick = (id: string) => {
 		const patient = patients.find(p => (p as AdminPatientRecord & { id?: string }).id === id);
 		if (!patient) return;
+		setDeleteConfirmation({ patient: patient as AdminPatientRecord & { id: string }, nameInput: '' });
+	};
 
-		const confirmed = window.confirm(
-			`Delete patient "${patient.name}" (ID: ${patient.patientId})? This will also delete all appointments for this patient. This cannot be undone.`
-		);
-		if (!confirmed) return;
+	const handleDeleteConfirm = async () => {
+		if (!deleteConfirmation.patient || !deleteConfirmation.patient.id) return;
+
+		const patient = deleteConfirmation.patient;
+		const enteredName = deleteConfirmation.nameInput.trim();
+		const correctName = patient.name.trim();
+
+		// Check if the entered name matches exactly (case-insensitive)
+		if (enteredName.toLowerCase() !== correctName.toLowerCase()) {
+			return;
+		}
+
+		setDeleteConfirmation({ patient: null, nameInput: '' });
+
 		try {
 			// First, delete all appointments for this patient
 			const appointmentsQuery = query(
@@ -671,12 +795,32 @@ export default function Patients() {
 				console.log(`Deleted ${appointmentsSnapshot.docs.length} appointment(s) for patient ${patient.patientId}`);
 			}
 
-			// Then delete the patient
-			await deleteDoc(doc(db, 'patients', id));
+			// Soft delete the patient (set deleted flag instead of actually deleting)
+			await updateDoc(doc(db, 'patients', patient.id), {
+				deleted: true,
+				deletedAt: serverTimestamp(),
+				status: 'cancelled',
+			});
+
+			// Show success message
+			const appointmentCount = appointmentsSnapshot.docs.length;
+			const appointmentText = appointmentCount === 1 ? 'appointment' : 'appointments';
+			alert(
+				`✅ Patient "${patient.name}" (ID: ${patient.patientId}) has been successfully deleted.\n\n` +
+				`${appointmentCount > 0 ? `${appointmentCount} associated ${appointmentText} ${appointmentCount === 1 ? 'was' : 'were'} also deleted. ` : ''}` +
+				`The patient has been moved to past patients.`
+			);
+
+			// Automatically switch to past patients view
+			setShowDeletedPatients(true);
 		} catch (error) {
 			console.error('Failed to delete patient', error);
-			alert('Failed to delete patient. Please try again.');
+			alert('❌ Failed to delete patient. Please try again.');
 		}
+	};
+
+	const handleDeleteCancel = () => {
+		setDeleteConfirmation({ patient: null, nameInput: '' });
 	};
 
 	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -726,6 +870,60 @@ export default function Patients() {
 				// Create new patient
 				const docRef = await addDoc(collection(db, 'patients'), patientData);
 				console.log('Patient created successfully with document ID:', docRef.id);
+
+				// Send registration email if email is provided
+				let emailSent = false;
+				if (trimmedEmail) {
+					try {
+						const emailResult = await sendEmailNotification({
+							to: trimmedEmail,
+							subject: `Welcome to Centre For Sports Science - Patient ID: ${trimmedId}`,
+							template: 'patient-registered',
+							data: {
+								patientName: trimmedName,
+								patientEmail: trimmedEmail,
+								patientId: trimmedId,
+							},
+						});
+						emailSent = emailResult.success;
+					} catch (emailError) {
+						// Log error but don't fail registration
+						console.error('Failed to send registration email:', emailError);
+					}
+				}
+
+				// Send registration SMS if phone is provided
+				let smsSent = false;
+				if (trimmedPhone && isValidPhoneNumber(trimmedPhone)) {
+					try {
+						const smsResult = await sendSMSNotification({
+							to: trimmedPhone,
+							template: 'patient-registered',
+							data: {
+								patientName: trimmedName,
+								patientPhone: trimmedPhone,
+								patientId: trimmedId,
+							},
+						});
+						smsSent = smsResult.success;
+					} catch (smsError) {
+						// Log error but don't fail registration
+						console.error('Failed to send registration SMS:', smsError);
+					}
+				}
+
+				// Build confirmation message
+				const confirmations = [];
+				if (emailSent) confirmations.push('email');
+				if (smsSent) confirmations.push('SMS');
+				const confirmationText = confirmations.length > 0 
+					? ` Confirmation sent via ${confirmations.join(' and ')}.`
+					: '';
+
+				// Show success message with confirmation details
+				setTimeout(() => {
+					alert(`Patient "${trimmedName}" (ID: ${trimmedId}) has been added successfully!${confirmationText}`);
+				}, 100);
 			}
 
 			// Close dialog and reset form
@@ -742,14 +940,6 @@ export default function Patients() {
 				complaint: '',
 				status: 'pending',
 			});
-
-			// Show success message
-			if (!editingId) {
-				// Small delay to ensure dialog closes before showing alert
-				setTimeout(() => {
-					alert(`Patient "${trimmedName}" (ID: ${trimmedId}) has been added successfully!`);
-				}, 100);
-			}
 		} catch (error) {
 			console.error('Failed to save patient', error);
 			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -1037,9 +1227,7 @@ export default function Patients() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Admin"
-					title="Patient Registry"
-					description="Search, export, and maintain the mock patient directory used for demos and QA flows."
+					title="Patient Management"
 				/>
 
 				<div className="border-t border-slate-200" />
@@ -1115,50 +1303,77 @@ export default function Patients() {
 						</div>
 
 						<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-4 mt-4">
-							<button type="button" onClick={handleExportCsv} className="btn-tertiary">
-								<i className="fas fa-file-export text-xs" aria-hidden="true" />
-								Export CSV
+							{/* Actions Dropdown */}
+							<div className="relative actions-dropdown-container">
+							<button
+								type="button"
+									onClick={() => setShowActionsDropdown(!showActionsDropdown)}
+									className="inline-flex items-center rounded-lg bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-900/40 transition-all hover:from-blue-800 hover:via-blue-700 hover:to-blue-600 hover:shadow-xl hover:shadow-blue-900/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+							>
+									<i className="fas fa-ellipsis-v mr-2 text-sm" aria-hidden="true" />
+									Actions
+									<i className={`fas fa-chevron-${showActionsDropdown ? 'up' : 'down'} ml-2 text-xs`} aria-hidden="true" />
+							</button>
+								
+								{showActionsDropdown && (
+									<>
+										<div 
+											className="fixed inset-0 z-10" 
+											onClick={() => setShowActionsDropdown(false)}
+											aria-hidden="true"
+										/>
+										<div className="absolute right-0 z-20 mt-2 w-56 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 border border-blue-200">
+											<div className="py-1" role="menu" aria-orientation="vertical">
+												{!showDeletedPatients && (
+													<button
+														type="button"
+														onClick={() => {
+															handleBulkDeactivate();
+															setShowActionsDropdown(false);
+														}}
+														className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-amber-50 hover:text-amber-700 transition-colors"
+														role="menuitem"
+													>
+														<i className="fas fa-user-slash text-amber-600" aria-hidden="true" />
+														<span className="font-medium">Bulk Deactivate</span>
+													</button>
+												)}
+							<button
+								type="button"
+													onClick={() => {
+														handleExportCsv();
+														setShowActionsDropdown(false);
+													}}
+													disabled={filteredPatients.length === 0}
+													className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-700"
+													role="menuitem"
+												>
+													<i className="fas fa-file-csv text-blue-600" aria-hidden="true" />
+													<span className="font-medium">Export CSV</span>
 							</button>
 							<button
 								type="button"
-								onClick={() => setIsBackupOpen(true)}
-								className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-500 focus-visible:bg-purple-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-600"
-							>
-								<i className="fas fa-database text-xs" aria-hidden="true" />
-								Backup Data
+													onClick={() => {
+														setShowDeletedPatients(!showDeletedPatients);
+														setShowActionsDropdown(false);
+													}}
+													className={`flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+														showDeletedPatients
+															? 'bg-amber-50 text-amber-700'
+															: 'text-slate-700 hover:bg-amber-50 hover:text-amber-700'
+													}`}
+													role="menuitem"
+												>
+													<i className={`fas ${showDeletedPatients ? 'fa-eye-slash' : 'fa-history'} text-amber-600`} aria-hidden="true" />
+													<span className="font-medium">
+														{showDeletedPatients ? 'Show Active Patients' : 'View Past Patients'}
+													</span>
 							</button>
-							<button
-								type="button"
-								onClick={() => setIsRestoreOpen(true)}
-								className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus-visible:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-							>
-								<i className="fas fa-upload text-xs" aria-hidden="true" />
-								Restore Data
-							</button>
-							<button
-								type="button"
-								onClick={handleImportClick}
-								className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500 focus-visible:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
-							>
-								<i className="fas fa-file-import text-xs" aria-hidden="true" />
-								Import CSV
-							</button>
-							<button
-								type="button"
-								onClick={handleBulkDeactivate}
-								className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-400 focus-visible:bg-amber-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
-							>
-								<i className="fas fa-user-slash text-xs" aria-hidden="true" />
-								Bulk deactivate
-							</button>
-							<button
-								type="button"
-								onClick={openDialogForCreate}
-								className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 focus-visible:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
-							>
-								<i className="fas fa-user-plus text-xs" aria-hidden="true" />
-								Add patient
-							</button>
+											</div>
+										</div>
+									</>
+								)}
+							</div>
 						</div>
 				</section>
 
@@ -1175,11 +1390,11 @@ export default function Patients() {
 								<p className="mt-1">Try adjusting the search or add a new profile to keep testing data fresh.</p>
 							</div>
 						) : (
-							<div className="overflow-x-auto">
-								<table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
+							<div className="w-full">
+								<table className="w-full divide-y divide-slate-200 text-left text-sm text-slate-700 table-fixed">
 									<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
 										<tr>
-											<th className="px-4 py-3 font-semibold">
+											<th className="w-12 px-2 py-3 font-semibold">
 												<input
 													type="checkbox"
 													checked={selectedPatientIds.size === filteredPatients.length && filteredPatients.length > 0}
@@ -1187,22 +1402,22 @@ export default function Patients() {
 													className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
 												/>
 											</th>
-											<th className="px-4 py-3 font-semibold">#</th>
-											<th className="px-4 py-3 font-semibold">Patient ID</th>
-											<th className="px-4 py-3 font-semibold">Name</th>
-											<th className="px-4 py-3 font-semibold">Date of birth</th>
-											<th className="px-4 py-3 font-semibold">Gender</th>
-											<th className="px-4 py-3 font-semibold">Phone</th>
-											<th className="px-4 py-3 font-semibold">Email</th>
-											<th className="px-4 py-3 font-semibold">Status</th>
-											<th className="px-4 py-3 font-semibold">Registered</th>
-											<th className="px-4 py-3 font-semibold text-center">Actions</th>
+											<th className="w-10 px-2 py-3 font-semibold">#</th>
+											<th className="w-32 px-2 py-3 font-semibold">Patient ID</th>
+											<th className="w-28 px-2 py-3 font-semibold">Name</th>
+											<th className="w-24 px-2 py-3 font-semibold">Department</th>
+											<th className="w-20 px-2 py-3 font-semibold">Gender</th>
+											<th className="w-28 px-2 py-3 font-semibold">Phone</th>
+											<th className="w-32 px-2 py-3 font-semibold">Assigned Therapist</th>
+											<th className="w-24 px-2 py-3 font-semibold">Status</th>
+											<th className="w-36 px-2 py-3 font-semibold">Registered</th>
+											<th className="w-24 px-2 py-3 font-semibold text-center">Actions</th>
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
 										{filteredPatients.map(({ patient, index, id }, row) => (
 											<tr key={`${patient.patientId}-${id}`}>
-												<td className="px-4 py-4">
+												<td className="px-2 py-4">
 													<input
 														type="checkbox"
 														checked={selectedPatientIds.has(id)}
@@ -1210,17 +1425,34 @@ export default function Patients() {
 														className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
 													/>
 												</td>
-												<td className="px-4 py-4 text-xs text-slate-500">{row + 1}</td>
-												<td className="px-4 py-4 text-sm font-semibold text-slate-800">{patient.patientId || '—'}</td>
-												<td className="px-4 py-4 text-sm text-slate-700">{patient.name || 'Unnamed patient'}</td>
-												<td className="px-4 py-4 text-sm text-slate-600">{formatDate(patient.dob)}</td>
-												<td className="px-4 py-4 text-sm text-slate-600">{patient.gender || '—'}</td>
-												<td className="px-4 py-4 text-sm text-slate-600">{patient.phone || '—'}</td>
-												<td className="px-4 py-4 text-sm text-slate-600">{patient.email || '—'}</td>
-												<td className="px-4 py-4">
+												<td className="px-2 py-4 text-xs text-slate-500">{row + 1}</td>
+												<td className="px-2 py-4 text-xs font-semibold text-slate-800" title={patient.patientId || '—'}>
+													{formatPatientIdShort(patient.patientId, 8)}
+												</td>
+												<td className="px-2 py-4 text-xs text-slate-700">
+													<div className="truncate" title={patient.name || 'Unnamed patient'}>
+														{patient.name || 'Unnamed patient'}
+													</div>
+													{(patient as any).deleted && (
+														<span className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+															Past
+														</span>
+													)}
+												</td>
+												<td className="px-2 py-4 text-xs text-slate-600 truncate">
+													{((patient as any).patientType || '').toUpperCase() || '—'}
+												</td>
+												<td className="px-2 py-4 text-xs text-slate-600">{patient.gender || '—'}</td>
+												<td className="px-2 py-4 text-xs text-slate-600 truncate" title={patient.phone || '—'}>
+													{patient.phone || '—'}
+												</td>
+												<td className="px-2 py-4 text-xs text-slate-600 truncate" title={(patient as any).assignedDoctor || '—'}>
+													{(patient as any).assignedDoctor || '—'}
+												</td>
+												<td className="px-2 py-4">
 													<span
 														className={[
-															'badge-base px-3 py-1',
+															'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
 															patient.status === 'completed'
 															? 'bg-emerald-100 text-emerald-700'
 															: patient.status === 'ongoing'
@@ -1233,33 +1465,33 @@ export default function Patients() {
 														{patient.status.charAt(0).toUpperCase() + patient.status.slice(1)}
 													</span>
 												</td>
-												<td className="px-4 py-4 text-xs text-slate-500">{formatDateTime(patient.registeredAt)}</td>
-												<td className="px-4 py-4 text-center">
-													<div className="inline-flex items-center gap-2">
+												<td className="px-2 py-4 text-[10px] text-slate-500 truncate" title={showDeletedPatients && (patient as any).deletedAt 
+													? `Removed: ${formatDateTime((patient as any).deletedAt)}`
+													: formatDateTime(patient.registeredAt)}>
+													{showDeletedPatients && (patient as any).deletedAt 
+														? `Removed: ${formatDateTime((patient as any).deletedAt)}`
+														: formatDateTime(patient.registeredAt)}
+												</td>
+												<td className="px-2 py-4 text-center">
+													<div className="inline-flex items-center gap-1">
 														<button
 															type="button"
 															onClick={() => setSelectedPatientId(id)}
-															className="inline-flex items-center gap-2 rounded-full border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700 transition hover:border-sky-300 hover:text-sky-800 focus-visible:border-sky-300 focus-visible:text-sky-800 focus-visible:outline-none"
+															className="inline-flex items-center justify-center rounded-full border border-sky-200 px-1.5 py-1 text-sky-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800 focus-visible:border-sky-300 focus-visible:text-sky-800 focus-visible:outline-none"
+															title="View profile"
 														>
 															<i className="fas fa-user text-[10px]" aria-hidden="true" />
-															View profile
 														</button>
-														<button
-															type="button"
-															onClick={() => openDialogForEdit(id)}
-															className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800 focus-visible:border-slate-300 focus-visible:text-slate-800 focus-visible:outline-none"
-														>
-															<i className="fas fa-pen text-[10px]" aria-hidden="true" />
-															Edit
-														</button>
-														<button
-															type="button"
-															onClick={() => handleDelete(id)}
-															className="inline-flex items-center gap-2 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 transition hover:border-rose-300 hover:text-rose-700 focus-visible:border-rose-300 focus-visible:text-rose-700 focus-visible:outline-none"
-														>
-															<i className="fas fa-trash text-[10px]" aria-hidden="true" />
-															Delete
-														</button>
+														{!showDeletedPatients && !(patient as any).deleted && (
+															<button
+																type="button"
+																onClick={() => handleDeleteClick(id)}
+																className="inline-flex items-center justify-center rounded-full border border-rose-200 px-1.5 py-1 text-rose-600 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 focus-visible:border-rose-300 focus-visible:text-rose-700 focus-visible:outline-none"
+																title="Delete"
+															>
+																<i className="fas fa-trash text-[10px]" aria-hidden="true" />
+															</button>
+														)}
 													</div>
 												</td>
 											</tr>
@@ -1470,39 +1702,62 @@ export default function Patients() {
 
 								{/* Sidebar */}
 								<aside className="space-y-4">
+									{/* Billing Info */}
 									<div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-										<h3 className="text-sm font-semibold text-slate-800">Session overview</h3>
-										<p className="mt-2 text-xs text-slate-600">
-											Summary cards and charts will appear here once appointments are connected.
-										</p>
-										<div className="mt-4 grid gap-3 text-center sm:grid-cols-2">
-											<div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-												<p className="text-[11px] font-semibold text-slate-500">Completed</p>
-												<p className="mt-1 text-xl font-bold text-slate-900">—</p>
+										<h3 className="text-sm font-semibold text-slate-800">Billing</h3>
+										<dl className="mt-3 space-y-2 text-xs">
+											<div className="flex justify-between">
+												<dt className="font-semibold text-slate-500">Total Amount</dt>
+												<dd className="font-semibold text-slate-900">₹{billingSummary.totalAmount.toLocaleString()}</dd>
 											</div>
-											<div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-												<p className="text-[11px] font-semibold text-slate-500">Upcoming</p>
-												<p className="mt-1 text-xl font-bold text-slate-900">—</p>
+											<div className="flex justify-between">
+												<dt className="font-semibold text-slate-500">Amount Paid</dt>
+												<dd className="font-semibold text-emerald-700">₹{billingSummary.totalPaid.toLocaleString()}</dd>
 											</div>
-										</div>
+											<div className="flex justify-between">
+												<dt className="font-semibold text-slate-500">Amount Pending</dt>
+												<dd className="font-semibold text-amber-700">₹{billingSummary.totalPending.toLocaleString()}</dd>
+											</div>
+										</dl>
 									</div>
 
+									{/* Next Session */}
+									<div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+										<h3 className="text-sm font-semibold text-slate-800">Next Session</h3>
+										{nextSession ? (
+											<div className="mt-3 text-xs text-slate-600">
+												<p className="font-semibold text-slate-900">{formatDate(nextSession.date)}</p>
+												{nextSession.time && (
+													<p className="mt-1 text-slate-500">{nextSession.time}</p>
+												)}
+											</div>
+										) : (
+											<p className="mt-3 text-xs text-slate-500">No upcoming sessions</p>
+										)}
+									</div>
+
+									{/* Feedback */}
 									<div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-										<h3 className="text-sm font-semibold text-slate-800">Quick actions</h3>
-										<div className="mt-3 space-y-2">
-											<button type="button" onClick={handleProfileAction('Schedule follow-up')} className="btn-tertiary w-full justify-start">
-												<i className="fas fa-calendar-plus text-xs" aria-hidden="true" />
-												Schedule follow-up
-											</button>
-											<button type="button" onClick={handleProfileAction('Share report')} className="btn-tertiary w-full justify-start">
-												<i className="fas fa-share text-xs" aria-hidden="true" />
-												Share report
-											</button>
-											<button type="button" onClick={handleProfileAction('Transfer patient')} className="btn-tertiary w-full justify-start">
-												<i className="fas fa-exchange-alt text-xs" aria-hidden="true" />
-												Transfer patient
-											</button>
-										</div>
+										<h3 className="text-sm font-semibold text-slate-800">Patient Feedback</h3>
+										<p className="mt-3 text-xs text-slate-500">
+											{(selectedPatient as any)?.feedback || 'No feedback available'}
+										</p>
+									</div>
+
+									{/* Reports */}
+									<div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+										<h3 className="text-sm font-semibold text-slate-800">Reports</h3>
+										<button
+											type="button"
+											onClick={() => {
+												setShowReportModal(true);
+												setReportModalPatientId(selectedPatient?.patientId || null);
+											}}
+											className="mt-3 w-full inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+										>
+											<i className="fas fa-file-medical mr-2" aria-hidden="true" />
+											View Reports
+										</button>
 									</div>
 								</aside>
 							</div>
@@ -1961,6 +2216,109 @@ export default function Patients() {
 					</div>
 				)}
 			</div>
+
+			{/* Delete Confirmation Modal */}
+			{deleteConfirmation.patient && (
+				<div
+					role="dialog"
+					aria-modal="true"
+					className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 px-4 py-6"
+					onClick={handleDeleteCancel}
+				>
+					<div
+						className="w-full max-w-md rounded-2xl bg-white shadow-2xl"
+						onClick={event => event.stopPropagation()}
+					>
+						<div className="px-6 py-5 border-b border-slate-200">
+							<div className="flex items-center gap-3">
+								<div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+									<i className="fas fa-exclamation-triangle text-rose-600 text-xl" aria-hidden="true" />
+								</div>
+								<div>
+									<h3 className="text-lg font-semibold text-slate-900">Delete Patient</h3>
+									<p className="text-sm text-slate-600">This action cannot be undone</p>
+								</div>
+							</div>
+						</div>
+
+						<div className="px-6 py-5 space-y-4">
+							<div className="rounded-lg bg-rose-50 border border-rose-200 p-4">
+								<p className="text-sm font-medium text-rose-900 mb-2">
+									You are about to delete:
+								</p>
+								<p className="text-base font-semibold text-slate-900">
+									{deleteConfirmation.patient.name}
+								</p>
+								<p className="text-sm text-slate-600 mt-1">
+									ID: {deleteConfirmation.patient.patientId}
+								</p>
+							</div>
+
+							<div>
+								<label className="block text-sm font-semibold text-slate-700 mb-2">
+									To confirm, please type the patient's name:
+									<span className="font-mono text-blue-600 ml-2">
+										{deleteConfirmation.patient.name}
+									</span>
+								</label>
+								<input
+									type="text"
+									value={deleteConfirmation.nameInput}
+									onChange={event => setDeleteConfirmation(prev => ({ ...prev, nameInput: event.target.value }))}
+									placeholder="Enter patient name"
+									className="w-full rounded-lg border-2 border-slate-300 px-4 py-3 text-sm text-slate-900 transition focus:border-rose-500 focus:outline-none focus:ring-4 focus:ring-rose-100"
+									autoFocus
+									onKeyDown={event => {
+										if (event.key === 'Enter' && deleteConfirmation.nameInput.trim().toLowerCase() === deleteConfirmation.patient?.name.trim().toLowerCase()) {
+											handleDeleteConfirm();
+										}
+									}}
+								/>
+								{deleteConfirmation.nameInput.trim() && deleteConfirmation.nameInput.trim().toLowerCase() !== deleteConfirmation.patient?.name.trim().toLowerCase() && (
+									<p className="mt-2 text-sm text-rose-600 flex items-center gap-2">
+										<i className="fas fa-exclamation-circle" aria-hidden="true" />
+										The name you entered does not match. Please type the patient name exactly as shown.
+									</p>
+								)}
+							</div>
+						</div>
+
+						<div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+							<button
+								type="button"
+								onClick={handleDeleteCancel}
+								className="px-4 py-2 text-sm font-semibold text-slate-700 rounded-lg border border-slate-300 hover:bg-slate-50 transition focus:outline-none focus:ring-2 focus:ring-slate-300"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleDeleteConfirm}
+								disabled={
+									deleteConfirmation.nameInput.trim().toLowerCase() !== deleteConfirmation.patient?.name.trim().toLowerCase()
+								}
+								className="px-4 py-2 text-sm font-semibold text-white rounded-lg bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 transition focus:outline-none focus:ring-4 focus:ring-rose-200 disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								<span className="flex items-center gap-2">
+									<i className="fas fa-trash" aria-hidden="true" />
+									Delete Patient
+								</span>
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Report Modal */}
+			<ReportModal
+				isOpen={showReportModal}
+				patientId={reportModalPatientId}
+				initialTab="report"
+				onClose={() => {
+					setShowReportModal(false);
+					setReportModalPatientId(null);
+				}}
+			/>
 		</div>
 	);
 }

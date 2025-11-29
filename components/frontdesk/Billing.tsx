@@ -1396,7 +1396,6 @@ export default function Billing() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Front Desk"
 					title="Billing & Payments"
 					description="Track invoices, process payments, and generate receipts for completed appointments."
 					statusCard={{

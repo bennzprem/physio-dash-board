@@ -763,7 +763,6 @@ export default function Reports() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Front Desk"
 					title="Patient Reports"
 					description="View and manage comprehensive physiotherapy reports with ROM assessments for all registered patients."
 				/>

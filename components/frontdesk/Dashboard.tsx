@@ -331,7 +331,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				{
 					label: 'Patients',
 					data: [pendingCount, ongoingCount, completedCount],
-					backgroundColor: ['#fbbf24', '#38bdf8', '#34d399'],
+					backgroundColor: [
+						'rgba(251, 191, 36, 0.85)',   // Pending - Amber-400 (matches status-badge-pending: amber)
+						'rgba(14, 165, 233, 0.85)',   // Ongoing - Sky-500 (matches status-badge-ongoing: sky)
+						'rgba(16, 185, 129, 0.85)',   // Completed - Emerald-500 (matches status-badge-completed: emerald)
+					],
 					borderColor: '#ffffff',
 					borderWidth: 1,
 				},
@@ -459,10 +463,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
 
 	return (
-		<div className="min-h-svh bg-slate-50 px-6 py-10">
+		<div className="min-h-svh bg-purple-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Front Desk"
 					title="Front Desk Dashboard"
 					description="Stay on top of patient flow and appointment scheduling. Use the cards below to drill into the latest registries, statuses, and appointment analytics."
 					statusCard={{

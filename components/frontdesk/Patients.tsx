@@ -410,6 +410,8 @@ export default function Patients() {
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [deletingId, setDeletingId] = useState<string | null>(null);
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
+	const [showDeletedPatients, setShowDeletedPatients] = useState(false);
+	const [deleteConfirmation, setDeleteConfirmation] = useState<{ patient: FrontdeskPatient | null; nameInput: string }>({ patient: null, nameInput: '' });
 	const [formState, setFormState] = useState<Omit<FrontdeskPatient, 'id' | 'registeredAt'>>({
 		patientId: '',
 		name: '',
@@ -496,6 +498,7 @@ export default function Patients() {
 				const mapped = snapshot.docs.map(docSnap => {
 					const data = docSnap.data() as Record<string, unknown>;
 					const created = (data.registeredAt as Timestamp | undefined)?.toDate?.();
+					const deleted = (data.deletedAt as Timestamp | undefined)?.toDate?.();
 					return {
 						id: docSnap.id,
 						patientId: data.patientId ? String(data.patientId) : '',
@@ -540,7 +543,9 @@ export default function Patients() {
 									? Number(data.remainingSessions)
 									: undefined,
 						readyForNewAppointment: data.readyForNewAppointment === true,
-					} as FrontdeskPatient;
+						deleted: data.deleted === true,
+						deletedAt: deleted ? deleted.toISOString() : (data.deletedAt as string | undefined) || null,
+					} as FrontdeskPatient & { deleted?: boolean; deletedAt?: string | null };
 				});
 				setPatients(mapped);
 				setLoading(false);
@@ -666,6 +671,11 @@ export default function Patients() {
 	const filteredPatients = useMemo(() => {
 		const query = searchTerm.trim().toLowerCase();
 		return patients.filter(patient => {
+			// Filter by deleted status
+			const isDeleted = (patient as any).deleted === true;
+			if (showDeletedPatients && !isDeleted) return false;
+			if (!showDeletedPatients && isDeleted) return false;
+
 			const matchesSearch =
 				!query ||
 				(patient.name || '').toLowerCase().includes(query) ||
@@ -675,7 +685,7 @@ export default function Patients() {
 			const matchesStatus = statusFilter === 'all' || patient.status === statusFilter;
 			return matchesSearch && matchesStatus;
 		});
-	}, [patients, searchTerm, statusFilter]);
+	}, [patients, searchTerm, statusFilter, showDeletedPatients]);
 
 	// Check if patient has any appointments (for first booking check)
 	// Button should only show for patients who haven't done their first booking
@@ -1880,103 +1890,72 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 		}
 	};
 
-	const handleDelete = async (id: string) => {
+	const handleDeleteClick = (id: string) => {
 		const patient = patients.find(p => p.id === id);
 		if (!patient) return;
+		setDeleteConfirmation({ patient, nameInput: '' });
+	};
 
-		const confirmed = window.confirm(
-			`Delete patient "${patient.name}" (ID: ${patient.patientId})? This will also delete all appointments for this patient. This action cannot be undone.`
-		);
-		if (!confirmed) return;
+	const handleDeleteConfirm = async () => {
+		if (!deleteConfirmation.patient || !deleteConfirmation.patient.id) return;
 
-		setDeletingId(id);
+		const patient = deleteConfirmation.patient;
+		const enteredName = deleteConfirmation.nameInput.trim();
+		const correctName = patient.name.trim();
+
+		// Check if the entered name matches exactly (case-insensitive)
+		if (enteredName.toLowerCase() !== correctName.toLowerCase()) {
+			return;
+		}
+
+		setDeletingId(patient.id);
+		setDeleteConfirmation({ patient: null, nameInput: '' });
+
 		try {
-			const deleteDocsByQuery = async (targetQuery: any) => {
-				const snapshot = await getDocs(targetQuery);
-				if (snapshot.empty) return 0;
-				const docs = snapshot.docs;
-				const batchSize = 500;
-				for (let index = 0; index < docs.length; index += batchSize) {
-					const batch = writeBatch(db);
-					docs.slice(index, index + batchSize).forEach(docSnap => {
-						batch.delete(docSnap.ref);
-					});
-					await batch.commit();
-				}
-				return docs.length;
-			};
-
-			// First, delete all appointments for this patient (query by patientId)
+			// First, delete all appointments for this patient
 			const appointmentsQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', patient.patientId)
 			);
 			const appointmentsSnapshot = await getDocs(appointmentsQuery);
 			
-			// Also check for appointments by patient name (fallback)
-			const appointmentsByNameQuery = query(
-				collection(db, 'appointments'),
-				where('patient', '==', patient.name)
-			);
-			const appointmentsByNameSnapshot = await getDocs(appointmentsByNameQuery);
-			
-			// Combine and deduplicate appointment references
-			const allAppointmentRefs = new Set<string>();
-
-			const collectAppointmentRefs = (docs: typeof appointmentsSnapshot.docs) => {
-				docs.forEach(docSnap => {
-					allAppointmentRefs.add(docSnap.id);
+			if (appointmentsSnapshot.docs.length > 0) {
+				const batch = writeBatch(db);
+				appointmentsSnapshot.docs.forEach(appointmentDoc => {
+					batch.delete(appointmentDoc.ref);
 				});
-			};
-
-			collectAppointmentRefs(appointmentsSnapshot.docs);
-			collectAppointmentRefs(appointmentsByNameSnapshot.docs);
-			
-			if (allAppointmentRefs.size > 0) {
-				// Use batch write for better performance and atomicity
-				// Firestore batch limit is 500, so we may need multiple batches
-				const appointmentIds = Array.from(allAppointmentRefs);
-				const batchSize = 500;
-				
-				for (let i = 0; i < appointmentIds.length; i += batchSize) {
-					const batch = writeBatch(db);
-					const batchIds = appointmentIds.slice(i, i + batchSize);
-					
-					batchIds.forEach(appointmentId => {
-						batch.delete(doc(db, 'appointments', appointmentId));
-					});
-					
-					await batch.commit();
-				}
-				
-				console.log(`Deleted ${allAppointmentRefs.size} appointment(s) for patient ${patient.patientId} (${patient.name})`);
+				await batch.commit();
+				console.log(`Deleted ${appointmentsSnapshot.docs.length} appointment(s) for patient ${patient.patientId}`);
 			}
 
-			// Delete reports, transfer records, and notifications tied to this patient
-			await Promise.all([
-				deleteDocsByQuery(query(collection(db, 'reportVersions'), where('patientId', '==', patient.patientId))),
-				deleteDocsByQuery(query(collection(db, 'transferRequests'), where('patientId', '==', patient.patientId))),
-				deleteDocsByQuery(query(collection(db, 'transferHistory'), where('patientId', '==', patient.patientId))),
-				deleteDocsByQuery(query(collection(db, 'notifications'), where('metadata.patientId', '==', patient.patientId))),
-			]);
+			// Soft delete the patient (set deleted flag instead of actually deleting)
+			await updateDoc(doc(db, 'patients', patient.id), {
+				deleted: true,
+				deletedAt: serverTimestamp(),
+				status: 'cancelled',
+			});
 
-			// Delete patient subcollections (notes, attachments, history)
-			if (patient.id) {
-				const subcollections = ['notes', 'attachments', 'history'];
-				for (const subcollectionName of subcollections) {
-					await deleteDocsByQuery(query(collection(db, 'patients', patient.id, subcollectionName)));
-				}
-			}
+			// Show success message
+			const appointmentCount = appointmentsSnapshot.docs.length;
+			const appointmentText = appointmentCount === 1 ? 'appointment' : 'appointments';
+			alert(
+				`✅ Patient "${patient.name}" (ID: ${patient.patientId}) has been successfully deleted.\n\n` +
+				`${appointmentCount > 0 ? `${appointmentCount} associated ${appointmentText} ${appointmentCount === 1 ? 'was' : 'were'} also deleted. ` : ''}` +
+				`The patient has been moved to past patients.`
+			);
 
-			// Then delete the patient
-			await deleteDoc(doc(db, 'patients', id));
-			alert(`Patient "${patient.name}" and all associated records have been deleted successfully.`);
+			// Automatically switch to past patients view
+			setShowDeletedPatients(true);
 		} catch (error) {
 			console.error('Failed to delete patient', error);
-			alert(`Failed to delete patient: ${error instanceof Error ? error.message : 'Unknown error'}`);
+			alert(`❌ Failed to delete patient: ${error instanceof Error ? error.message : 'Unknown error'}`);
 		} finally {
 			setDeletingId(null);
 		}
+	};
+
+	const handleDeleteCancel = () => {
+		setDeleteConfirmation({ patient: null, nameInput: '' });
 	};
 
 	// Handle opening report modal
@@ -2136,7 +2115,6 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Front Desk"
 					title="Patient Management"
 					description="View, edit, and manage patient records. Update patient information and remove records as needed."
 					actions={
@@ -2375,7 +2353,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 																	onClick={event => {
 																		event.stopPropagation();
 																		setOpenMenuId(null);
-																		handleDelete(patient.id!);
+																		handleDeleteClick(patient.id!);
 																	}}
 																	disabled={deletingId === patient.id}
 																	className="flex w-full items-center gap-2 px-4 py-2 text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -3506,6 +3484,98 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 				initialTab={reportModalInitialTab}
 				onClose={handleCloseReportModal}
 			/>
+
+			{/* Delete Confirmation Modal */}
+			{deleteConfirmation.patient && (
+				<div
+					role="dialog"
+					aria-modal="true"
+					className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 px-4 py-6"
+					onClick={handleDeleteCancel}
+				>
+					<div
+						className="w-full max-w-md rounded-2xl bg-white shadow-2xl"
+						onClick={event => event.stopPropagation()}
+					>
+						<div className="px-6 py-5 border-b border-slate-200">
+							<div className="flex items-center gap-3">
+								<div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+									<i className="fas fa-exclamation-triangle text-rose-600 text-xl" aria-hidden="true" />
+								</div>
+								<div>
+									<h3 className="text-lg font-semibold text-slate-900">Delete Patient</h3>
+									<p className="text-sm text-slate-600">This action cannot be undone</p>
+								</div>
+							</div>
+						</div>
+
+						<div className="px-6 py-5 space-y-4">
+							<div className="rounded-lg bg-rose-50 border border-rose-200 p-4">
+								<p className="text-sm font-medium text-rose-900 mb-2">
+									You are about to delete:
+								</p>
+								<p className="text-base font-semibold text-slate-900">
+									{deleteConfirmation.patient.name}
+								</p>
+								<p className="text-sm text-slate-600 mt-1">
+									ID: {deleteConfirmation.patient.patientId}
+								</p>
+							</div>
+
+							<div>
+								<label className="block text-sm font-semibold text-slate-700 mb-2">
+									To confirm, please type the patient's name:
+									<span className="font-mono text-blue-600 ml-2">
+										{deleteConfirmation.patient.name}
+									</span>
+								</label>
+								<input
+									type="text"
+									value={deleteConfirmation.nameInput}
+									onChange={event => setDeleteConfirmation(prev => ({ ...prev, nameInput: event.target.value }))}
+									placeholder="Enter patient name"
+									className="w-full rounded-lg border-2 border-slate-300 px-4 py-3 text-sm text-slate-900 transition focus:border-rose-500 focus:outline-none focus:ring-4 focus:ring-rose-100"
+									autoFocus
+									onKeyDown={event => {
+										if (event.key === 'Enter' && deleteConfirmation.nameInput.trim().toLowerCase() === deleteConfirmation.patient?.name.trim().toLowerCase()) {
+											handleDeleteConfirm();
+										}
+									}}
+								/>
+								{deleteConfirmation.nameInput.trim() && deleteConfirmation.nameInput.trim().toLowerCase() !== deleteConfirmation.patient?.name.trim().toLowerCase() && (
+									<p className="mt-2 text-sm text-rose-600 flex items-center gap-2">
+										<i className="fas fa-exclamation-circle" aria-hidden="true" />
+										The name you entered does not match. Please type the patient name exactly as shown.
+									</p>
+								)}
+							</div>
+						</div>
+
+						<div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+							<button
+								type="button"
+								onClick={handleDeleteCancel}
+								className="px-4 py-2 text-sm font-semibold text-slate-700 rounded-lg border border-slate-300 hover:bg-slate-50 transition focus:outline-none focus:ring-2 focus:ring-slate-300"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleDeleteConfirm}
+								disabled={
+									deleteConfirmation.nameInput.trim().toLowerCase() !== deleteConfirmation.patient?.name.trim().toLowerCase()
+								}
+								className="px-4 py-2 text-sm font-semibold text-white rounded-lg bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 transition focus:outline-none focus:ring-4 focus:ring-rose-200 disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								<span className="flex items-center gap-2">
+									<i className="fas fa-trash" aria-hidden="true" />
+									Delete Patient
+								</span>
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 
 		</div>
 	);

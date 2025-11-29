@@ -873,7 +873,6 @@ export default function Appointments() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Admin"
 					title="Appointments"
 					description="Monitor upcoming visits and assign clinical team members to each patient."
 					actions={

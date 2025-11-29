@@ -311,10 +311,23 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				{
 					label: 'Appointments',
 					data: dayBuckets.map(bucket => bucket.count),
-					borderColor: '#0ea5e9',
-					backgroundColor: 'rgba(14, 165, 233, 0.2)',
+					borderColor: '#3b82f6',
+					backgroundColor: 'rgba(59, 130, 246, 0.15)',
 					fill: true,
-					tension: 0.3,
+					tension: 0.4,
+					pointRadius: 5,
+					pointHoverRadius: 7,
+					pointBackgroundColor: '#ffffff',
+					pointBorderColor: '#3b82f6',
+					pointBorderWidth: 2,
+					pointHoverBackgroundColor: '#3b82f6',
+					pointHoverBorderColor: '#ffffff',
+					pointHoverBorderWidth: 3,
+					borderWidth: 3,
+					shadowOffsetX: 0,
+					shadowOffsetY: 4,
+					shadowBlur: 10,
+					shadowColor: 'rgba(59, 130, 246, 0.3)',
 				},
 			],
 		};
@@ -332,9 +345,16 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				{
 					label: 'Patients',
 					data: [pendingCount, ongoingCount, completedCount],
-					backgroundColor: ['#fbbf24', '#38bdf8', '#34d399'],
+					backgroundColor: [
+						'rgba(251, 191, 36, 0.85)',   // Pending - Amber-400 (matches status-badge-pending: amber)
+						'rgba(14, 165, 233, 0.85)',   // Ongoing - Sky-500 (matches status-badge-ongoing: sky)
+						'rgba(16, 185, 129, 0.85)',   // Completed - Emerald-500 (matches status-badge-completed: emerald)
+					],
 					borderColor: '#ffffff',
-					borderWidth: 1,
+					borderWidth: 3,
+					hoverBorderWidth: 4,
+					hoverOffset: 8,
+					spacing: 2,
 				},
 			],
 		};
@@ -353,9 +373,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				{
 					label: 'Active appointments',
 					data,
-					backgroundColor: hasData ? 'rgba(14, 165, 233, 0.4)' : 'rgba(148, 163, 184, 0.4)',
-					borderColor: hasData ? '#0ea5e9' : '#94a3b8',
-					borderWidth: 1,
+					backgroundColor: hasData ? 'rgba(59, 130, 246, 0.5)' : 'rgba(148, 163, 184, 0.4)',
+					borderColor: hasData ? '#3b82f6' : '#94a3b8',
+					borderWidth: 2,
+					borderRadius: 8,
+					borderSkipped: false,
+					barThickness: 'flex' as const,
+					maxBarThickness: 50,
 				},
 			],
 		};
@@ -368,13 +392,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	};
 
 	const ICON_WRAPPER =
-		'flex h-12 w-12 items-center justify-center rounded-xl bg-sky-100 text-sky-600 transition group-hover:bg-sky-600 group-hover:text-white group-focus-visible:bg-sky-600 group-focus-visible:text-white';
+		'flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600 transition group-hover:bg-gradient-to-r group-hover:from-blue-700 group-hover:via-blue-600 group-hover:to-blue-500 group-hover:text-white group-focus-visible:bg-gradient-to-r group-focus-visible:from-blue-700 group-focus-visible:via-blue-600 group-focus-visible:to-blue-500 group-focus-visible:text-white';
 
 	return (
-		<div className="min-h-svh bg-slate-50 px-6 py-10">
+		<div className="min-h-svh bg-purple-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Admin"
 					title="Admin Dashboard"
 					description="Manage staff, monitor operations, and jump into core tooling without leaving this workspace."
 					statusCard={{
@@ -385,21 +408,21 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 									<img
 										src={userProfile.profileImage}
 										alt={userProfile.userName || 'User'}
-										className="h-10 w-10 rounded-full object-cover border-2 border-sky-200 cursor-pointer hover:border-sky-400 transition"
+										className="h-10 w-10 rounded-full object-cover border-2 border-blue-300 cursor-pointer hover:border-blue-500 transition"
 										onClick={() => onNavigate && onNavigate('#profile')}
 										title="Click to view profile"
 									/>
 								) : (
 									<div 
-										className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 border-2 border-sky-200 cursor-pointer hover:border-sky-400 transition"
+										className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-200 border-2 border-blue-300 cursor-pointer hover:border-blue-500 transition"
 										onClick={() => onNavigate && onNavigate('#profile')}
 										title="Click to view profile"
 									>
-										<i className="fas fa-user text-sky-600 text-sm" aria-hidden="true" />
+										<i className="fas fa-user text-blue-700 text-sm" aria-hidden="true" />
 									</div>
 								)}
 								<span 
-									className="cursor-pointer hover:text-sky-600 transition"
+									className="cursor-pointer hover:text-blue-700 transition text-blue-900 font-semibold"
 									onClick={() => onNavigate && onNavigate('#profile')}
 									title="Click to view profile"
 								>
@@ -416,13 +439,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				/>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-blue-200" />
 
 				{/* Quick Actions Section */}
 				<section>
 					<div className="mb-6">
-						<h2 className="text-xl font-semibold text-slate-900">Quick Actions</h2>
-						<p className="mt-1 text-sm text-slate-500">
+						<h2 className="text-xl font-semibold text-blue-900">Quick Actions</h2>
+						<p className="mt-1 text-sm text-blue-700">
 							Access core management tools and system functions
 						</p>
 					</div>
@@ -435,16 +458,16 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 							key={link.href}
 							type="button"
 							onClick={() => handleQuickLinkClick(link.href)}
-							className="group card-base gap-3"
+							className="group rounded-3xl bg-white border border-blue-200 px-6 py-5 shadow-lg hover:shadow-blue-200 transition-all hover:scale-[1.02] gap-3 flex flex-col"
 						>
 								<span className={ICON_WRAPPER} aria-hidden="true">
 									<i className={link.icon} />
 								</span>
 								<div>
-									<h3 className="text-lg font-semibold text-slate-900">{link.title}</h3>
-									<p className="mt-1 text-sm text-slate-500">{link.summary}</p>
+									<h3 className="text-lg font-semibold text-blue-900">{link.title}</h3>
+									<p className="mt-1 text-sm text-blue-700">{link.summary}</p>
 								</div>
-								<span className="mt-auto inline-flex items-center text-sm font-semibold text-sky-600 group-hover:text-sky-700 group-focus-visible:text-sky-700">
+								<span className="mt-auto inline-flex items-center text-sm font-semibold text-blue-600 group-hover:text-blue-700 group-focus-visible:text-blue-700">
 									Open <i className="fas fa-arrow-right ml-2 text-xs" aria-hidden="true" />
 								</span>
 							</button>
@@ -453,82 +476,88 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-blue-200" />
 
 				{/* Analytics Section */}
 				<section>
-					<DashboardWidget title="Analytics Overview" icon="fas fa-chart-line" collapsible className="space-y-6">
-						<p className="text-sm text-slate-500">
+					<div className="rounded-3xl bg-white border border-blue-200 p-6 shadow-lg space-y-6">
+						<div className="flex items-center justify-between">
+							<div>
+								<h2 className="text-xl font-semibold text-blue-900">Analytics Overview</h2>
+								<p className="mt-1 text-sm text-blue-700">
 							Visualize system-wide metrics, patient distribution, and team workload in real time.
 						</p>
+							</div>
+							<i className="fas fa-chart-line text-blue-600 text-2xl" aria-hidden="true" />
+						</div>
 						<div className="grid gap-6 lg:grid-cols-2">
-							<div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-								<p className="text-sm font-semibold text-slate-800">Weekly Appointment Trend</p>
-								<p className="text-xs text-slate-500">Includes the last 7 days of confirmed sessions.</p>
-								<div className="mt-4">
+							<div className="rounded-2xl border border-blue-200 bg-white p-5 shadow-lg hover:shadow-xl transition-shadow duration-300">
+								<p className="text-sm font-semibold text-blue-900 mb-1">Weekly Appointment Trend</p>
+								<p className="text-xs text-blue-700 mb-4">Includes the last 7 days of confirmed sessions.</p>
+								<div className="mt-2">
 									<StatsChart type="line" data={appointmentTrendData} height={260} />
 								</div>
 							</div>
 							<div className="grid gap-6 sm:grid-cols-2">
-								<div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-									<p className="text-sm font-semibold text-slate-800">Patient Status Mix</p>
-									<p className="text-xs text-slate-500">Pending vs. ongoing vs. completed.</p>
-									<div className="mt-4">
+								<div className="rounded-2xl border border-blue-200 bg-white p-5 shadow-lg hover:shadow-xl transition-shadow duration-300">
+									<p className="text-sm font-semibold text-blue-900 mb-1">Patient Status Mix</p>
+									<p className="text-xs text-blue-700 mb-4">Pending vs. ongoing vs. completed.</p>
+									<div className="mt-2">
 										<StatsChart type="doughnut" data={statusDistributionData} height={220} />
 									</div>
 								</div>
-								<div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-									<p className="text-sm font-semibold text-slate-800">Team Workload</p>
-									<p className="text-xs text-slate-500">Active appointments by clinician.</p>
-									<div className="mt-4">
+								<div className="rounded-2xl border border-blue-200 bg-white p-5 shadow-lg hover:shadow-xl transition-shadow duration-300">
+									<p className="text-sm font-semibold text-blue-900 mb-1">Team Workload</p>
+									<p className="text-xs text-blue-700 mb-4">Active appointments by clinician.</p>
+									<div className="mt-2">
 										<StatsChart type="bar" data={staffLoadData} height={220} />
 									</div>
 								</div>
 							</div>
 						</div>
-					</DashboardWidget>
+					</div>
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-blue-200" />
 
 				{/* Operations & Resources Section */}
 				<section>
 					<div className="mb-6">
-						<h2 className="text-xl font-semibold text-slate-900">Operations & Resources</h2>
-						<p className="mt-1 text-sm text-slate-500">
+						<h2 className="text-xl font-semibold text-blue-900">Operations & Resources</h2>
+						<p className="mt-1 text-sm text-blue-700">
 							Monitor daily operations and access helpful resources
 						</p>
 					</div>
 					<div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-						<div className="section-card">
-							<h3 className="text-lg font-semibold text-slate-900">Operational Snapshot</h3>
-							<p className="mt-1 text-sm text-slate-500">
+						<div className="rounded-3xl bg-white border border-blue-200 p-6 shadow-lg">
+							<h3 className="text-lg font-semibold text-blue-900">Operational Snapshot</h3>
+							<p className="mt-1 text-sm text-blue-700">
 								Keep tabs on the day-to-day so handoffs stay smooth across teams.
 							</p>
-							<ul className="mt-4 space-y-3 text-sm text-slate-600">
+							<ul className="mt-4 space-y-3 text-sm text-blue-800">
 								<li className="flex items-start gap-2">
-									<i className="fas fa-user-shield mt-1 text-sky-500" aria-hidden="true" />
+									<i className="fas fa-user-shield mt-1 text-blue-600" aria-hidden="true" />
 									<span>Review pending staff invites to ensure new hires have access on day one.</span>
 								</li>
 								<li className="flex items-start gap-2">
-									<i className="fas fa-file-alt mt-1 text-sky-500" aria-hidden="true" />
+									<i className="fas fa-file-alt mt-1 text-blue-600" aria-hidden="true" />
 									<span>Export the latest patient roster before daily stand-up for quick reference.</span>
 								</li>
 								<li className="flex items-start gap-2">
-									<i className="fas fa-bell mt-1 text-sky-500" aria-hidden="true" />
+									<i className="fas fa-bell mt-1 text-blue-600" aria-hidden="true" />
 									<span>Check calendar notifications for schedule conflicts flagged overnight.</span>
 								</li>
 							</ul>
 						</div>
-						<div className="section-card">
-							<h3 className="text-lg font-semibold text-slate-900">Need A Quick Link?</h3>
-							<ul className="mt-4 space-y-3 text-sm text-slate-600">
+						<div className="rounded-3xl bg-white border border-blue-200 p-6 shadow-lg">
+							<h3 className="text-lg font-semibold text-blue-900">Need A Quick Link?</h3>
+							<ul className="mt-4 space-y-3 text-sm text-blue-800">
 								<li>
 									<button
 										type="button"
 										onClick={() => handleQuickLinkClick('#reports')}
-										className="inline-flex items-center text-sky-600 hover:text-sky-500"
+										className="inline-flex items-center text-blue-600 hover:text-blue-700 transition"
 									>
 										<i className="fas fa-chart-line mr-2 text-xs" aria-hidden="true" />
 										View performance overview
@@ -538,7 +567,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 									<button
 										type="button"
 										onClick={() => handleQuickLinkClick('#billing')}
-										className="inline-flex items-center text-sky-600 hover:text-sky-500"
+										className="inline-flex items-center text-blue-600 hover:text-blue-700 transition"
 									>
 										<i className="fas fa-wallet mr-2 text-xs" aria-hidden="true" />
 										Reconcile outstanding invoices

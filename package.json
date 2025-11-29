@@ -11,7 +11,8 @@
     "start:staging": "cross-env NEXT_PUBLIC_ENVIRONMENT=staging next start",
     "lint": "eslint",
     "test:firebase-connectivity": "node scripts/test-firebase-connectivity.js",
-    "create:admin": "node scripts/create-admin-user.js"
+    "create:admin": "node scripts/create-admin-user.js",
+    "clear:all": "node scripts/clear-all-data.js"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.19",

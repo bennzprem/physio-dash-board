@@ -613,7 +613,6 @@ export default function Register() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Front Desk"
 					title="Register Patient"
 					description="Capture new registrations, generate IDs instantly, and launch appointments without leaving the screen. Everything stays in sync with the legacy Super Admin toolkit."
 				/>

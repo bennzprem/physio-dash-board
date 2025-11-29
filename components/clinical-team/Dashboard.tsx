@@ -412,7 +412,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				{
 					label: 'Patients',
 					data: [pendingCount, ongoingCount, completedCount],
-					backgroundColor: ['#fbbf24', '#38bdf8', '#34d399'],
+					backgroundColor: [
+						'rgba(251, 191, 36, 0.85)',   // Pending - Amber-400 (matches status-badge-pending: amber)
+						'rgba(14, 165, 233, 0.85)',   // Ongoing - Sky-500 (matches status-badge-ongoing: sky)
+						'rgba(16, 185, 129, 0.85)',   // Completed - Emerald-500 (matches status-badge-completed: emerald)
+					],
 					borderColor: '#ffffff',
 					borderWidth: 1,
 				},
@@ -525,7 +529,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					badge="Clinical Team"
 					title={clinicianName ? 'Your Clinical Dashboard' : 'Clinical Team Dashboard'}
 					description="Monitor the patients under your care, review today's sessions, and keep tabs on upcoming follow-ups. All counts update automatically as the front desk registers changes."
 					statusCard={{

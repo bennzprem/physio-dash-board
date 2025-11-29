@@ -606,7 +606,6 @@ export default function SessionTransfer() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-6">
 				<PageHeader
-					badge="Clinical Team"
 					title="Transfer Sessions"
 					description="Transfer appointments (sessions) to other clinical team members based on availability"
 				/>
