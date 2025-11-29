@@ -90,13 +90,12 @@ export default function Calendar() {
 
 	const [selectedDate, setSelectedDate] = useState<string | null>(null);
 	const [modalStatus, setModalStatus] = useState<'all' | string>('all');
-	const [doctorFilter, setDoctorFilter] = useState<'all' | string>('all');
+	const [therapistFilter, setTherapistFilter] = useState<'all' | string>('all');
 	const [currentView, setCurrentView] = useState<string>('dayGridMonth');
 	const [isRescheduling, setIsRescheduling] = useState<string | null>(null);
 
 	const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
 	const calendarRef = useRef<FullCalendar>(null);
-	const [seeding, setSeeding] = useState(false);
 
 	useEffect(() => {
 		let appointmentsLoaded = false;
@@ -221,24 +220,31 @@ export default function Calendar() {
 		return map;
 	}, [patients]);
 
-	// Get unique doctors from appointments for filter
-	const doctorOptions = useMemo(() => {
-		const set = new Set<string>();
-		appointments.forEach(appointment => {
-			if (appointment.doctor) {
-				set.add(appointment.doctor);
-			}
-		});
-		return Array.from(set).sort();
-	}, [appointments]);
+	// Get clinical team members for filter
+	const therapistOptions = useMemo(() => {
+		const clinicalTeamMembers = staff
+			.filter(member => {
+				const role = member.role || '';
+				return (
+					role === 'ClinicalTeam' ||
+					role === 'Physiotherapist' ||
+					role === 'StrengthAndConditioning'
+				) && member.status === 'Active';
+			})
+			.map(member => member.userName)
+			.filter(Boolean)
+			.sort();
+		
+		return clinicalTeamMembers;
+	}, [staff]);
 
-	// Filter appointments by doctor only (show ALL clinical team schedules by default)
+	// Filter appointments by therapist (clinical team member)
 	const filteredAppointments = useMemo(() => {
-		if (doctorFilter === 'all') {
+		if (therapistFilter === 'all') {
 			return appointments;
 		}
-		return appointments.filter(appointment => normalize(appointment.doctor) === normalize(doctorFilter));
-	}, [appointments, doctorFilter]);
+		return appointments.filter(appointment => normalize(appointment.doctor) === normalize(therapistFilter));
+	}, [appointments, therapistFilter]);
 
 	const events = useMemo<CalendarEvent[]>(() => {
 		const mappedEvents = filteredAppointments.map(appointment => {
@@ -493,30 +499,6 @@ export default function Calendar() {
 		}
 	};
 
-	const handleSeedAppointments = async () => {
-		if (!window.confirm('This will create sample appointments for the next 14 days. Continue?')) {
-			return;
-		}
-
-		setSeeding(true);
-		try {
-			const response = await fetch('/api/appointments/seed', {
-				method: 'POST',
-			});
-			const result = await response.json();
-			
-			if (result.success) {
-				alert(`Successfully created ${result.data.count} sample appointments!`);
-			} else {
-				alert(`Failed to seed appointments: ${result.message}`);
-			}
-		} catch (error) {
-			console.error('Failed to seed appointments:', error);
-			alert('Failed to seed appointments. Please try again.');
-		} finally {
-			setSeeding(false);
-		}
-	};
 
 	if (loading) {
 		return (
@@ -532,64 +514,36 @@ export default function Calendar() {
 	}
 
 	return (
-		<div className="min-h-svh bg-slate-50 px-6 py-10">
-			<div className="mx-auto max-w-6xl space-y-10">
-				<PageHeader
-					title="Clinical Team Schedule"
-					description="View all clinical team schedules and appointments. Filter by doctor to focus on specific clinicians."
-					actions={
-						appointments.length === 0 ? (
-							<button
-								type="button"
-								onClick={handleSeedAppointments}
-								disabled={seeding}
-								className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100 disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								{seeding ? (
-									<>
-										<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />
-										Creating...
-									</>
-								) : (
-									<>
-										<i className="fas fa-seedling mr-2 text-xs" aria-hidden="true" />
-										Add Sample Appointments
-									</>
-								)}
-							</button>
-						) : null
-					}
-				/>
+		<div className="space-y-10 px-6 py-6">
+			{appointments.length === 0 && (
+				<div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+					No appointments found. Appointments will appear here once they are created.
+				</div>
+			)}
 
-				{appointments.length === 0 && (
-					<div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-						No appointments found. Appointments will appear here once they are created.
+			{appointments.length > 0 && calendarEvents.length === 0 && (
+				<div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+					Found {appointments.length} appointment(s), but none have valid dates. Please check that appointments have dates in YYYY-MM-DD format.
+				</div>
+			)}
+
+			{calendarEvents.length > 0 && (() => {
+				const earliestEvent = calendarEvents.reduce((earliest, event) => {
+					const eventDate = new Date(event.start);
+					const earliestDate = new Date(earliest.start);
+					return eventDate < earliestDate ? event : earliest;
+				}, calendarEvents[0]);
+				const earliestDate = new Date(earliestEvent.start);
+				const monthName = earliestDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+				
+				return (
+					<div className="rounded-md border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+						💡 <strong>Tip:</strong> Your appointments are in <strong>{monthName}</strong>. Use the navigation arrows or click "Today" to navigate to that month.
 					</div>
-				)}
+				);
+			})()}
 
-				{appointments.length > 0 && calendarEvents.length === 0 && (
-					<div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-						Found {appointments.length} appointment(s), but none have valid dates. Please check that appointments have dates in YYYY-MM-DD format.
-					</div>
-				)}
-
-				{calendarEvents.length > 0 && (() => {
-					const earliestEvent = calendarEvents.reduce((earliest, event) => {
-						const eventDate = new Date(event.start);
-						const earliestDate = new Date(earliest.start);
-						return eventDate < earliestDate ? event : earliest;
-					}, calendarEvents[0]);
-					const earliestDate = new Date(earliestEvent.start);
-					const monthName = earliestDate.toLocaleString('default', { month: 'long', year: 'numeric' });
-					
-					return (
-						<div className="rounded-md border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-							💡 <strong>Tip:</strong> Your appointments are in <strong>{monthName}</strong>. Use the navigation arrows or click "Today" to navigate to that month.
-						</div>
-					);
-				})()}
-
-				{calendarEvents.length > 0 && (
+			{calendarEvents.length > 0 && (
 					<div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-sky-50 px-5 py-4">
 						<div className="flex items-center gap-3">
 							<div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
@@ -623,10 +577,10 @@ export default function Calendar() {
 					</div>
 				)}
 
-				<div className="border-t border-slate-200" />
+			<div className="border-t border-slate-200" />
 
-				<section className="flex flex-col gap-6 lg:flex-row">
-					<div className="flex-1 rounded-2xl border border-slate-200 bg-white p-6 shadow-lg">
+			<section className="flex flex-col gap-6 lg:flex-row">
+				<div className="flex-1 rounded-2xl border border-slate-200 bg-white p-6 shadow-lg">
 						<div className="mb-6 flex flex-wrap items-center justify-between gap-4">
 							<div className="flex items-center gap-2">
 								<button
@@ -711,27 +665,27 @@ export default function Calendar() {
 								</div>
 							</div>
 							<div className="flex items-center gap-2">
-								<label htmlFor="doctor-filter" className="flex items-center gap-2 text-sm font-medium text-slate-700">
+								<label htmlFor="therapist-filter" className="flex items-center gap-2 text-sm font-medium text-slate-700">
 									<i className="fas fa-user-md text-sky-600" aria-hidden="true" />
-									<span>Doctor:</span>
+									<span>Therapist:</span>
 								</label>
 								<select
-									id="doctor-filter"
-									value={doctorFilter}
-									onChange={event => setDoctorFilter(event.target.value)}
+									id="therapist-filter"
+									value={therapistFilter}
+									onChange={event => setTherapistFilter(event.target.value)}
 									className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-sky-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1"
 								>
-									<option value="all">All Doctors</option>
-									{doctorOptions.map(doctor => (
-										<option key={doctor} value={doctor}>
-											{doctor}
+									<option value="all">All Therapists</option>
+									{therapistOptions.map(therapist => (
+										<option key={therapist} value={therapist}>
+											{therapist}
 										</option>
 									))}
 								</select>
 							</div>
 						</div>
-					<div className="[&_.fc-toolbar-title]:text-xl [&_.fc-toolbar-title]:font-bold [&_.fc-toolbar-title]:text-slate-800 [&_.fc-button]:border-slate-300 [&_.fc-button]:bg-white [&_.fc-button]:text-slate-700 [&_.fc-button]:font-medium [&_.fc-button:hover]:border-sky-400 [&_.fc-button:hover]:bg-sky-50 [&_.fc-button:hover]:text-sky-700 [&_.fc-button-active]:bg-sky-100 [&_.fc-button-active]:border-sky-400 [&_.fc-button-active]:text-sky-700 [&_.fc-button-active]:shadow-sm [&_.fc-daygrid-day-number]:text-slate-700 [&_.fc-daygrid-day-number]:font-medium [&_.fc-col-header-cell]:bg-gradient-to-b [&_.fc-col-header-cell]:from-slate-50 [&_.fc-col-header-cell]:to-slate-100 [&_.fc-col-header-cell]:text-slate-700 [&_.fc-col-header-cell]:font-semibold [&_.fc-col-header-cell]:py-3 [&_.fc-day-today]:bg-gradient-to-br [&_.fc-day-today]:from-sky-50 [&_.fc-day-today]:to-blue-50 [&_.fc-day-today]:border-2 [&_.fc-day-today]:border-sky-300 [&_.fc-timegrid-slot]:min-h-[2.5em] [&_.fc-event]:cursor-pointer [&_.fc-event]:transition-all [&_.fc-event:hover]:shadow-md [&_.fc-event:hover]:scale-[1.02] [&_.fc-event-title]:font-medium [&_.fc-event-title]:px-1">
-						<FullCalendar
+				<div className="[&_.fc-toolbar-title]:text-xl [&_.fc-toolbar-title]:font-bold [&_.fc-toolbar-title]:text-slate-800 [&_.fc-button]:border-slate-300 [&_.fc-button]:bg-white [&_.fc-button]:text-slate-700 [&_.fc-button]:font-medium [&_.fc-button:hover]:border-sky-400 [&_.fc-button:hover]:bg-sky-50 [&_.fc-button:hover]:text-sky-700 [&_.fc-button-active]:bg-sky-100 [&_.fc-button-active]:border-sky-400 [&_.fc-button-active]:text-sky-700 [&_.fc-button-active]:shadow-sm [&_.fc-daygrid-day-number]:text-slate-700 [&_.fc-daygrid-day-number]:font-medium [&_.fc-col-header-cell]:bg-gradient-to-b [&_.fc-col-header-cell]:from-slate-50 [&_.fc-col-header-cell]:to-slate-100 [&_.fc-col-header-cell]:text-slate-700 [&_.fc-col-header-cell]:font-semibold [&_.fc-col-header-cell]:py-3 [&_.fc-day-today]:bg-gradient-to-br [&_.fc-day-today]:from-sky-50 [&_.fc-day-today]:to-blue-50 [&_.fc-day-today]:border-2 [&_.fc-day-today]:border-sky-300 [&_.fc-timegrid-slot]:min-h-[2.5em] [&_.fc-event]:cursor-pointer [&_.fc-event]:transition-all [&_.fc-event:hover]:shadow-md [&_.fc-event:hover]:scale-[1.02] [&_.fc-event-title]:font-medium [&_.fc-event-title]:px-1">
+					<FullCalendar
 							ref={calendarRef}
 							plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
 							initialView="dayGridMonth"
@@ -771,19 +725,19 @@ export default function Calendar() {
 							slotDuration="00:30:00"
 							slotLabelInterval="01:00:00"
 							timeZone="local"
-						/>
+					/>
+				</div>
+				{isRescheduling && (
+					<div className="mt-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 px-4 py-3 shadow-sm">
+						<div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-600 border-t-transparent" />
+						<p className="text-sm font-medium text-amber-800">Updating appointment...</p>
 					</div>
-						{isRescheduling && (
-							<div className="mt-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 px-4 py-3 shadow-sm">
-								<div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-600 border-t-transparent" />
-								<p className="text-sm font-medium text-amber-800">Updating appointment...</p>
-							</div>
-						)}
-					</div>
-				</section>
+				)}
+			</div>
+		</section>
 
-				{selectedDate && (
-					<div
+			{selectedDate && (
+				<div
 						role="dialog"
 						aria-modal="true"
 						className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm px-4 py-6"
@@ -868,12 +822,12 @@ export default function Calendar() {
 									</ul>
 								)}
 							</div>
-						</div>
 					</div>
-				)}
+				</div>
+			)}
 
-				{detailEvent && (
-					<div
+			{detailEvent && (
+				<div
 						role="dialog"
 						aria-modal="true"
 						className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm px-4 py-6"
@@ -908,7 +862,7 @@ export default function Calendar() {
 									<p className="mt-1 text-sm font-semibold text-slate-900">{detailEvent.appointment.patientId || '—'}</p>
 								</div>
 								<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-									<p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Doctor</p>
+									<p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Therapist</p>
 									<p className="mt-1 text-sm font-semibold text-slate-900">{detailEvent.appointment.doctor || '—'}</p>
 								</div>
 								<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -958,7 +912,6 @@ export default function Calendar() {
 						</div>
 					</div>
 				)}
-			</div>
 		</div>
 	);
 }

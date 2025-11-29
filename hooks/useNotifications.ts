@@ -21,6 +21,7 @@ import type {
 	NotificationRecord,
 	NotificationStatus,
 	NotificationChannelSettings,
+	NotificationMessage,
 } from '@/lib/types';
 
 interface UseNotificationsState {
@@ -63,6 +64,16 @@ function mapNotification(snapshot: QueryDocumentSnapshot<DocumentData>): Notific
 			}
 		: undefined;
 
+	const messages: NotificationMessage[] = data.messages
+		? (Array.isArray(data.messages) ? data.messages : []).map((msg: any) => ({
+				id: msg.id ?? '',
+				senderId: msg.senderId ?? '',
+				senderName: msg.senderName ?? '',
+				message: msg.message ?? '',
+				createdAt: msg.createdAt ?? new Date().toISOString(),
+			}))
+		: undefined;
+
 	return {
 		id: snapshot.id,
 		userId: data.userId ?? '',
@@ -76,6 +87,10 @@ function mapNotification(snapshot: QueryDocumentSnapshot<DocumentData>): Notific
 		channels,
 		acknowledgedBy: data.acknowledgedBy ?? undefined,
 		source: data.source ?? undefined,
+		threadId: data.threadId ?? undefined,
+		messages: messages,
+		fromUserId: data.fromUserId ?? undefined,
+		fromUserName: data.fromUserName ?? undefined,
 	};
 }
 

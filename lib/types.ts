@@ -238,6 +238,7 @@ export type NotificationCategory =
 	| 'patient'
 	| 'billing'
 	| 'birthday'
+	| 'feedback'
 	| 'other';
 
 export type NotificationStatus = 'unread' | 'read';
@@ -247,6 +248,14 @@ export interface NotificationChannelSettings {
 	sms: boolean;
 	whatsapp: boolean;
 	inApp: boolean;
+}
+
+export interface NotificationMessage {
+	id: string;
+	senderId: string;
+	senderName: string;
+	message: string;
+	createdAt: string;
 }
 
 export interface NotificationRecord {
@@ -262,6 +271,10 @@ export interface NotificationRecord {
 	channels?: Partial<NotificationChannelSettings>;
 	acknowledgedBy?: string[];
 	source?: string;
+	threadId?: string; // For grouping messages in a conversation
+	messages?: NotificationMessage[]; // Array of messages in the thread
+	fromUserId?: string; // ID of the user who sent the initial message
+	fromUserName?: string; // Name of the user who sent the initial message
 }
 
 export interface NotificationPreference {

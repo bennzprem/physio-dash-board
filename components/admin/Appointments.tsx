@@ -870,22 +870,13 @@ export default function Appointments() {
 	};
 
 	return (
-		<div className="min-h-svh bg-slate-50 px-6 py-10">
+		<div className="px-6 py-6">
 			<div className="mx-auto max-w-6xl space-y-10">
-				<PageHeader
-					title="Appointments"
-					description="Monitor upcoming visits and assign clinical team members to each patient."
-					actions={
-						<button
-							type="button"
-							onClick={() => setIsBookingModalOpen(true)}
-							className="btn-primary"
-						>
-							<i className="fas fa-calendar-plus text-xs" aria-hidden="true" />
-							Book Appointment
-						</button>
-					}
-				/>
+				{/* PageHeader removed - shown in parent CalendarAppointments component */}
+				<div className="mb-6">
+					<h2 className="text-2xl font-bold text-slate-900">Appointments</h2>
+					<p className="mt-1 text-sm text-slate-600">Monitor upcoming visits and assign clinical team members to each patient.</p>
+				</div>
 
 				<div className="border-t border-slate-200" />
 

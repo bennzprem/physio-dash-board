@@ -14,6 +14,7 @@ import {
 	where,
 	getDocs,
 	getDoc,
+	type QuerySnapshot,
 } from 'firebase/firestore';
 
 import { db, auth } from '@/lib/firebase';
@@ -67,6 +68,21 @@ const ROLE_LABELS: Record<EmployeeRole, string> = {
 	StrengthAndConditioning: 'Strength & Conditioning',
 };
 
+// Color mappings for roles - More vibrant and distinct colors
+const ROLE_COLORS: Record<EmployeeRole, { bg: string; text: string }> = {
+	Admin: { bg: 'bg-violet-100', text: 'text-violet-800' },
+	FrontDesk: { bg: 'bg-cyan-100', text: 'text-cyan-800' },
+	ClinicalTeam: { bg: 'bg-amber-100', text: 'text-amber-800' },
+	Physiotherapist: { bg: 'bg-emerald-100', text: 'text-emerald-800' },
+	StrengthAndConditioning: { bg: 'bg-pink-100', text: 'text-pink-800' },
+};
+
+// Color mappings for status - More distinct colors
+const STATUS_COLORS: Record<EmployeeStatus, { bg: string; text: string }> = {
+	Active: { bg: 'bg-green-100', text: 'text-green-800' },
+	Inactive: { bg: 'bg-red-100', text: 'text-red-800' },
+};
+
 const ROLE_OPTIONS: Array<{ value: FormState['userRole']; label: string }> = [
 	{ value: 'Admin', label: 'Admin' },
 	{ value: 'FrontDesk', label: 'Front Desk' },
@@ -105,15 +121,51 @@ export default function Users() {
 	const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 	const [formState, setFormState] = useState<FormState>(INITIAL_FORM);
 	const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-	const [activityDraft, setActivityDraft] = useState('');
-	const [activityNotes, setActivityNotes] = useState<Record<
-		string,
-		Array<{ id: string; text: string; createdAt: Date }>
-	>>({});
+	const [feedbackDraft, setFeedbackDraft] = useState('');
+	const [sendingFeedback, setSendingFeedback] = useState(false);
+	const [employeeFeedback, setEmployeeFeedback] = useState<Array<{
+		id: string;
+		title: string;
+		message: string;
+		createdAt: string;
+		messages?: Array<{
+			id: string;
+			senderId: string;
+			senderName: string;
+			message: string;
+			createdAt: string;
+		}>;
+		threadId?: string;
+		fromUserId?: string;
+		fromUserName?: string;
+	}>>([]);
+	const [loadingFeedback, setLoadingFeedback] = useState(false);
 	const [showEmployeeDetails, setShowEmployeeDetails] = useState(false);
 	const [showDeletedEmployees, setShowDeletedEmployees] = useState(false);
 	const [showActionsDropdown, setShowActionsDropdown] = useState(false);
 	const [deleteConfirmation, setDeleteConfirmation] = useState<{ employee: Employee | null; nameInput: string }>({ employee: null, nameInput: '' });
+	
+	// Performance metrics data for ClinicalTeam
+	const [clinicalAppointments, setClinicalAppointments] = useState<Array<{
+		patientId: string;
+		doctor: string;
+		status: string;
+	}>>([]);
+	const [clinicalPatients, setClinicalPatients] = useState<Array<{
+		patientId: string;
+		assignedDoctor: string;
+		patientType: string;
+		status: string;
+	}>>([]);
+	const [clinicalBilling, setClinicalBilling] = useState<Array<{
+		doctor: string;
+		amount: number;
+		status: string;
+	}>>([]);
+	const [clinicalActivities, setClinicalActivities] = useState<Array<{
+		staffEmail: string;
+		activityType: string;
+	}>>([]);
 
 	useEffect(() => {
 		setLoading(true);
@@ -789,19 +841,336 @@ export default function Users() {
 		document.body.removeChild(link);
 	};
 
-	const handleAddActivity = () => {
-		if (!selectedEmployee || !activityDraft.trim()) return;
-		const entry = {
-			id: typeof crypto !== 'undefined' && (crypto as any).randomUUID ? (crypto as any).randomUUID() : Math.random().toString(36).slice(2),
-			text: activityDraft.trim(),
-			createdAt: new Date(),
-		};
-		setActivityNotes(prev => ({
-			...prev,
-			[selectedEmployee.id]: [entry, ...(prev[selectedEmployee.id] ?? [])],
-		}));
-		setActivityDraft('');
+	const handleSendFeedback = async () => {
+		if (!selectedEmployee || !feedbackDraft.trim() || !user?.uid) return;
+
+		setSendingFeedback(true);
+		try {
+			// Verify employee document exists
+			const employeeDoc = await getDoc(doc(db, 'staff', selectedEmployee.id));
+			
+			if (!employeeDoc.exists()) {
+				throw new Error('Employee document not found. Please refresh and try again.');
+			}
+
+			const employeeData = employeeDoc.data();
+			let employeeUserId = employeeData?.authUid;
+
+			// If no authUid in staff document, try to find it in users collection by email
+			if (!employeeUserId && selectedEmployee.userEmail) {
+				try {
+					const usersQuery = query(
+						collection(db, 'users'),
+						where('email', '==', selectedEmployee.userEmail.toLowerCase())
+					);
+					const usersSnapshot = await getDocs(usersQuery);
+					if (!usersSnapshot.empty) {
+						// The document ID in users collection is the Firebase Auth UID
+						employeeUserId = usersSnapshot.docs[0].id;
+					}
+				} catch (queryError: any) {
+					console.warn('Failed to query users collection for userId:', queryError);
+					// Continue with fallback
+				}
+			}
+
+			// Final fallback: use staff document ID (though this may not work for notifications)
+			if (!employeeUserId) {
+				employeeUserId = selectedEmployee.id;
+				console.warn(`Using staff document ID as userId fallback for employee ${selectedEmployee.userName}. This may not work if employee hasn't logged in.`);
+			}
+
+			// Create a thread ID for this conversation
+			const threadId = `feedback-${selectedEmployee.id}-${user.uid}`;
+
+			// Generate message ID
+			const messageId = typeof crypto !== 'undefined' && (crypto as any).randomUUID 
+				? (crypto as any).randomUUID() 
+				: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+			// Create notification with message thread
+			await addDoc(collection(db, 'notifications'), {
+				userId: employeeUserId,
+				title: 'Remarks and Feedback',
+				message: feedbackDraft.trim(),
+				category: 'feedback',
+				status: 'unread',
+				createdAt: serverTimestamp(),
+				threadId: threadId,
+				messages: [
+					{
+						id: messageId,
+						senderId: user.uid,
+						senderName: user.displayName || user.email || 'Admin',
+						message: feedbackDraft.trim(),
+						createdAt: new Date().toISOString(),
+					},
+				],
+				fromUserId: user.uid,
+				fromUserName: user.displayName || user.email || 'Admin',
+				metadata: {
+					employeeId: selectedEmployee.id,
+					employeeName: selectedEmployee.userName,
+					employeeEmail: selectedEmployee.userEmail,
+				},
+				channels: {
+					inApp: true,
+				},
+			});
+
+			setFeedbackDraft('');
+			// The feedback list will automatically update via the onSnapshot listener
+			alert('Feedback sent successfully!');
+		} catch (error: any) {
+			console.error('Failed to send feedback:', error);
+			const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+			alert(`Failed to send feedback: ${errorMessage}\n\nPlease check the browser console for more details.`);
+		} finally {
+			setSendingFeedback(false);
+		}
 	};
+
+	// Helper function to normalize names for comparison
+	const normalize = (value?: string | null): string => {
+		if (!value) return '';
+		return value.trim().toLowerCase().replace(/\s+/g, ' ');
+	};
+
+	// Load appointments for ClinicalTeam metrics
+	useEffect(() => {
+		if (!selectedEmployee || selectedEmployee.role !== 'ClinicalTeam') {
+			setClinicalAppointments([]);
+			return;
+		}
+
+		const unsubscribe = onSnapshot(
+			collection(db, 'appointments'),
+			(snapshot: QuerySnapshot) => {
+				const appointments = snapshot.docs.map(docSnap => {
+					const data = docSnap.data();
+					return {
+						patientId: data.patientId ? String(data.patientId) : '',
+						doctor: data.doctor ? String(data.doctor) : '',
+						status: data.status ? String(data.status) : 'pending',
+					};
+				});
+				setClinicalAppointments(appointments);
+			},
+			error => {
+				console.error('Failed to load appointments:', error);
+				setClinicalAppointments([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, [selectedEmployee]);
+
+	// Load patients for ClinicalTeam metrics
+	useEffect(() => {
+		if (!selectedEmployee || selectedEmployee.role !== 'ClinicalTeam') {
+			setClinicalPatients([]);
+			return;
+		}
+
+		const unsubscribe = onSnapshot(
+			collection(db, 'patients'),
+			(snapshot: QuerySnapshot) => {
+				const patients = snapshot.docs.map(docSnap => {
+					const data = docSnap.data();
+					return {
+						patientId: data.patientId ? String(data.patientId) : '',
+						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : '',
+						patientType: data.patientType ? String(data.patientType).toUpperCase() : '',
+						status: data.status ? String(data.status) : 'pending',
+					};
+				});
+				setClinicalPatients(patients);
+			},
+			error => {
+				console.error('Failed to load patients:', error);
+				setClinicalPatients([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, [selectedEmployee]);
+
+	// Load billing for ClinicalTeam metrics
+	useEffect(() => {
+		if (!selectedEmployee || selectedEmployee.role !== 'ClinicalTeam') {
+			setClinicalBilling([]);
+			return;
+		}
+
+		const unsubscribe = onSnapshot(
+			collection(db, 'billing'),
+			(snapshot: QuerySnapshot) => {
+				const billing = snapshot.docs.map(docSnap => {
+					const data = docSnap.data();
+					return {
+						doctor: data.doctor ? String(data.doctor) : '',
+						amount: data.amount ? Number(data.amount) : 0,
+						status: data.status ? String(data.status) : 'pending',
+					};
+				});
+				setClinicalBilling(billing);
+			},
+			error => {
+				console.error('Failed to load billing:', error);
+				setClinicalBilling([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, [selectedEmployee]);
+
+	// Load activities for ClinicalTeam metrics
+	useEffect(() => {
+		if (!selectedEmployee || selectedEmployee.role !== 'ClinicalTeam') {
+			setClinicalActivities([]);
+			return;
+		}
+
+		const unsubscribe = onSnapshot(
+			collection(db, 'activities'),
+			(snapshot: QuerySnapshot) => {
+				const activities = snapshot.docs.map(docSnap => {
+					const data = docSnap.data();
+					return {
+						staffEmail: data.staffEmail ? String(data.staffEmail) : '',
+						activityType: data.activityType ? String(data.activityType) : '',
+					};
+				});
+				setClinicalActivities(activities);
+			},
+			error => {
+				console.error('Failed to load activities:', error);
+				setClinicalActivities([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, [selectedEmployee]);
+
+	// Load feedback for selected employee
+	useEffect(() => {
+		if (!selectedEmployee) {
+			setEmployeeFeedback([]);
+			return;
+		}
+
+		setLoadingFeedback(true);
+		const unsubscribe = onSnapshot(
+			query(
+				collection(db, 'notifications'),
+				where('category', '==', 'feedback')
+			),
+			(snapshot: QuerySnapshot) => {
+				const feedback = snapshot.docs
+					.map(docSnap => {
+						const data = docSnap.data();
+						const createdAt = data.createdAt?.toDate?.()?.toISOString() || data.createdAt || '';
+						return {
+							id: docSnap.id,
+							title: data.title || 'Remarks and Feedback',
+							message: data.message || '',
+							createdAt,
+							messages: data.messages || [],
+							threadId: data.threadId,
+							fromUserId: data.fromUserId,
+							fromUserName: data.fromUserName,
+							metadata: data.metadata || {},
+						};
+					})
+					.filter(notif => {
+						// Filter by employeeId in metadata
+						const metadata = notif.metadata as any;
+						return metadata.employeeId === selectedEmployee.id;
+					})
+					.sort((a, b) => {
+						// Sort by creation date, newest first
+						return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+					});
+				setEmployeeFeedback(feedback);
+				setLoadingFeedback(false);
+			},
+			error => {
+				console.error('Failed to load feedback:', error);
+				setEmployeeFeedback([]);
+				setLoadingFeedback(false);
+			}
+		);
+
+		return () => unsubscribe();
+	}, [selectedEmployee]);
+
+	// Calculate performance metrics
+	const clinicalMetrics = useMemo(() => {
+		if (!selectedEmployee || selectedEmployee.role !== 'ClinicalTeam') {
+			return {
+				activePatients: 0,
+				revenue: 0,
+				totalSessions: 0,
+				patientsByType: { DYES: 0, PAID: 0, VIP: 0, GETHNA: 0 },
+				activitiesByType: {} as Record<string, number>,
+				loading: false,
+			};
+		}
+
+		const employeeName = normalize(selectedEmployee.userName);
+		const employeeEmail = selectedEmployee.userEmail;
+
+		// Filter appointments for this employee
+		const employeeAppointments = clinicalAppointments.filter(apt => 
+			normalize(apt.doctor) === employeeName && apt.status === 'completed'
+		);
+
+		// Active patients (ongoing status, assigned to this employee)
+		const activePatients = clinicalPatients.filter(p => 
+			normalize(p.assignedDoctor) === employeeName && p.status === 'ongoing'
+		).length;
+
+		// Get unique patient IDs from appointments
+		const uniquePatientIds = new Set(
+			employeeAppointments.map(apt => apt.patientId).filter(Boolean)
+		);
+
+		// Patients by type
+		const patientsByType = { DYES: 0, PAID: 0, VIP: 0, GETHNA: 0 };
+		uniquePatientIds.forEach(patientId => {
+			const patient = clinicalPatients.find(p => p.patientId === patientId);
+			if (patient) {
+				const type = patient.patientType;
+				if (type === 'DYES') patientsByType.DYES++;
+				else if (type === 'PAID') patientsByType.PAID++;
+				else if (type === 'VIP') patientsByType.VIP++;
+				else if (type === 'GETHNA') patientsByType.GETHNA++;
+			}
+		});
+
+		// Calculate revenue (completed billing for this employee)
+		const revenue = clinicalBilling
+			.filter(bill => normalize(bill.doctor) === employeeName && bill.status === 'completed')
+			.reduce((sum, bill) => sum + bill.amount, 0);
+
+		// Activities by type for this employee
+		const activitiesByType: Record<string, number> = {};
+		clinicalActivities
+			.filter(act => act.staffEmail === employeeEmail)
+			.forEach(act => {
+				const type = act.activityType || 'Other';
+				activitiesByType[type] = (activitiesByType[type] || 0) + 1;
+			});
+
+		return {
+			activePatients,
+			revenue,
+			totalSessions: employeeAppointments.length,
+			patientsByType,
+			activitiesByType,
+			loading: false,
+		};
+	}, [selectedEmployee, clinicalAppointments, clinicalPatients, clinicalBilling, clinicalActivities]);
 
 	const rolePresets: Record<
 		EmployeeRole,
@@ -1001,7 +1370,7 @@ export default function Users() {
 						<table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
 							<thead className="bg-sky-50 text-xs uppercase tracking-wide text-sky-700">
 								<tr>
-									<th className="px-4 py-3 font-semibold">#</th>
+									<th className="px-4 py-3 font-semibold">Profile</th>
 									<th className="px-4 py-3 font-semibold">Name</th>
 									<th className="px-4 py-3 font-semibold">Email/Login</th>
 									<th className="px-4 py-3 font-semibold">Role</th>
@@ -1022,7 +1391,19 @@ export default function Users() {
 								) : (
 									filteredEmployees.map((employee, index) => (
 										<tr key={employee.id} className={employee.deleted ? 'bg-slate-50 opacity-75' : ''}>
-											<td className="px-4 py-4 text-sm text-slate-500">{index + 1}</td>
+											<td className="px-4 py-4">
+												{employee.profileImage ? (
+													<img
+														src={employee.profileImage}
+														alt={employee.userName || 'Employee'}
+														className="h-10 w-10 rounded-full object-cover border-2 border-blue-200"
+													/>
+												) : (
+													<div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 border-2 border-blue-200">
+														<i className="fas fa-user text-blue-600 text-sm" aria-hidden="true" />
+													</div>
+												)}
+											</td>
 											<td className="px-4 py-4 font-medium text-slate-800">
 												{employee.userName}
 												{employee.deleted && (
@@ -1033,19 +1414,14 @@ export default function Users() {
 											</td>
 											<td className="px-4 py-4 text-slate-600">{employee.userEmail}</td>
 											<td className="px-4 py-4">
-												<span className="inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
+												<span className={`inline-flex items-center rounded-full ${ROLE_COLORS[employee.role]?.bg || 'bg-sky-100'} px-3 py-1 text-xs font-semibold ${ROLE_COLORS[employee.role]?.text || 'text-sky-700'}`}>
 													<i className="fas fa-user-shield mr-1 text-[11px]" aria-hidden="true" />
 													{ROLE_LABELS[employee.role]}
 												</span>
 											</td>
 											<td className="px-4 py-4">
 												<span
-													className={[
-														'inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold',
-														employee.status === 'Active'
-															? 'bg-emerald-100 text-emerald-700'
-															: 'bg-slate-200 text-slate-600',
-													].join(' ')}
+													className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STATUS_COLORS[employee.status]?.bg || 'bg-slate-200'} ${STATUS_COLORS[employee.status]?.text || 'text-slate-600'}`}
 												>
 													{employee.status}
 												</span>
@@ -1098,20 +1474,33 @@ export default function Users() {
 					aria-modal="true"
 				>
 					<div
-						className="w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+						className="w-full max-w-3xl max-h-[95vh] flex flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl"
 						onClick={event => event.stopPropagation()}
 					>
-						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-							<div>
-								<div className="flex items-center gap-2">
-									<h3 className="text-lg font-semibold text-slate-900">{selectedEmployee.userName}</h3>
-									{selectedEmployee.deleted && (
-										<span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
-											Past Employee
-										</span>
-									)}
+						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4 flex-shrink-0">
+							<div className="flex items-center gap-4">
+								{selectedEmployee.profileImage ? (
+									<img
+										src={selectedEmployee.profileImage}
+										alt={selectedEmployee.userName || 'Employee'}
+										className="h-16 w-16 rounded-full object-cover border-2 border-sky-200"
+									/>
+								) : (
+									<div className="flex h-16 w-16 items-center justify-center rounded-full bg-sky-100 border-2 border-sky-200">
+										<i className="fas fa-user text-sky-600 text-xl" aria-hidden="true" />
+									</div>
+								)}
+								<div>
+									<div className="flex items-center gap-2">
+										<h3 className="text-lg font-semibold text-slate-900">{selectedEmployee.userName}</h3>
+										{selectedEmployee.deleted && (
+											<span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
+												Past Employee
+											</span>
+										)}
+									</div>
+									<p className="text-xs text-slate-500">{selectedEmployee.userEmail}</p>
 								</div>
-								<p className="text-xs text-slate-500">{selectedEmployee.userEmail}</p>
 							</div>
 							<button
 								type="button"
@@ -1123,7 +1512,7 @@ export default function Users() {
 							</button>
 						</header>
 
-						<div className="grid max-h-[calc(90vh-56px)] gap-4 overflow-y-auto px-6 py-6 lg:grid-cols-[1.2fr,0.8fr]">
+						<div className="grid flex-1 gap-4 overflow-y-auto px-6 py-6 min-h-0 lg:grid-cols-[1.2fr,0.8fr]">
 							<section className="space-y-4">
 								<div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
 									<h4 className="text-sm font-semibold text-slate-800">Profile overview</h4>
@@ -1274,31 +1663,184 @@ export default function Users() {
 									</ul>
 								</div>
 
+								{/* Performance Metrics - Only for ClinicalTeam */}
+								{selectedEmployee.role === 'ClinicalTeam' && (
 								<div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-									<h4 className="text-sm font-semibold text-slate-800">Activity log</h4>
-									{(activityNotes[selectedEmployee.id]?.length ?? 0) === 0 ? (
-										<p className="mt-3 text-xs text-slate-500">No activity notes yet.</p>
-									) : (
-										<ul className="mt-3 space-y-2 text-xs text-slate-600">
-											{activityNotes[selectedEmployee.id]?.map(entry => (
-												<li key={entry.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-													{entry.text}
-													<p className="text-[10px] text-slate-400">{entry.createdAt.toLocaleString()}</p>
-												</li>
+										<h4 className="text-sm font-semibold text-slate-800 mb-4">Performance Metrics</h4>
+										{clinicalAppointments.length === 0 && clinicalPatients.length === 0 && clinicalBilling.length === 0 && clinicalActivities.length === 0 ? (
+											<div className="py-4 text-center text-xs text-slate-500">
+												<i className="fas fa-spinner fa-spin mr-2" aria-hidden="true" />
+												Loading metrics...
+											</div>
+										) : (
+											<div className="space-y-4">
+												{/* Key Metrics */}
+												<div className="grid grid-cols-2 gap-3">
+													<div className="rounded-lg border border-slate-200 bg-sky-50 p-3">
+														<p className="text-xs font-medium text-slate-600">Active Patients</p>
+														<p className="mt-1 text-xl font-bold text-sky-900">{clinicalMetrics.activePatients}</p>
+													</div>
+													<div className="rounded-lg border border-slate-200 bg-emerald-50 p-3">
+														<p className="text-xs font-medium text-slate-600">Revenue Generated</p>
+														<p className="mt-1 text-xl font-bold text-emerald-900">
+															₹{clinicalMetrics.revenue.toLocaleString('en-IN')}
+														</p>
+													</div>
+													<div className="rounded-lg border border-slate-200 bg-indigo-50 p-3">
+														<p className="text-xs font-medium text-slate-600">Total Sessions</p>
+														<p className="mt-1 text-xl font-bold text-indigo-900">{clinicalMetrics.totalSessions}</p>
+													</div>
+													<div className="rounded-lg border border-slate-200 bg-purple-50 p-3">
+														<p className="text-xs font-medium text-slate-600">Total Activities</p>
+														<p className="mt-1 text-xl font-bold text-purple-900">
+															{Object.values(clinicalMetrics.activitiesByType).reduce((sum: number, count: number) => sum + count, 0)}
+														</p>
+													</div>
+												</div>
+
+												{/* Patients by Type */}
+												<div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+													<p className="text-xs font-semibold text-slate-700 mb-2">Patients by Type</p>
+													<div className="grid grid-cols-2 gap-2 text-xs">
+														<div className="flex items-center justify-between">
+															<span className="text-slate-600">DYES:</span>
+															<span className="font-semibold text-slate-900">{clinicalMetrics.patientsByType.DYES}</span>
+														</div>
+														<div className="flex items-center justify-between">
+															<span className="text-slate-600">PAID:</span>
+															<span className="font-semibold text-slate-900">{clinicalMetrics.patientsByType.PAID}</span>
+														</div>
+														<div className="flex items-center justify-between">
+															<span className="text-slate-600">VIP:</span>
+															<span className="font-semibold text-slate-900">{clinicalMetrics.patientsByType.VIP}</span>
+														</div>
+														<div className="flex items-center justify-between">
+															<span className="text-slate-600">GETHNA:</span>
+															<span className="font-semibold text-slate-900">{clinicalMetrics.patientsByType.GETHNA}</span>
+														</div>
+													</div>
+												</div>
+
+												{/* Activities Chart */}
+												{Object.keys(clinicalMetrics.activitiesByType).length > 0 && (
+													<div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+														<p className="text-xs font-semibold text-slate-700 mb-3">Activities Done</p>
+														<div className="space-y-2">
+															{Object.entries(clinicalMetrics.activitiesByType)
+																.sort(([, a], [, b]) => (b as number) - (a as number))
+																.map(([type, count]) => {
+																	const total = Object.values(clinicalMetrics.activitiesByType).reduce((sum: number, c: number) => sum + c, 0);
+																	const percentage = total > 0 ? ((count as number) / total) * 100 : 0;
+																	return (
+																		<div key={type} className="space-y-1">
+																			<div className="flex items-center justify-between text-xs">
+																				<span className="text-slate-600">{type || 'Other'}</span>
+																				<span className="font-semibold text-slate-900">{count as number}</span>
+																			</div>
+																			<div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+																				<div
+																					className="h-full bg-gradient-to-r from-sky-500 to-indigo-600 transition-all duration-500"
+																					style={{ width: `${percentage}%` }}
+																				/>
+																			</div>
+																		</div>
+																	);
+																})}
+														</div>
+													</div>
+												)}
+											</div>
+										)}
+									</div>
+								)}
+
+								<div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+									<h4 className="text-sm font-semibold text-slate-800">Remarks and Feedback</h4>
+									<p className="mt-2 text-xs text-slate-500">
+										Send feedback to this employee. They will receive a notification and can reply back.
+									</p>
+									
+									{/* Feedback History */}
+									{loadingFeedback ? (
+										<div className="mt-4 py-4 text-center text-xs text-slate-500">
+											<i className="fas fa-spinner fa-spin mr-2" aria-hidden="true" />
+											Loading feedback history...
+										</div>
+									) : employeeFeedback.length > 0 ? (
+										<div className="mt-4 space-y-3 max-h-64 overflow-y-auto">
+											{employeeFeedback.map(feedback => (
+												<div key={feedback.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+													<div className="flex items-center justify-between mb-2">
+														<span className="text-xs font-semibold text-slate-700">
+															{feedback.fromUserName || 'Admin'}
+														</span>
+														<span className="text-[10px] text-slate-400">
+															{formatDate(feedback.createdAt)}
+														</span>
+													</div>
+													<p className="text-xs text-slate-600 whitespace-pre-wrap mb-2">
+														{feedback.message}
+													</p>
+													{/* Show message thread if available */}
+													{feedback.messages && feedback.messages.length > 1 && (
+														<div className="mt-2 pt-2 border-t border-slate-200 space-y-2">
+															{feedback.messages.slice(1).map((msg, idx) => (
+																<div
+																	key={msg.id || idx}
+																	className={`rounded p-2 text-xs ${
+																		msg.senderId === user?.uid
+																			? 'ml-4 bg-sky-100 border border-sky-200'
+																			: 'mr-4 bg-white border border-slate-200'
+																	}`}
+																>
+																	<div className="flex items-center justify-between mb-1">
+																		<span className="font-semibold text-slate-700">{msg.senderName}</span>
+																		<span className="text-[10px] text-slate-400">
+																			{formatDate(msg.createdAt)}
+																		</span>
+																	</div>
+																	<p className="text-slate-600 whitespace-pre-wrap">{msg.message}</p>
+																</div>
+															))}
+														</div>
+													)}
+												</div>
 											))}
-										</ul>
+										</div>
+									) : (
+										<div className="mt-4 py-4 text-center text-xs text-slate-400">
+											No feedback history yet.
+										</div>
 									)}
-									<div className="mt-3 space-y-2">
+
+									{/* Send New Feedback */}
+									<div className="mt-4 space-y-2">
 										<textarea
-											value={activityDraft}
-											onChange={event => setActivityDraft(event.target.value)}
-											placeholder="Add internal note..."
+											value={feedbackDraft}
+											onChange={event => setFeedbackDraft(event.target.value)}
+											placeholder="Enter your remarks or feedback..."
 											className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-											rows={3}
+											rows={4}
+											disabled={sendingFeedback}
 										/>
 										<div className="flex justify-end">
-											<button type="button" onClick={handleAddActivity} className="btn-primary text-xs">
-												Log activity
+											<button 
+												type="button" 
+												onClick={handleSendFeedback} 
+												disabled={!feedbackDraft.trim() || sendingFeedback}
+												className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-sky-500 focus-visible:bg-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+											>
+												{sendingFeedback ? (
+													<>
+														<i className="fas fa-spinner fa-spin mr-2" aria-hidden="true" />
+														Sending...
+													</>
+												) : (
+													<>
+														<i className="fas fa-paper-plane mr-2" aria-hidden="true" />
+														Send Feedback
+													</>
+												)}
 											</button>
 										</div>
 									</div>
@@ -1594,7 +2136,7 @@ export default function Users() {
 														<td className="px-4 py-3 font-medium text-slate-800">{employee.userName || '—'}</td>
 														<td className="px-4 py-3 text-slate-600">{employee.userEmail || '—'}</td>
 														<td className="px-4 py-3">
-															<span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-1 text-xs font-semibold text-sky-700">
+															<span className={`inline-flex items-center rounded-full ${ROLE_COLORS[employee.role]?.bg || 'bg-sky-100'} px-2 py-1 text-xs font-semibold ${ROLE_COLORS[employee.role]?.text || 'text-sky-700'}`}>
 																{ROLE_LABELS[employee.role]}
 															</span>
 														</td>

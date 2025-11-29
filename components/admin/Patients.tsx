@@ -1512,7 +1512,7 @@ export default function Patients() {
 						aria-modal="true"
 					>
 						<div
-							className="w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+							className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
 							onClick={event => event.stopPropagation()}
 						>
 							<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sticky top-0 bg-white z-10">
@@ -1520,17 +1520,9 @@ export default function Patients() {
 									<h2 className="text-lg font-semibold text-slate-900">Patient profile</h2>
 									<p className="text-xs text-slate-500">ID: {(selectedPatient as any).patientId || '—'}</p>
 								</div>
-								<button
-									type="button"
-									onClick={closeProfile}
-									className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:bg-slate-100 focus-visible:text-slate-600 focus-visible:outline-none"
-									aria-label="Close profile"
-								>
-									<i className="fas fa-times" aria-hidden="true" />
-								</button>
 							</header>
 
-							<div className="grid max-h-[calc(85vh-56px)] gap-4 overflow-y-auto px-6 py-6 lg:grid-cols-[1.2fr,0.8fr]">
+							<div className="grid max-h-[calc(90vh-64px)] gap-4 overflow-y-auto px-6 py-6 lg:grid-cols-[1.2fr,0.8fr]">
 								<section className="space-y-4">
 									<div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
 										<h3 className="text-sm font-semibold text-slate-800">Personal details</h3>
@@ -1566,138 +1558,6 @@ export default function Patients() {
 										</dl>
 									</div>
 
-									{/* Notes & attachments */}
-									<div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-										<h3 className="text-sm font-semibold text-slate-800">Notes & attachments</h3>
-										{loadingExtras[selectedPatientId!] ? (
-											<p className="mt-3 text-xs text-slate-500">Loading...</p>
-										) : (
-											<>
-												{patientExtras[selectedPatientId!]?.notes.length > 0 && (
-													<div className="mt-3 space-y-2">
-														{patientExtras[selectedPatientId!].notes.map(note => (
-															<div key={note.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-																<p>{note.content}</p>
-																<p className="mt-1 text-[10px] text-slate-400">{formatDateTime(note.createdAt)}</p>
-															</div>
-														))}
-													</div>
-												)}
-												{patientExtras[selectedPatientId!]?.attachments.length > 0 && (
-													<div className="mt-3 space-y-2">
-														{patientExtras[selectedPatientId!].attachments.map(att => (
-															<div key={att.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-																<span>
-																	<i className="fas fa-paperclip mr-2" aria-hidden="true" />
-																	{att.fileName} ({att.sizeLabel})
-																</span>
-																<span className="text-[10px] text-slate-400">{formatDate(att.createdAt)}</span>
-															</div>
-														))}
-													</div>
-												)}
-												{(!patientExtras[selectedPatientId!] || 
-													(patientExtras[selectedPatientId!].notes.length === 0 && 
-													 patientExtras[selectedPatientId!].attachments.length === 0)) && (
-													<p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-xs text-slate-500">
-														No notes or attachments yet.
-													</p>
-												)}
-												<div className="mt-3 flex flex-wrap gap-2">
-													<button 
-														type="button" 
-														onClick={() => setIsAddingNote(!isAddingNote)} 
-														className="btn-tertiary"
-													>
-														<i className="fas fa-sticky-note text-xs" aria-hidden="true" />
-														Add note
-													</button>
-													<button 
-														type="button" 
-														onClick={() => fileInputRef.current?.click()} 
-														className="btn-tertiary"
-													>
-														<i className="fas fa-paperclip text-xs" aria-hidden="true" />
-														Upload attachment
-													</button>
-													<input
-														ref={fileInputRef}
-														type="file"
-														className="hidden"
-														onChange={handleUploadAttachment}
-													/>
-												</div>
-
-												{isAddingNote && (
-													<div className="mt-3 space-y-2">
-														<textarea
-															value={noteContent}
-															onChange={e => setNoteContent(e.target.value)}
-															placeholder="Enter note content..."
-															className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-															rows={3}
-														/>
-														<div className="flex gap-2">
-															<button
-																type="button"
-																onClick={handleAddNote}
-																disabled={isAddingNote && !noteContent.trim()}
-																className="btn-primary text-xs"
-															>
-																Save
-															</button>
-															<button
-																type="button"
-																onClick={() => {
-																	setIsAddingNote(false);
-																	setNoteContent('');
-																}}
-																className="btn-secondary text-xs"
-															>
-																Cancel
-															</button>
-														</div>
-													</div>
-												)}
-											</>
-										)}
-									</div>
-
-									{/* History */}
-									<div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-										<h3 className="text-sm font-semibold text-slate-800">History timeline</h3>
-										{loadingExtras[selectedPatientId!] ? (
-											<p className="mt-3 text-xs text-slate-500">Loading...</p>
-										) : (
-											<>
-												{patientExtras[selectedPatientId!]?.history.length > 0 ? (
-													<ul className="mt-3 space-y-2 text-xs text-slate-600">
-														{patientExtras[selectedPatientId!].history
-															.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-															.map(entry => (
-																<li key={entry.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-																	<i className="fas fa-clock mr-2 text-slate-400" aria-hidden="true" />
-																	{entry.text}
-																	<p className="mt-1 text-[10px] text-slate-400">{formatDateTime(entry.createdAt)}</p>
-																</li>
-															))}
-													</ul>
-												) : (
-													<p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-xs text-slate-500">
-														No history entries yet.
-													</p>
-												)}
-												<button
-													type="button"
-													onClick={handleLogActivity}
-													className="mt-3 inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800 focus-visible:border-slate-300 focus-visible:text-slate-800 focus-visible:outline-none"
-												>
-													<i className="fas fa-pen text-[10px]" aria-hidden="true" />
-													Log activity
-												</button>
-											</>
-										)}
-									</div>
 								</section>
 
 								{/* Sidebar */}
@@ -1721,19 +1581,46 @@ export default function Patients() {
 										</dl>
 									</div>
 
-									{/* Next Session */}
+									{/* Sessions */}
 									<div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-										<h3 className="text-sm font-semibold text-slate-800">Next Session</h3>
-										{nextSession ? (
-											<div className="mt-3 text-xs text-slate-600">
-												<p className="font-semibold text-slate-900">{formatDate(nextSession.date)}</p>
-												{nextSession.time && (
-													<p className="mt-1 text-slate-500">{nextSession.time}</p>
+										<h3 className="text-sm font-semibold text-slate-800 mb-3">Sessions</h3>
+										<dl className="space-y-2 text-xs">
+											<div className="flex justify-between">
+												<dt className="font-semibold text-slate-500">Total Sessions</dt>
+												<dd className="font-semibold text-slate-900">
+													{(selectedPatient as any)?.totalSessionsRequired || 0}
+												</dd>
+											</div>
+											<div className="flex justify-between">
+												<dt className="font-semibold text-slate-500">Completed</dt>
+												<dd className="font-semibold text-emerald-700">
+													{(() => {
+														const total = (selectedPatient as any)?.totalSessionsRequired || 0;
+														const remaining = (selectedPatient as any)?.remainingSessions || 0;
+														return Math.max(0, total - remaining);
+													})()}
+												</dd>
+											</div>
+											<div className="flex justify-between">
+												<dt className="font-semibold text-slate-500">Remaining</dt>
+												<dd className="font-semibold text-amber-700">
+													{(selectedPatient as any)?.remainingSessions || 0}
+												</dd>
+											</div>
+											<div className="pt-2 border-t border-slate-200">
+												<dt className="font-semibold text-slate-500 mb-1">Next Session</dt>
+												{nextSession ? (
+													<dd className="text-slate-600">
+														<p className="font-semibold text-slate-900">{formatDate(nextSession.date)}</p>
+														{nextSession.time && (
+															<p className="mt-1 text-slate-500">{nextSession.time}</p>
+														)}
+													</dd>
+												) : (
+													<dd className="text-slate-500">No upcoming sessions</dd>
 												)}
 											</div>
-										) : (
-											<p className="mt-3 text-xs text-slate-500">No upcoming sessions</p>
-										)}
+										</dl>
 									</div>
 
 									{/* Feedback */}
@@ -1745,15 +1632,15 @@ export default function Patients() {
 									</div>
 
 									{/* Reports */}
-									<div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-										<h3 className="text-sm font-semibold text-slate-800">Reports</h3>
+									<div className="rounded-xl border border-blue-200 bg-white p-4 shadow-sm">
+										<h3 className="text-sm font-semibold text-slate-800 mb-3">Reports</h3>
 										<button
 											type="button"
 											onClick={() => {
 												setShowReportModal(true);
 												setReportModalPatientId(selectedPatient?.patientId || null);
 											}}
-											className="mt-3 w-full inline-flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+											className="w-full inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3 text-sm font-semibold text-white transition hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
 										>
 											<i className="fas fa-file-medical mr-2" aria-hidden="true" />
 											View Reports
@@ -1761,16 +1648,6 @@ export default function Patients() {
 									</div>
 								</aside>
 							</div>
-
-							<footer className="flex justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4 sticky bottom-0">
-								<button
-									type="button"
-									onClick={closeProfile}
-									className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-								>
-									Close
-								</button>
-							</footer>
 						</div>
 					</div>
 				)}

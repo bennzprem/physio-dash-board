@@ -9,6 +9,7 @@ import {
 	type AdminPatientRecord,
 } from '@/lib/adminMockData';
 import { auth, db } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
 import { sendEmailNotification } from '@/lib/email';
 import { sendSMSNotification, isValidPhoneNumber } from '@/lib/sms';
@@ -64,6 +65,10 @@ interface BillingRecord {
 	updatedAt?: string | Timestamp;
 	invoiceNo?: string;
 	invoiceGeneratedAt?: string;
+	createdByFrontdesk?: string;
+	createdByFrontdeskName?: string;
+	paymentRegisteredByFrontdesk?: string;
+	paymentRegisteredByFrontdeskName?: string;
 }
 
 const formatInstallmentPlan = (bill: BillingRecord) => {
@@ -799,11 +804,13 @@ async function generateReceiptHtml(bill: BillingRecord, receiptNo: string) {
 }
 
 export default function Billing() {
+	const { user } = useAuth();
 	const [appointments, setAppointments] = useState<(AdminAppointmentRecord & { id: string; amount?: number })[]>([]);
-	const [patients, setPatients] = useState<(AdminPatientRecord & { id?: string; patientType?: string; sessionAllowance?: SessionAllowance })[]>([]);
+	const [patients, setPatients] = useState<(AdminPatientRecord & { id?: string; patientType?: string; department?: string; sessionAllowance?: SessionAllowance })[]>([]);
 	const [staff, setStaff] = useState<StaffMember[]>([]);
 
 	const [doctorFilter, setDoctorFilter] = useState<'all' | string>('all');
+	const [departmentFilter, setDepartmentFilter] = useState<'all' | string>('all');
 	const [pendingWindow, setPendingWindow] = useState<DateFilter>('all');
 	const [completedWindow, setCompletedWindow] = useState<DateFilter>('all');
 
@@ -903,10 +910,11 @@ export default function Billing() {
 						status: (data.status as string) ?? 'pending',
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined) || new Date().toISOString(),
 						patientType: data.patientType ? String(data.patientType) : undefined,
+						department: data.department ? String(data.department) : undefined,
 						sessionAllowance: data.sessionAllowance
 							? normalizeSessionAllowance(data.sessionAllowance as Record<string, unknown>)
 							: undefined,
-					} as AdminPatientRecord & { id: string };
+					} as AdminPatientRecord & { id: string; department?: string };
 				});
 				setPatients(mapped);
 			},
@@ -1040,6 +1048,10 @@ export default function Billing() {
 						updatedAt: updated ? updated.toISOString() : undefined,
 						invoiceNo: data.invoiceNo ? String(data.invoiceNo) : undefined,
 						invoiceGeneratedAt: data.invoiceGeneratedAt ? String(data.invoiceGeneratedAt) : undefined,
+						createdByFrontdesk: data.createdByFrontdesk ? String(data.createdByFrontdesk) : undefined,
+						createdByFrontdeskName: data.createdByFrontdeskName ? String(data.createdByFrontdeskName) : undefined,
+						paymentRegisteredByFrontdesk: data.paymentRegisteredByFrontdesk ? String(data.paymentRegisteredByFrontdesk) : undefined,
+						paymentRegisteredByFrontdeskName: data.paymentRegisteredByFrontdeskName ? String(data.paymentRegisteredByFrontdeskName) : undefined,
 					} as BillingRecord;
 				});
 				setBilling(mapped);
@@ -1058,6 +1070,7 @@ export default function Billing() {
 		if (loading || syncing || appointments.length === 0 || patients.length === 0) return;
 
 		const syncAppointmentsToBilling = async () => {
+			const currentUser = user;
 			setSyncing(true);
 			try {
 				const completedAppointments = appointments.filter(
@@ -1148,6 +1161,8 @@ export default function Billing() {
 							status: 'Pending',
 							paymentMode: null,
 							utr: null,
+							createdByFrontdesk: currentUser?.uid || null,
+							createdByFrontdeskName: currentUser?.displayName || currentUser?.email || null,
 							createdAt: serverTimestamp(),
 							updatedAt: serverTimestamp(),
 						});
@@ -1170,15 +1185,25 @@ export default function Billing() {
 
 		syncAppointmentsToBilling();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [appointments.length, patients.length, loading]);
+	}, [appointments.length, patients.length, loading, user]);
 
 	const patientLookup = useMemo(() => {
-		const map = new Map<string, AdminPatientRecord & { id?: string; patientType?: string; sessionAllowance?: SessionAllowance }>();
+		const map = new Map<string, AdminPatientRecord & { id?: string; patientType?: string; department?: string; sessionAllowance?: SessionAllowance }>();
 		for (const patient of patients) {
 			map.set(patient.patientId, patient);
 		}
 		return map;
 	}, [patients]);
+
+	const billingLookup = useMemo(() => {
+		const map = new Map<string, BillingRecord>();
+		for (const bill of billing) {
+			if (bill.appointmentId) {
+				map.set(bill.appointmentId, bill);
+			}
+		}
+		return map;
+	}, [billing]);
 
 	const doctorOptions = useMemo(() => {
 		const set = new Set<string>();
@@ -1198,6 +1223,13 @@ export default function Billing() {
 			.map(appointment => ({ appointment }))
 			.filter(entry => entry.appointment.status === 'completed' && !entry.appointment.billing)
 			.filter(entry => (doctorFilter === 'all' ? true : entry.appointment.doctor === doctorFilter))
+			.filter(entry => {
+				if (departmentFilter === 'all') return true;
+				const patient = entry.appointment.patientId
+					? patientLookup.get(entry.appointment.patientId)
+					: undefined;
+				return patient?.department === departmentFilter;
+			})
 			.filter(entry => isWithinDays(entry.appointment.date, pendingWindow))
 			.map(entry => {
 				const patient = entry.appointment.patientId
@@ -1207,13 +1239,20 @@ export default function Billing() {
 					entry.appointment.patient || (patient ? patient.name : undefined) || entry.appointment.patientId || 'N/A';
 				return { ...entry, patientName, patientRecord: patient };
 			});
-	}, [appointments, doctorFilter, pendingWindow, patientLookup]);
+	}, [appointments, doctorFilter, departmentFilter, pendingWindow, patientLookup]);
 
 	const billingHistoryRows = useMemo(() => {
 		return appointments
 			.map(appointment => ({ appointment }))
 			.filter(entry => entry.appointment.billing && entry.appointment.billing.amount)
 			.filter(entry => (doctorFilter === 'all' ? true : entry.appointment.doctor === doctorFilter))
+			.filter(entry => {
+				if (departmentFilter === 'all') return true;
+				const patient = entry.appointment.patientId
+					? patientLookup.get(entry.appointment.patientId)
+					: undefined;
+				return patient?.department === departmentFilter;
+			})
 			.filter(entry => isWithinDays(entry.appointment.billing?.date, completedWindow))
 			.map(entry => {
 				const patient = entry.appointment.patientId
@@ -1222,9 +1261,12 @@ export default function Billing() {
 				const patientName =
 					entry.appointment.patient || (patient ? patient.name : undefined) || entry.appointment.patientId || 'N/A';
 				const amount = Number(entry.appointment.billing?.amount ?? 0);
-				return { ...entry, patientName, amount };
+				const billingRecord = entry.appointment.appointmentId
+					? billingLookup.get(entry.appointment.appointmentId)
+					: undefined;
+				return { ...entry, patientName, amount, patientRecord: patient, billingRecord };
 			});
-	}, [appointments, doctorFilter, completedWindow, patientLookup]);
+	}, [appointments, doctorFilter, departmentFilter, completedWindow, patientLookup, billingLookup]);
 
 	const totalCollections = useMemo(
 		() => billingHistoryRows.reduce((sum, row) => sum + (Number.isFinite(row.amount) ? row.amount : 0), 0),
@@ -1298,9 +1340,12 @@ export default function Billing() {
 			const billingQuery = query(collection(db, 'billing'), where('appointmentId', '==', appointment.appointmentId));
 			const billingSnapshot = await getDocs(billingQuery);
 			if (!billingSnapshot.empty) {
+				const existingBill = billingSnapshot.docs[0].data();
 				await updateDoc(doc(db, 'billing', billingSnapshot.docs[0].id), {
 					amount: amountValue,
 					date: draft.date,
+					createdByFrontdesk: existingBill.createdByFrontdesk || user?.uid || null,
+					createdByFrontdeskName: existingBill.createdByFrontdeskName || user?.displayName || user?.email || null,
 					updatedAt: serverTimestamp(),
 				});
 			} else {
@@ -1316,6 +1361,8 @@ export default function Billing() {
 					status: 'Pending',
 					paymentMode: null,
 					utr: null,
+					createdByFrontdesk: user?.uid || null,
+					createdByFrontdeskName: user?.displayName || user?.email || null,
 					createdAt: serverTimestamp(),
 					updatedAt: serverTimestamp(),
 				});
@@ -1615,6 +1662,8 @@ export default function Billing() {
 				utr: paymentMode === 'UPI/Card' ? utr.trim() : null,
 				installmentsPaid: newPaid,
 				amountPaid: newAmountPaid,
+				paymentRegisteredByFrontdesk: user?.uid || null,
+				paymentRegisteredByFrontdeskName: user?.displayName || user?.email || null,
 				updatedAt: serverTimestamp(),
 			});
 
@@ -1725,7 +1774,7 @@ export default function Billing() {
 		setIsInvoiceOpen(true);
 	};
 
-	const handleExportHistory = (format: 'csv' | 'excel' = 'csv') => {
+	const _handleExportHistory = (format: 'csv' | 'excel' = 'csv') => {
 		if (!billingHistoryRows.length) {
 			alert('No billing history to export.');
 			return;
@@ -1860,7 +1909,7 @@ export default function Billing() {
 		}
 	};
 
-	const handleExportPending = (format: 'csv' | 'excel' = 'csv') => {
+	const _handleExportPending = (format: 'csv' | 'excel' = 'csv') => {
 		if (pendingRows.length === 0) {
 			alert('No pending items to export.');
 		 return;
@@ -1963,41 +2012,26 @@ export default function Billing() {
 
 	// Completed payments from billing collection
 	const completed = useMemo(() => {
-		return billing.filter(b => b.status === 'Completed');
-	}, [billing]);
+		return billing
+			.filter(b => b.status === 'Completed')
+			.filter(bill => {
+				if (departmentFilter === 'all') return true;
+				const patient = bill.patientId ? patientLookup.get(bill.patientId) : undefined;
+				return patient?.department === departmentFilter;
+			});
+	}, [billing, departmentFilter, patientLookup]);
 
 	return (
-		<div className="min-h-svh bg-slate-50 px-6 py-10">
+		<div className="min-h-svh bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Billing & Payments"
-					description="Track outstanding invoices, post collections, and generate payment receipts."
-					actions={
-						<div className="flex gap-2">
-							<button
-								type="button"
-								onClick={() => handleExportHistory('csv')}
-								className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-sky-500 focus-visible:bg-sky-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
-							>
-								<i className="fas fa-file-csv mr-2 text-sm" aria-hidden="true" />
-								Export CSV
-							</button>
-							<button
-								type="button"
-								onClick={() => handleExportHistory('excel')}
-								className="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-500 focus-visible:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
-							>
-								<i className="fas fa-file-excel mr-2 text-sm" aria-hidden="true" />
-								Export Excel
-							</button>
-						</div>
-					}
 				/>
 
 				<div className="border-t border-slate-200" />
 
 				{/* Billing Cycle Management */}
-				<section className="rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
+				<section className="rounded-2xl bg-white p-6 shadow-[0_20px_50px_rgba(30,58,138,0.15)] border border-blue-100">
 					<div className="mb-4 flex items-center justify-between">
 						<div>
 							<h3 className="text-lg font-semibold text-slate-900">Billing Cycle Management</h3>
@@ -2109,7 +2143,7 @@ export default function Billing() {
 					)}
 				</section>
 
-				<section className="flex flex-wrap gap-4 rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
+				<section className="flex flex-wrap gap-4 rounded-2xl bg-white p-6 shadow-[0_20px_50px_rgba(30,58,138,0.15)] border border-navy-100">
 				<div className="min-w-[220px] flex-1">
 					<label className="block text-sm font-medium text-slate-700">Filter by Clinician</label>
 					<select
@@ -2125,12 +2159,27 @@ export default function Billing() {
 						))}
 					</select>
 				</div>
+				<div className="min-w-[220px] flex-1">
+					<label className="block text-sm font-medium text-indigo-900">Filter by Department</label>
+					<select
+						value={departmentFilter}
+						onChange={event => setDepartmentFilter(event.target.value)}
+						className="mt-1 w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm text-slate-700 transition focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+					>
+						<option value="all">All Departments</option>
+						{Array.from(new Set(patients.map(p => p.department).filter(Boolean))).sort().map(dept => (
+							<option key={dept} value={dept}>
+								{dept}
+							</option>
+						))}
+					</select>
+				</div>
 				<div className="min-w-[200px]">
-					<label className="block text-sm font-medium text-slate-700">Pending Billing Period</label>
+					<label className="block text-sm font-medium text-indigo-900">Pending Billing Period</label>
 					<select
 						value={pendingWindow}
 						onChange={event => setPendingWindow(event.target.value as DateFilter)}
-						className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+						className="mt-1 w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm text-slate-700 transition focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-200"
 					>
 						{dateOptions.map(option => (
 							<option key={option.value} value={option.value}>
@@ -2160,41 +2209,25 @@ export default function Billing() {
 			</p>
 
 			<section className="mx-auto mt-4 grid max-w-6xl gap-6 lg:grid-cols-2">
-				<article className="rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
-					<header className="flex items-center justify-between rounded-t-2xl bg-amber-100 px-5 py-4 text-amber-900">
+				<article className="rounded-2xl bg-white shadow-[0_20px_50px_rgba(30,58,138,0.15)] border border-navy-100">
+					<header className="flex items-center justify-between rounded-t-2xl bg-gradient-to-r from-indigo-100 to-blue-100 px-5 py-4 border-b border-indigo-200">
 						<div>
-							<h2 className="text-lg font-semibold">Pending Billing</h2>
-							<p className="text-xs text-amber-800/80">
+							<h2 className="text-lg font-semibold text-indigo-900">Pending Billing</h2>
+							<p className="text-xs text-indigo-700">
 								Completed appointments awaiting a recorded payment.
 							</p>
 						</div>
 						<div className="flex items-center gap-2">
-							<button
-								type="button"
-								onClick={() => handleExportPending('csv')}
-								className="inline-flex items-center rounded-full border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-900 transition hover:border-amber-400 focus-visible:outline-none"
-							>
-								<i className="fas fa-file-csv mr-1 text-[11px]" aria-hidden="true" />
-								Export CSV
-							</button>
-							<button
-								type="button"
-								onClick={() => handleExportPending('excel')}
-								className="inline-flex items-center rounded-full border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-900 transition hover:border-amber-400 focus-visible:outline-none"
-							>
-								<i className="fas fa-file-excel mr-1 text-[11px]" aria-hidden="true" />
-								Export Excel
-							</button>
-						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-amber-500 px-2 text-xs font-semibold text-white">
+						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-navy-600 px-2 text-xs font-semibold text-white shadow-md">
 							{pendingRows.length}
 						</span>
 						</div>
 					</header>
 					<div className="overflow-x-auto px-5 pb-5 pt-3">
-						<table className="min-w-full divide-y divide-amber-200 text-left text-sm text-slate-700">
-							<thead className="bg-amber-50 text-xs uppercase tracking-wide text-amber-700">
+						<table className="min-w-full divide-y divide-indigo-200 text-left text-sm text-slate-700">
+							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900">
 								<tr>
-									<th className="px-3 py-2 font-semibold">Patient</th>
+									<th className="px-3 py-2 font-semibold">Patient / Department</th>
 									<th className="px-3 py-2 font-semibold">Clinician</th>
 									<th className="px-3 py-2 font-semibold">Visit Date</th>
 									<th className="px-3 py-2 font-semibold">Amount (₹)</th>
@@ -2202,7 +2235,7 @@ export default function Billing() {
 									<th className="px-3 py-2 font-semibold text-right">Action</th>
 								</tr>
 							</thead>
-							<tbody className="divide-y divide-amber-100">
+							<tbody className="divide-y divide-indigo-100">
 								{pendingRows.length === 0 ? (
 									<tr>
 										<td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">
@@ -2219,6 +2252,9 @@ export default function Billing() {
 											<tr key={row.appointment.id}>
 												<td className="px-3 py-3 font-medium text-slate-800">
 													<div>{row.patientName}</div>
+													{row.patientRecord?.department && (
+														<p className="mt-0.5 text-xs text-indigo-600 font-medium">{row.patientRecord.department}</p>
+													)}
 													{row.patientRecord?.patientType === 'DYES' && (
 														<p className="mt-0.5 text-xs text-amber-600">
 															Pending sessions:{' '}
@@ -2276,41 +2312,50 @@ export default function Billing() {
 					<header className="flex items-center justify-between rounded-t-2xl bg-sky-500 px-5 py-4 text-white">
 						<div>
 							<h2 className="text-lg font-semibold">Billing History</h2>
-							<p className="text-xs text-sky-100">Recorded invoices that have been completed.</p>
+							<p className="text-xs text-blue-100">Recorded invoices that have been completed.</p>
 						</div>
-						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-sky-700 px-2 text-xs font-semibold text-white">
+						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-indigo-800 px-2 text-xs font-semibold text-white shadow-md">
 							{billingHistoryRows.length}
 						</span>
 					</header>
 					<div className="overflow-x-auto px-5 pb-5 pt-3">
 						<table className="min-w-full divide-y divide-sky-200 text-left text-sm text-slate-700">
-							<thead className="bg-sky-50 text-xs uppercase tracking-wide text-sky-700">
+							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900">
 								<tr>
-									<th className="px-3 py-2 font-semibold">Patient</th>
+									<th className="px-3 py-2 font-semibold">Patient / Department</th>
 									<th className="px-3 py-2 font-semibold">Clinician</th>
 									<th className="px-3 py-2 font-semibold">Visit Date</th>
 									<th className="px-3 py-2 font-semibold">Amount (₹)</th>
 									<th className="px-3 py-2 font-semibold">Billing Date</th>
+									<th className="px-3 py-2 font-semibold">Created By</th>
 									<th className="px-3 py-2 font-semibold text-right">Receipt</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-sky-100">
 								{billingHistoryRows.length === 0 ? (
 									<tr>
-										<td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">
+										<td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">
 											No billing history for the selected filters.
 										</td>
 									</tr>
 								) : (
 									billingHistoryRows.map(row => (
 										<tr key={row.appointment.id}>
-											<td className="px-3 py-3 font-medium text-slate-800">{row.patientName}</td>
+											<td className="px-3 py-3 font-medium text-slate-800">
+												<div>{row.patientName}</div>
+												{row.patientRecord?.department && (
+													<p className="mt-0.5 text-xs text-indigo-600 font-medium">{row.patientRecord.department}</p>
+												)}
+											</td>
 											<td className="px-3 py-3 text-slate-600">{row.appointment.doctor || '—'}</td>
 											<td className="px-3 py-3 text-slate-600">{row.appointment.date || '—'}</td>
 											<td className="px-3 py-3 text-slate-700">
 												{rupee(Number(row.appointment.billing?.amount ?? 0))}
 											</td>
 											<td className="px-3 py-3 text-slate-600">{row.appointment.billing?.date || '—'}</td>
+											<td className="px-3 py-3 text-slate-600 text-xs">
+												{row.billingRecord?.createdByFrontdeskName || '—'}
+											</td>
 											<td className="px-3 py-3 text-right">
 												<button
 													type="button"
@@ -2602,63 +2647,79 @@ export default function Billing() {
 					<header className="flex items-center justify-between rounded-t-2xl bg-emerald-100 px-5 py-4 text-emerald-900">
 						<div>
 							<h2 className="text-lg font-semibold">Completed Payments</h2>
-							<p className="text-xs text-emerald-800/80">
+							<p className="text-xs text-navy-700">
 								Payments that have been completed.
 							</p>
 						</div>
-						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-emerald-500 px-2 text-xs font-semibold text-white">
+						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-navy-600 px-2 text-xs font-semibold text-white shadow-md">
 							{completed.length}
 						</span>
 					</header>
 					<div className="overflow-x-auto px-5 pb-5 pt-3">
 						<table className="min-w-full divide-y divide-emerald-200 text-left text-sm text-slate-700">
-							<thead className="bg-emerald-50 text-xs uppercase tracking-wide text-emerald-700">
+							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900">
 								<tr>
-									<th className="px-3 py-2 font-semibold">Patient</th>
+									<th className="px-3 py-2 font-semibold">Patient / Department</th>
 									<th className="px-3 py-2 font-semibold">Patient ID</th>
 									<th className="px-3 py-2 font-semibold">Doctor</th>
 									<th className="px-3 py-2 font-semibold">Amount (₹)</th>
 									<th className="px-3 py-2 font-semibold">Plan</th>
 									<th className="px-3 py-2 font-semibold">Payment Mode</th>
+									<th className="px-3 py-2 font-semibold">Created By</th>
+									<th className="px-3 py-2 font-semibold">Payment By</th>
 									<th className="px-3 py-2 font-semibold text-right">Actions</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-emerald-100">
 								{completed.length === 0 ? (
 									<tr>
-										<td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">
+										<td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-500">
 											No completed payments.
 										</td>
 									</tr>
 								) : (
-									completed.map(bill => (
-										<tr key={bill.id}>
-											<td className="px-3 py-3 font-medium text-slate-800">{bill.patient}</td>
-											<td className="px-3 py-3 text-slate-600">{bill.patientId}</td>
-											<td className="px-3 py-3 text-slate-600">{bill.doctor || '—'}</td>
-											<td className="px-3 py-3 text-slate-700">Rs. {bill.amount.toFixed(2)}</td>
-											<td className="px-3 py-3 text-slate-600">{formatInstallmentPlan(bill)}</td>
-											<td className="px-3 py-3 text-slate-600">{bill.paymentMode || '—'}</td>
-											<td className="px-3 py-3">
-												<div className="flex items-center justify-end gap-2">
-													<button
-														type="button"
-														onClick={() => handleViewPaymentSlip(bill)}
-														className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
-													>
-														Receipt
-													</button>
-													<button
-														type="button"
-														onClick={() => handleGenerateInvoice(bill)}
-														className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
-													>
-														Invoice
-													</button>
-												</div>
-											</td>
-										</tr>
-									))
+									completed.map(bill => {
+										const patient = bill.patientId ? patientLookup.get(bill.patientId) : undefined;
+										return (
+											<tr key={bill.id}>
+												<td className="px-3 py-3 font-medium text-slate-800">
+													<div>{bill.patient}</div>
+													{patient?.department && (
+														<p className="mt-0.5 text-xs text-indigo-600 font-medium">{patient.department}</p>
+													)}
+												</td>
+												<td className="px-3 py-3 text-slate-600">{bill.patientId}</td>
+												<td className="px-3 py-3 text-slate-600">{bill.doctor || '—'}</td>
+												<td className="px-3 py-3 text-slate-700">Rs. {bill.amount.toFixed(2)}</td>
+												<td className="px-3 py-3 text-slate-600">{formatInstallmentPlan(bill)}</td>
+												<td className="px-3 py-3 text-slate-600">{bill.paymentMode || '—'}</td>
+												<td className="px-3 py-3 text-slate-600 text-xs">
+													{bill.createdByFrontdeskName || '—'}
+												</td>
+												<td className="px-3 py-3 text-slate-600 text-xs">
+													{bill.paymentRegisteredByFrontdeskName || '—'}
+												</td>
+												<td className="px-3 py-3">
+													<div className="flex items-center justify-end gap-2">
+														<button
+															type="button"
+															onClick={() => handleViewPaymentSlip(bill)}
+															className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+														>
+															Receipt
+														</button>
+														<button
+															type="button"
+															onClick={() => handleGenerateInvoice(bill)}
+															className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
+														>
+															Invoice
+														</button>
+													</div>
+												</td>
+											</tr>
+										);
+									})
 								)}
 							</tbody>
 						</table>

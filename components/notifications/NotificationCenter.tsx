@@ -40,6 +40,8 @@ const CATEGORY_LABELS: Record<NotificationCategory | 'unknown', string> = {
 	system: 'System',
 	patient: 'Patients',
 	billing: 'Billing',
+	birthday: 'Birthdays',
+	feedback: 'Feedback',
 	other: 'Other',
 	unknown: 'General',
 };
@@ -179,6 +181,9 @@ export default function NotificationCenter({
 	const [preferencesDraft, setPreferencesDraft] = useState<PreferencesDraft>(defaultPreferencesDraft(preferences));
 	const [processingTransfer, setProcessingTransfer] = useState<Record<string, boolean>>({});
 	const [currentTime, setCurrentTime] = useState<number>(0);
+	const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+	const [replyTexts, setReplyTexts] = useState<Record<string, string>>({});
+	const [sendingReplies, setSendingReplies] = useState<Record<string, boolean>>({});
 	const { user } = useAuth();
 
 	// Track current time for relative date formatting (client-only to avoid hydration issues)
@@ -585,6 +590,80 @@ export default function NotificationCenter({
 		}
 	};
 
+	const handleToggleThread = (notificationId: string) => {
+		setExpandedThreads(prev => {
+			const next = new Set(prev);
+			if (next.has(notificationId)) {
+				next.delete(notificationId);
+			} else {
+				next.add(notificationId);
+			}
+			return next;
+		});
+	};
+
+	const handleSendReply = async (record: NotificationRecord) => {
+		if (!user || !record.threadId || !replyTexts[record.id]?.trim()) return;
+
+		setSendingReplies(prev => ({ ...prev, [record.id]: true }));
+		setActionError(null);
+
+		try {
+			const newMessage = {
+				id: typeof crypto !== 'undefined' && (crypto as any).randomUUID ? (crypto as any).randomUUID() : Math.random().toString(36).slice(2),
+				senderId: user.uid,
+				senderName: user.displayName || user.email || 'User',
+				message: replyTexts[record.id].trim(),
+				createdAt: new Date().toISOString(),
+			};
+
+			// Get current messages and add new one
+			const currentMessages = record.messages || [];
+			const updatedMessages = [...currentMessages, newMessage];
+
+			// Update the notification with new message
+			await updateDoc(doc(db, 'notifications', record.id), {
+				messages: updatedMessages,
+				status: 'unread', // Mark as unread when new message is added
+			});
+
+			// If this is a feedback notification, also notify the original sender
+			if (record.category === 'feedback' && record.fromUserId && record.fromUserId !== user.uid) {
+				await addDoc(collection(db, 'notifications'), {
+					userId: record.fromUserId,
+					title: 'Reply to Your Feedback',
+					message: `${user.displayName || user.email || 'Someone'} replied to your feedback.`,
+					category: 'feedback',
+					status: 'unread',
+					createdAt: serverTimestamp(),
+					threadId: record.threadId,
+					messages: updatedMessages,
+					fromUserId: user.uid,
+					fromUserName: user.displayName || user.email || 'User',
+					metadata: {
+						originalNotificationId: record.id,
+						...(record.metadata || {}),
+					},
+					channels: {
+						inApp: true,
+					},
+				});
+			}
+
+			// Clear reply text
+			setReplyTexts(prev => {
+				const next = { ...prev };
+				delete next[record.id];
+				return next;
+			});
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Failed to send reply.';
+			setActionError(message);
+		} finally {
+			setSendingReplies(prev => ({ ...prev, [record.id]: false }));
+		}
+	};
+
 	const upcomingCards = useMemo(() => {
 		return upcomingReminders
 			.filter(reminder => reminder.scheduledAt && !Number.isNaN(reminder.scheduledAt.getTime()))
@@ -739,8 +818,13 @@ export default function NotificationCenter({
 															)}
 														</div>
 														<h5 className="mt-2 text-sm font-semibold text-slate-900">{record.title}</h5>
-														{record.message && (
+														{record.message && !record.messages && (
 															<p className="mt-1 text-xs text-slate-600">{record.message}</p>
+														)}
+														{record.fromUserName && record.category === 'feedback' && (
+															<p className="mt-1 text-xs text-slate-500">
+																From: {record.fromUserName}
+															</p>
 														)}
 														{record.metadata && Object.keys(record.metadata).length > 0 && (
 															<dl className="mt-3 grid grid-cols-1 gap-2 text-[11px] text-slate-500 sm:grid-cols-2">
@@ -821,6 +905,16 @@ export default function NotificationCenter({
 																</button>
 															</div>
 														)}
+														{record.category === 'feedback' && (
+															<button
+																type="button"
+																onClick={() => handleToggleThread(record.id)}
+																className="inline-flex items-center rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-50"
+															>
+																<i className={`fas fa-${expandedThreads.has(record.id) ? 'chevron-up' : 'comments'} mr-1.5`} aria-hidden="true" />
+																{expandedThreads.has(record.id) ? 'Hide Messages' : 'View Messages'}
+															</button>
+														)}
 														<button
 															type="button"
 															onClick={() => handleToggleNotificationStatus(record)}
@@ -830,6 +924,70 @@ export default function NotificationCenter({
 														</button>
 													</div>
 												</div>
+												{/* Message Thread for Feedback */}
+												{record.category === 'feedback' && expandedThreads.has(record.id) && (
+													<div className="mt-4 border-t border-slate-200 pt-4">
+														<div className="space-y-3">
+															{(record.messages || (record.message ? [{
+																id: 'initial',
+																senderId: record.fromUserId || '',
+																senderName: record.fromUserName || 'Unknown',
+																message: record.message,
+																createdAt: record.createdAt,
+															}] : [])).map((msg, idx) => (
+																<div
+																	key={msg.id || idx}
+																	className={`rounded-lg border p-3 ${
+																		msg.senderId === user?.uid
+																			? 'ml-4 border-sky-200 bg-sky-50'
+																			: 'mr-4 border-slate-200 bg-slate-50'
+																	}`}
+																>
+																	<div className="flex items-center justify-between mb-1">
+																		<span className="text-xs font-semibold text-slate-700">
+																			{msg.senderName}
+																		</span>
+																		<span className="text-[10px] text-slate-400">
+																			{formatRelative(msg.createdAt, currentTime)}
+																		</span>
+																	</div>
+																	<p className="text-xs text-slate-600 whitespace-pre-wrap">{msg.message}</p>
+																</div>
+															))}
+														</div>
+														{/* Reply Input */}
+														<div className="mt-4 space-y-2">
+															<textarea
+																value={replyTexts[record.id] || ''}
+																onChange={e => setReplyTexts(prev => ({ ...prev, [record.id]: e.target.value }))}
+																placeholder="Type your reply..."
+																className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+																rows={2}
+																disabled={sendingReplies[record.id]}
+															/>
+															<div className="flex justify-end">
+																<button
+																	type="button"
+																	onClick={() => handleSendReply(record)}
+																	disabled={!replyTexts[record.id]?.trim() || sendingReplies[record.id]}
+																	className="inline-flex items-center rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed"
+																>
+																	{sendingReplies[record.id] ? (
+																		<>
+																			<i className="fas fa-spinner fa-spin mr-1.5" aria-hidden="true" />
+																			Sending...
+																		</>
+																	) : (
+																		<>
+																			<i className="fas fa-paper-plane mr-1.5" aria-hidden="true" />
+																			Send Reply
+																		</>
+																	)}
+																</button>
+															</div>
+														</div>
+													</div>
+												)}
 											</li>
 										))}
 									</ul>
