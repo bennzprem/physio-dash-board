@@ -1935,6 +1935,22 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 				status: 'cancelled',
 			});
 
+			// Create app notification
+			const deletedByName = user?.displayName || user?.email || 'Unknown';
+			await addDoc(collection(db, 'appNotifications'), {
+				type: 'patient_deleted',
+				title: '🏥 Patient Deleted',
+				message: `${patient.name} (ID: ${patient.patientId}) has been deleted from the system.`,
+				createdAt: serverTimestamp(),
+				read: false,
+				metadata: {
+					patientId: patient.patientId,
+					patientName: patient.name,
+					deletedBy: user?.uid || '',
+					deletedByName: deletedByName,
+				},
+			});
+
 			// Show success message
 			const appointmentCount = appointmentsSnapshot.docs.length;
 			const appointmentText = appointmentCount === 1 ? 'appointment' : 'appointments';

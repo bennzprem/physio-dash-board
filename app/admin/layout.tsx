@@ -14,7 +14,7 @@ import HeaderManagement from '@/components/admin/HeaderManagement';
 import Notifications from '@/components/admin/Notifications';
 import Profile from '@/components/Profile';
 
-type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'reports' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'profile';
+type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'profile';
 
 const adminLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-columns' },
@@ -22,8 +22,8 @@ const adminLinks: SidebarLink[] = [
 	{ href: '#patients', label: 'Patient Management', icon: 'fas fa-user-injured' },
 	{ href: '#calendar-appointments', label: 'Calendar & Appointments', icon: 'fas fa-calendar-check' },
 	{ href: '#billing', label: 'Billing & Payments', icon: 'fas fa-file-invoice-dollar' },
-	{ href: '#reports', label: 'Reports & Analytics', icon: 'fas fa-chart-pie' },
-	{ href: '#notifications', label: 'Notifications', icon: 'fas fa-bell' },
+	{ href: '#analytics', label: 'Analytics', icon: 'fas fa-chart-pie' },
+	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
 	{ href: '#headers', label: 'Header Management', icon: 'fas fa-heading' },
 	{ href: '#audit', label: 'Audit Logs', icon: 'fas fa-clipboard-list' },
 	{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
@@ -53,11 +53,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 			case 'calendar':
 			case 'calendar-appointments':
 				return <CalendarAppointments />;
-			case 'billing':
-				return <Billing />;
-			case 'reports':
-				return <Reports />;
-			case 'headers':
+		case 'billing':
+			return <Billing />;
+		case 'analytics':
+			return <Reports />;
+		case 'headers':
 				return <HeaderManagement />;
 			case 'seed':
 				return <Seed />;

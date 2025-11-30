@@ -143,6 +143,106 @@ service cloud.firestore {
     }
 
     // -------------------------------
+    // APP NOTIFICATIONS COLLECTION
+    // -------------------------------
+    match /appNotifications/{notificationId} {
+      // All logged-in users can read app notifications
+      allow read: if isLoggedIn();
+      
+      // Allow any logged-in user to create app notifications
+      allow create: if isLoggedIn() && 
+                    request.resource.data.type != null &&
+                    request.resource.data.title != null &&
+                    request.resource.data.message != null;
+      
+      // Users can update app notifications (e.g., mark as read)
+      allow update: if isLoggedIn();
+      
+      // Only admins can delete app notifications
+      allow delete: if isAdmin();
+    }
+
+    // -------------------------------
+    // CONVERSATIONS COLLECTION
+    // -------------------------------
+    match /conversations/{conversationId} {
+      // Users can read conversations they're part of
+      allow read: if isLoggedIn() && 
+                  request.auth.uid in resource.data.participants;
+      
+      // Users can create conversations if they're a participant
+      allow create: if isLoggedIn() && 
+                    request.auth.uid in request.resource.data.participants;
+      
+      // Users can update conversations they're part of
+      allow update: if isLoggedIn() && 
+                    request.auth.uid in resource.data.participants;
+      
+      // Users can delete conversations they're part of
+      allow delete: if isLoggedIn() && 
+                    request.auth.uid in resource.data.participants;
+    }
+
+    // -------------------------------
+    // MESSAGES COLLECTION
+    // -------------------------------
+    match /messages/{messageId} {
+      // Helper function to check if user is part of the conversation (for reads/updates)
+      function isConversationParticipantForRead() {
+        if (!isLoggedIn()) {
+          return false;
+        }
+        // Get the conversation ID from the existing message
+        let convId = resource.data.conversationId;
+        if (convId == null) {
+          return false;
+        }
+        // Get the conversation document
+        let convDoc = get(/databases/$(database)/documents/conversations/$(convId));
+        if (!convDoc.exists) {
+          return false;
+        }
+        // Check if user is in participants array
+        return request.auth.uid in convDoc.data.participants;
+      }
+      
+      // Helper function to check if user is part of the conversation (for creates)
+      function isConversationParticipantForCreate() {
+        if (!isLoggedIn()) {
+          return false;
+        }
+        // Get the conversation ID from the new message
+        let convId = request.resource.data.conversationId;
+        if (convId == null) {
+          return false;
+        }
+        // Get the conversation document
+        let convDoc = get(/databases/$(database)/documents/conversations/$(convId));
+        if (!convDoc.exists) {
+          return false;
+        }
+        // Check if user is in participants array
+        return request.auth.uid in convDoc.data.participants;
+      }
+      
+      // Users can read messages in conversations they're part of
+      allow read: if isLoggedIn() && isConversationParticipantForRead();
+      
+      // Users can create messages if they're the sender
+      // Allow creation even if conversation doesn't exist yet (it will be created)
+      allow create: if isLoggedIn() && 
+                    request.resource.data.senderId == request.auth.uid &&
+                    request.resource.data.conversationId != null &&
+                    request.resource.data.text != null;
+      
+      // Users can update messages (e.g., reactions, read status) if they're part of conversation
+      allow update: if isLoggedIn() && isConversationParticipantForRead();
+      
+      // Only admins can delete messages
+      allow delete: if isAdmin();
+    }
+
+    // -------------------------------
     // DENY EVERYTHING ELSE
     // -------------------------------
     match /{document=**} {

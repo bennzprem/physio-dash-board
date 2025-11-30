@@ -152,9 +152,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			summary: 'Track invoices and payment status.',
 		},
 		{
-			href: '#reports',
+			href: '#analytics',
 			icon: 'fas fa-chart-bar',
-			title: 'Reports & Analytics',
+			title: 'Analytics',
 			summary: 'Monitor performance trends and exports.',
 		},
 	];
@@ -556,7 +556,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 								<li>
 									<button
 										type="button"
-										onClick={() => handleQuickLinkClick('#reports')}
+										onClick={() => handleQuickLinkClick('#analytics')}
 										className="inline-flex items-center text-blue-600 hover:text-blue-700 transition"
 									>
 										<i className="fas fa-chart-line mr-2 text-xs" aria-hidden="true" />

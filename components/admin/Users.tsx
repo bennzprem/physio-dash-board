@@ -442,6 +442,21 @@ export default function Users() {
 					deletedByName: currentAdminName,
 				}
 			);
+
+			// Create app notification
+			await addDoc(collection(db, 'appNotifications'), {
+				type: 'employee_deleted',
+				title: '👤 Employee Deleted',
+				message: `${employee.userName} has been deleted by ${currentAdminName}.`,
+				createdAt: serverTimestamp(),
+				read: false,
+				metadata: {
+					employeeId: employee.id,
+					employeeName: employee.userName,
+					deletedBy: user.uid,
+					deletedByName: currentAdminName,
+				},
+			});
 		} catch (err) {
 			console.error('Failed to delete employee', err);
 			setError('Unable to remove employee. Please try again.');

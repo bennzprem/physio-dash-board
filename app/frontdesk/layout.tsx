@@ -5,18 +5,16 @@ import Sidebar, { type SidebarLink } from '@/components/Sidebar';
 import Dashboard from '@/components/frontdesk/Dashboard';
 import Patients from '@/components/frontdesk/Patients';
 import Billing from '@/components/frontdesk/Billing';
-import Reports from '@/components/frontdesk/Reports';
 import Calendar from '@/components/frontdesk/Calendar';
 import Profile from '@/components/Profile';
 
-type FrontdeskPage = 'dashboard' | 'patients' | 'billing' | 'reports' | 'calendar' | 'profile';
+type FrontdeskPage = 'dashboard' | 'patients' | 'billing' | 'calendar' | 'profile';
 
 const frontdeskLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-home' },
 	{ href: '#patients', label: 'Patient Management', icon: 'fas fa-users' },
 	{ href: '#calendar', label: 'Calendar', icon: 'fas fa-calendar-alt' },
 	{ href: '#billing', label: 'Billing', icon: 'fas fa-file-invoice-dollar' },
-	{ href: '#reports', label: 'Reports', icon: 'fas fa-chart-line' },
 ];
 
 export default function FrontdeskLayout({ children }: { children: React.ReactNode }) {
@@ -35,7 +33,7 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 	useEffect(() => {
 		const handleHashChange = () => {
 			const hash = window.location.hash.replace('#', '');
-			if (hash && ['dashboard', 'patients', 'calendar', 'billing', 'reports', 'profile'].includes(hash)) {
+			if (hash && ['dashboard', 'patients', 'calendar', 'billing', 'profile'].includes(hash)) {
 				setActivePage(hash as FrontdeskPage);
 			}
 		};
@@ -49,7 +47,7 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 		// Listen for custom navigation events
 		const handleCustomNav = (event: CustomEvent) => {
 			const page = event.detail?.page;
-			if (page && ['dashboard', 'patients', 'calendar', 'billing', 'reports', 'profile'].includes(page)) {
+			if (page && ['dashboard', 'patients', 'calendar', 'billing', 'profile'].includes(page)) {
 				setActivePage(page as FrontdeskPage);
 			}
 		};
@@ -72,8 +70,6 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 				return <Calendar />;
 			case 'billing':
 				return <Billing />;
-			case 'reports':
-				return <Reports />;
 			case 'profile':
 				return <Profile />;
 			default:

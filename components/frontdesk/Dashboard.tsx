@@ -447,12 +447,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			title: 'Billing',
 			summary: 'Process payments and invoices.',
 		},
-		{
-			href: '#reports',
-			icon: 'fas fa-chart-line',
-			title: 'Reports',
-			summary: 'View and export patient reports.',
-		},
 	];
 
 	const handleQuickLinkClick = (href: string) => {

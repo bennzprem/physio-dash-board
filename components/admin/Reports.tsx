@@ -10,6 +10,7 @@ import {
 } from '@/lib/adminMockData';
 import { db } from '@/lib/firebase';
 import PageHeader from '@/components/PageHeader';
+import StatsChart from '@/components/dashboard/StatsChart';
 import { generatePhysiotherapyReportPDF, generateStrengthConditioningPDF, type StrengthConditioningData } from '@/lib/pdfGenerator';
 
 interface StaffMember {
@@ -17,6 +18,7 @@ interface StaffMember {
 	userName: string;
 	role: string;
 	status: string;
+	profileImage?: string;
 }
 
 type StatusFilter = 'all' | AdminPatientStatus;
@@ -88,15 +90,30 @@ const isWithinWindow = (dateIso: string | undefined, window: DateFilter) => {
 	return diff <= Number(window);
 };
 
+interface BillingRecord {
+	id?: string;
+	billingId: string;
+	appointmentId?: string;
+	patient: string;
+	patientId: string;
+	doctor?: string;
+	amount: number;
+	status: 'Pending' | 'Completed';
+	date: string;
+}
+
 export default function Reports() {
 	const [patients, setPatients] = useState<(AdminPatientRecord & { id?: string })[]>([]);
 	const [appointments, setAppointments] = useState<(AdminAppointmentRecord & { id?: string })[]>([]);
 	const [staff, setStaff] = useState<StaffMember[]>([]);
+	const [billing, setBilling] = useState<BillingRecord[]>([]);
 
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 	const [doctorFilter, setDoctorFilter] = useState<'all' | string>('all');
 	const [dateFilter, setDateFilter] = useState<DateFilter>('all');
 	const [searchTerm, setSearchTerm] = useState('');
+	const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+	const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [modalContext, setModalContext] = useState<{ patient: AdminPatientRecord; doctors: string[] } | null>(
@@ -142,7 +159,8 @@ export default function Reports() {
 									? Number(data.remainingSessions)
 									: undefined,
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined) || new Date().toISOString(),
-					} as AdminPatientRecord & { id: string; patientType?: string };
+						department: data.department ? String(data.department) : undefined,
+					} as AdminPatientRecord & { id: string; patientType?: string; department?: string };
 				});
 				setPatients(mapped);
 			},
@@ -199,6 +217,7 @@ export default function Reports() {
 						userName: data.userName ? String(data.userName) : '',
 						role: data.role ? String(data.role) : '',
 						status: data.status ? String(data.status) : '',
+						profileImage: data.profileImage ? String(data.profileImage) : undefined,
 					} as StaffMember;
 				});
 				setStaff(mapped);
@@ -206,6 +225,36 @@ export default function Reports() {
 			error => {
 				console.error('Failed to load staff', error);
 				setStaff([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, []);
+
+	// Load billing from Firestore
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'billing'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						id: docSnap.id,
+						billingId: data.billingId ? String(data.billingId) : '',
+						appointmentId: data.appointmentId ? String(data.appointmentId) : undefined,
+						patient: data.patient ? String(data.patient) : '',
+						patientId: data.patientId ? String(data.patientId) : '',
+						doctor: data.doctor ? String(data.doctor) : undefined,
+						amount: typeof data.amount === 'number' ? data.amount : Number(data.amount) || 0,
+						status: (data.status as 'Pending' | 'Completed') ?? 'Pending',
+						date: data.date ? String(data.date) : '',
+					} as BillingRecord;
+				});
+				setBilling(mapped);
+			},
+			error => {
+				console.error('Failed to load billing', error);
+				setBilling([]);
 			}
 		);
 
@@ -234,6 +283,7 @@ export default function Reports() {
 				othersCount: 0,
 				totalPatients: 0,
 				totalRevenue: 0,
+				totalHours: 0,
 			};
 		}
 
@@ -273,14 +323,56 @@ export default function Reports() {
 			return sum;
 		}, 0);
 
+		// Calculate total hours (assuming 1 hour per appointment, or calculate from time if available)
+		const totalHours = physicianAppointments.length; // Assuming 1 hour per appointment
+
 		return {
 			vipCount,
 			dyesCount,
 			othersCount,
 			totalPatients: uniquePatientIds.size,
 			totalRevenue,
+			totalHours,
 		};
 	}, [selectedPhysician, appointments, patients]);
+
+	// Activities and Appointments Distribution by Clinical Team (Pie Chart Data)
+	const activitiesDistributionData = useMemo(() => {
+		const clinicalTeamMembers = staff.filter(
+			member => 
+				(member.role === 'ClinicalTeam' || member.role === 'Physiotherapist' || member.role === 'StrengthAndConditioning') &&
+				member.status === 'Active'
+		);
+
+		const distribution = clinicalTeamMembers.map(member => {
+			const memberAppointments = appointments.filter(
+				apt => apt.doctor?.toLowerCase() === member.userName.toLowerCase() && apt.status !== 'cancelled'
+			);
+			return {
+				name: member.userName,
+				count: memberAppointments.length,
+			};
+		}).filter(item => item.count > 0).sort((a, b) => b.count - a.count);
+
+		// Generate gradient colors for pie chart
+		const gradientColors = distribution.map((_, index) => {
+			const hue = (index * 137.508) % 360;
+			return `hsl(${hue}, 70%, 60%)`;
+		});
+
+		return {
+			labels: distribution.map(item => item.name || 'Unassigned'),
+			datasets: [
+				{
+					label: 'Appointments',
+					data: distribution.map(item => item.count),
+					backgroundColor: gradientColors,
+					borderColor: '#ffffff',
+					borderWidth: 2,
+				},
+			],
+		};
+	}, [staff, appointments]);
 
 	const appointmentMap = useMemo(() => {
 		const map = new Map<string, AdminAppointmentRecord[]>();
@@ -355,6 +447,142 @@ export default function Reports() {
 		() => Math.max(...chartData.map(item => item.value), 1),
 		[chartData]
 	);
+
+	// Clinical Team vs Total Patients Graph Data
+	const clinicalTeamData = useMemo(() => {
+		const clinicalTeamMembers = staff.filter(
+			member => 
+				(member.role === 'ClinicalTeam' || member.role === 'Physiotherapist' || member.role === 'StrengthAndConditioning') &&
+				member.status === 'Active'
+		);
+
+		const teamPatientCounts = clinicalTeamMembers.map(member => {
+			const memberAppointments = appointments.filter(
+				apt => apt.doctor?.toLowerCase() === member.userName.toLowerCase()
+			);
+			const uniquePatientIds = new Set(memberAppointments.map(apt => apt.patientId).filter(Boolean));
+			return {
+				name: member.userName,
+				count: uniquePatientIds.size,
+			};
+		}).sort((a, b) => b.count - a.count);
+
+		// Generate gradient colors for each bar (using HSL for variety)
+		const gradientColors = teamPatientCounts.map((_, index) => {
+			const hue = (index * 137.508) % 360; // Golden angle for color distribution
+			return `hsl(${hue}, 70%, 60%)`;
+		});
+
+		// Generate lighter colors for gradient effect
+		const lighterColors = teamPatientCounts.map((_, index) => {
+			const hue = (index * 137.508) % 360;
+			return `hsl(${hue}, 70%, 70%)`;
+		});
+
+		return {
+			labels: teamPatientCounts.map(item => item.name || 'Unassigned'),
+			datasets: [
+				{
+					label: 'Total Patients',
+					data: teamPatientCounts.map(item => item.count),
+					backgroundColor: gradientColors,
+					borderColor: lighterColors,
+					borderWidth: 2,
+				},
+			],
+		};
+	}, [staff, appointments]);
+
+	// Department-based Graph Data
+	const departmentData = useMemo(() => {
+		const departmentCounts = new Map<string, number>();
+		
+		patients.forEach(patient => {
+			const dept = (patient as { department?: string }).department || 'Unassigned';
+			departmentCounts.set(dept, (departmentCounts.get(dept) || 0) + 1);
+		});
+
+		const sortedDepts = Array.from(departmentCounts.entries())
+			.map(([dept, count]) => ({ dept, count }))
+			.sort((a, b) => b.count - a.count);
+
+		// Generate gradient colors for each department (offset hue for variety)
+		const gradientColors = sortedDepts.map((_, index) => {
+			const hue = (index * 137.508 + 180) % 360; // Offset hue for variety
+			return `hsl(${hue}, 65%, 55%)`;
+		});
+
+		// Generate lighter colors for gradient effect
+		const lighterColors = sortedDepts.map((_, index) => {
+			const hue = (index * 137.508 + 180) % 360;
+			return `hsl(${hue}, 65%, 65%)`;
+		});
+
+		return {
+			labels: sortedDepts.map(item => item.dept),
+			datasets: [
+				{
+					label: 'Patients by Department',
+					data: sortedDepts.map(item => item.count),
+					backgroundColor: gradientColors,
+					borderColor: lighterColors,
+					borderWidth: 2,
+				},
+			],
+		};
+	}, [patients]);
+
+	// Revenue vs Clinical Team Graph Data (based on billing totals)
+	const revenueTeamData = useMemo(() => {
+		const clinicalTeamMembers = staff.filter(
+			member => 
+				(member.role === 'ClinicalTeam' || member.role === 'Physiotherapist' || member.role === 'StrengthAndConditioning') &&
+				member.status === 'Active'
+		);
+
+		const teamRevenue = clinicalTeamMembers.map(member => {
+			// Calculate total revenue from billing records for this member
+			const memberBilling = billing.filter(
+				bill => bill.doctor?.toLowerCase() === member.userName.toLowerCase() && bill.status === 'Completed'
+			);
+			
+			const totalRevenue = memberBilling.reduce((sum, bill) => {
+				return sum + (Number.isFinite(bill.amount) ? bill.amount : 0);
+			}, 0);
+
+			return {
+				name: member.userName,
+				revenue: totalRevenue,
+				profileImage: member.profileImage,
+			};
+		}).filter(item => item.revenue > 0).sort((a, b) => b.revenue - a.revenue);
+
+		// Generate gradient colors for each bar (offset hue for variety)
+		const gradientColors = teamRevenue.map((_, index) => {
+			const hue = (index * 137.508 + 90) % 360; // Offset hue for variety
+			return `hsl(${hue}, 65%, 55%)`;
+		});
+
+		// Generate lighter colors for gradient effect
+		const lighterColors = teamRevenue.map((_, index) => {
+			const hue = (index * 137.508 + 90) % 360;
+			return `hsl(${hue}, 65%, 65%)`;
+		});
+
+		return {
+			labels: teamRevenue.map(item => item.name || 'Unassigned'),
+			profileImages: teamRevenue.map(item => item.profileImage),
+			datasets: [
+				{
+					label: 'Revenue (₹)',
+					data: teamRevenue.map(item => item.revenue),
+					backgroundColor: gradientColors,
+					borderColor: lighterColors,
+					borderWidth: 2,
+				},
+			],
+		};
+	}, [staff, billing]);
 
 	const openModal = (row: PatientRow) => {
 		setModalContext({ patient: row.patient, doctors: row.doctors });
@@ -776,8 +1004,7 @@ export default function Reports() {
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					title="Patient Reports"
-					description="View comprehensive patient reports and analytics across all registered patients."
+					title="Analytics"
 					actions={
 						<button
 							type="button"
@@ -792,22 +1019,152 @@ export default function Reports() {
 
 				<div className="border-t border-slate-200" />
 
-				<section className="grid gap-4 text-center sm:grid-cols-2 lg:grid-cols-4">
-				<div className="rounded-2xl bg-sky-600 p-6 text-white shadow-lg">
+				<section className="grid gap-4 text-center sm:grid-cols-2 lg:grid-cols-4 relative">
+				<div 
+					className="group relative rounded-2xl bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 p-6 text-white shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl cursor-pointer"
+					onMouseEnter={(e) => {
+						setHoveredCard('total');
+						const rect = e.currentTarget.getBoundingClientRect();
+						setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top - 10 });
+					}}
+					onMouseLeave={() => {
+						setHoveredCard(null);
+						setTooltipPosition(null);
+					}}
+				>
 					<p className="text-sm uppercase tracking-wide text-white/80">Total Patients</p>
 					<p className="mt-2 text-3xl font-semibold">{summary.total}</p>
+					<div className="absolute inset-0 rounded-2xl bg-white/0 transition-all duration-300 group-hover:bg-white/10" />
+					{hoveredCard === 'total' && tooltipPosition && (
+						<div 
+							className="fixed z-50 px-4 py-2 bg-slate-900 text-white text-sm rounded-lg shadow-xl pointer-events-none whitespace-nowrap transform -translate-x-1/2 -translate-y-full mb-2"
+							style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
+						>
+							Total of {summary.total} registered patients in the system
+							<div className="absolute left-1/2 top-full transform -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+						</div>
+					)}
 				</div>
-				<div className="rounded-2xl bg-amber-400 p-6 text-slate-900 shadow-lg">
-					<p className="text-sm uppercase tracking-wide text-slate-900/80">Pending</p>
+				<div 
+					className="group relative rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 p-6 text-white shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl cursor-pointer"
+					onMouseEnter={(e) => {
+						setHoveredCard('pending');
+						const rect = e.currentTarget.getBoundingClientRect();
+						setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top - 10 });
+					}}
+					onMouseLeave={() => {
+						setHoveredCard(null);
+						setTooltipPosition(null);
+					}}
+				>
+					<p className="text-sm uppercase tracking-wide text-white/90">Pending</p>
 					<p className="mt-2 text-3xl font-semibold">{summary.pending}</p>
+					<div className="absolute inset-0 rounded-2xl bg-white/0 transition-all duration-300 group-hover:bg-white/10" />
+					{hoveredCard === 'pending' && tooltipPosition && (
+						<div 
+							className="fixed z-50 px-4 py-2 bg-slate-900 text-white text-sm rounded-lg shadow-xl pointer-events-none whitespace-nowrap transform -translate-x-1/2 -translate-y-full mb-2"
+							style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
+						>
+							{summary.pending} patients awaiting confirmation or scheduling
+							<div className="absolute left-1/2 top-full transform -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+						</div>
+					)}
 				</div>
-				<div className="rounded-2xl bg-sky-500 p-6 text-white shadow-lg">
+				<div 
+					className="group relative rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-blue-600 p-6 text-white shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl cursor-pointer"
+					onMouseEnter={(e) => {
+						setHoveredCard('ongoing');
+						const rect = e.currentTarget.getBoundingClientRect();
+						setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top - 10 });
+					}}
+					onMouseLeave={() => {
+						setHoveredCard(null);
+						setTooltipPosition(null);
+					}}
+				>
 					<p className="text-sm uppercase tracking-wide text-white/80">Ongoing</p>
 					<p className="mt-2 text-3xl font-semibold">{summary.ongoing}</p>
+					<div className="absolute inset-0 rounded-2xl bg-white/0 transition-all duration-300 group-hover:bg-white/10" />
+					{hoveredCard === 'ongoing' && tooltipPosition && (
+						<div 
+							className="fixed z-50 px-4 py-2 bg-slate-900 text-white text-sm rounded-lg shadow-xl pointer-events-none whitespace-nowrap transform -translate-x-1/2 -translate-y-full mb-2"
+							style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
+						>
+							{summary.ongoing} patients currently in active treatment
+							<div className="absolute left-1/2 top-full transform -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+						</div>
+					)}
 				</div>
-				<div className="rounded-2xl bg-emerald-500 p-6 text-white shadow-lg">
+				<div 
+					className="group relative rounded-2xl bg-gradient-to-br from-emerald-400 via-green-500 to-teal-600 p-6 text-white shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl cursor-pointer"
+					onMouseEnter={(e) => {
+						setHoveredCard('completed');
+						const rect = e.currentTarget.getBoundingClientRect();
+						setTooltipPosition({ x: rect.left + rect.width / 2, y: rect.top - 10 });
+					}}
+					onMouseLeave={() => {
+						setHoveredCard(null);
+						setTooltipPosition(null);
+					}}
+				>
 					<p className="text-sm uppercase tracking-wide text-white/80">Completed</p>
 					<p className="mt-2 text-3xl font-semibold">{summary.completed}</p>
+					<div className="absolute inset-0 rounded-2xl bg-white/0 transition-all duration-300 group-hover:bg-white/10" />
+					{hoveredCard === 'completed' && tooltipPosition && (
+						<div 
+							className="fixed z-50 px-4 py-2 bg-slate-900 text-white text-sm rounded-lg shadow-xl pointer-events-none whitespace-nowrap transform -translate-x-1/2 -translate-y-full mb-2"
+							style={{ left: `${tooltipPosition.x}px`, top: `${tooltipPosition.y}px` }}
+						>
+							{summary.completed} patients who have completed their treatment
+							<div className="absolute left-1/2 top-full transform -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+						</div>
+					)}
+				</div>
+			</section>
+
+			{/* Analytics Graphs Section */}
+			<section className="mx-auto mt-8 max-w-6xl space-y-6">
+				<div className="grid gap-6 lg:grid-cols-2">
+					{/* Clinical Team vs Total Patients */}
+					<div className="group rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all duration-300 hover:shadow-[0_25px_50px_rgba(15,23,42,0.15)] hover:scale-[1.01]">
+						<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Clinical Team vs Total Patients</h3>
+						<p className="mb-4 text-sm text-slate-500">Patient distribution across clinical team members</p>
+						<div className="h-[350px]">
+							<StatsChart 
+								type="bar" 
+								data={clinicalTeamData} 
+								height={350}
+							/>
+						</div>
+					</div>
+
+					{/* Revenue vs Clinical Team */}
+					<div className="group rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all duration-300 hover:shadow-[0_25px_50px_rgba(15,23,42,0.15)] hover:scale-[1.01]">
+						<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Revenue vs Clinical Team</h3>
+						<p className="mb-4 text-sm text-slate-500">Revenue generated by each clinical team member</p>
+						<div className="h-[350px]">
+							<StatsChart 
+								type="bar" 
+								data={revenueTeamData} 
+								height={350}
+								indexAxis="y"
+							/>
+						</div>
+					</div>
+				</div>
+				<div className="grid gap-6 lg:grid-cols-1">
+					{/* Patients by Department */}
+					<div className="group rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all duration-300 hover:shadow-[0_25px_50px_rgba(15,23,42,0.15)] hover:scale-[1.01]">
+						<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Patients by Department</h3>
+						<p className="mb-4 text-sm text-slate-500">Patient distribution across different departments</p>
+						<div className="h-[350px]">
+							<StatsChart 
+								type="bar" 
+								data={departmentData} 
+								height={350}
+							/>
+						</div>
+					</div>
 				</div>
 			</section>
 
@@ -844,92 +1201,126 @@ export default function Reports() {
 				</div>
 
 				{selectedPhysician && (
-					<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-						{/* VIP Count */}
-						<div className="rounded-xl border border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 p-5 shadow-sm">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-xs font-semibold uppercase tracking-wide text-purple-600">
-										VIP Patients
-									</p>
-									<p className="mt-2 text-3xl font-bold text-purple-900">
-										{clinicianAnalytics.vipCount}
-									</p>
+					<>
+						<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+							{/* VIP Count */}
+							<div className="rounded-xl border border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100 p-5 shadow-sm">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-xs font-semibold uppercase tracking-wide text-purple-600">
+											VIP Patients
+										</p>
+										<p className="mt-2 text-3xl font-bold text-purple-900">
+											{clinicianAnalytics.vipCount}
+										</p>
+									</div>
+									<div className="rounded-full bg-purple-200 p-3">
+										<i className="fas fa-crown text-xl text-purple-600" aria-hidden="true" />
+									</div>
 								</div>
-								<div className="rounded-full bg-purple-200 p-3">
-									<i className="fas fa-crown text-xl text-purple-600" aria-hidden="true" />
+							</div>
+
+							{/* DYES Count */}
+							<div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-5 shadow-sm">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
+											DYES Patients
+										</p>
+										<p className="mt-2 text-3xl font-bold text-blue-900">
+											{clinicianAnalytics.dyesCount}
+										</p>
+									</div>
+									<div className="rounded-full bg-blue-200 p-3">
+										<i className="fas fa-users text-xl text-blue-600" aria-hidden="true" />
+									</div>
+								</div>
+							</div>
+
+							{/* Others Count */}
+							<div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100 p-5 shadow-sm">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+											Other Patients
+										</p>
+										<p className="mt-2 text-3xl font-bold text-slate-900">
+											{clinicianAnalytics.othersCount}
+										</p>
+									</div>
+									<div className="rounded-full bg-slate-200 p-3">
+										<i className="fas fa-user-friends text-xl text-slate-600" aria-hidden="true" />
+									</div>
+								</div>
+							</div>
+
+							{/* Total Patients */}
+							<div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 p-5 shadow-sm">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+											Total Patients
+										</p>
+										<p className="mt-2 text-3xl font-bold text-emerald-900">
+											{clinicianAnalytics.totalPatients}
+										</p>
+									</div>
+									<div className="rounded-full bg-emerald-200 p-3">
+										<i className="fas fa-user-check text-xl text-emerald-600" aria-hidden="true" />
+									</div>
+								</div>
+							</div>
+
+							{/* Total Revenue */}
+							<div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100 p-5 shadow-sm">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
+											Total Revenue
+										</p>
+										<p className="mt-2 text-2xl font-bold text-amber-900">
+											₹{clinicianAnalytics.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+										</p>
+									</div>
+									<div className="rounded-full bg-amber-200 p-3">
+										<i className="fas fa-rupee-sign text-xl text-amber-600" aria-hidden="true" />
+									</div>
+								</div>
+							</div>
+
+							{/* Total Hours */}
+							<div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-indigo-100 p-5 shadow-sm">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+											Total Hours
+										</p>
+										<p className="mt-2 text-3xl font-bold text-indigo-900">
+											{clinicianAnalytics.totalHours || 0}
+										</p>
+									</div>
+									<div className="rounded-full bg-indigo-200 p-3">
+										<i className="fas fa-clock text-xl text-indigo-600" aria-hidden="true" />
+									</div>
 								</div>
 							</div>
 						</div>
 
-						{/* DYES Count */}
-						<div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100 p-5 shadow-sm">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
-										DYES Patients
-									</p>
-									<p className="mt-2 text-3xl font-bold text-blue-900">
-										{clinicianAnalytics.dyesCount}
-									</p>
-								</div>
-								<div className="rounded-full bg-blue-200 p-3">
-									<i className="fas fa-users text-xl text-blue-600" aria-hidden="true" />
+						{/* Activities and Appointments Distribution Pie Chart */}
+						<div className="mt-8 grid gap-6 lg:grid-cols-2">
+							<div className="group rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all duration-300 hover:shadow-[0_25px_50px_rgba(15,23,42,0.15)] hover:scale-[1.01]">
+								<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Activities & Appointments Distribution</h3>
+								<p className="mb-4 text-sm text-slate-500">Distribution of appointments across clinical team members</p>
+								<div className="h-[350px]">
+									<StatsChart 
+										type="doughnut" 
+										data={activitiesDistributionData} 
+										height={350}
+									/>
 								</div>
 							</div>
 						</div>
-
-						{/* Others Count */}
-						<div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100 p-5 shadow-sm">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-										Other Patients
-									</p>
-									<p className="mt-2 text-3xl font-bold text-slate-900">
-										{clinicianAnalytics.othersCount}
-									</p>
-								</div>
-								<div className="rounded-full bg-slate-200 p-3">
-									<i className="fas fa-user-friends text-xl text-slate-600" aria-hidden="true" />
-								</div>
-							</div>
-						</div>
-
-						{/* Total Patients */}
-						<div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 p-5 shadow-sm">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
-										Total Patients
-									</p>
-									<p className="mt-2 text-3xl font-bold text-emerald-900">
-										{clinicianAnalytics.totalPatients}
-									</p>
-								</div>
-								<div className="rounded-full bg-emerald-200 p-3">
-									<i className="fas fa-user-check text-xl text-emerald-600" aria-hidden="true" />
-								</div>
-							</div>
-						</div>
-
-						{/* Total Revenue */}
-						<div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100 p-5 shadow-sm">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
-										Total Revenue
-									</p>
-									<p className="mt-2 text-2xl font-bold text-amber-900">
-										₹{clinicianAnalytics.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-									</p>
-								</div>
-								<div className="rounded-full bg-amber-200 p-3">
-									<i className="fas fa-rupee-sign text-xl text-amber-600" aria-hidden="true" />
-								</div>
-							</div>
-						</div>
-					</div>
+					</>
 				)}
 
 				{!selectedPhysician && (
@@ -938,157 +1329,6 @@ export default function Reports() {
 						<p className="text-sm text-slate-600">Select a physician to view performance analytics</p>
 					</div>
 				)}
-			</section>
-
-			<section className="mx-auto mt-8 grid max-w-6xl gap-4 md:grid-cols-[repeat(4,minmax(0,1fr))]">
-				<div>
-					<label className="block text-sm font-medium text-slate-700">Status</label>
-					<select
-						value={statusFilter}
-						onChange={event => setStatusFilter(event.target.value as StatusFilter)}
-						className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-					>
-						{statusOptions.map(option => (
-							<option key={option.value} value={option.value}>
-								{option.label}
-							</option>
-						))}
-					</select>
-				</div>
-				<div>
-					<label className="block text-sm font-medium text-slate-700">Assigned Clinician</label>
-					<select
-						value={doctorFilter}
-						onChange={event => setDoctorFilter(event.target.value)}
-						className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-					>
-						<option value="all">All Clinicians</option>
-						{doctorOptions.map(option => (
-							<option key={option} value={option}>
-								{option}
-							</option>
-						))}
-					</select>
-				</div>
-				<div>
-					<label className="block text-sm font-medium text-slate-700">Date Range</label>
-					<select
-						value={dateFilter}
-						onChange={event => setDateFilter(event.target.value as DateFilter)}
-						className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-					>
-						{dateRangeOptions.map(option => (
-							<option key={option.value} value={option.value}>
-								{option.label}
-							</option>
-						))}
-					</select>
-				</div>
-				<div>
-					<label className="block text-sm font-medium text-slate-700">Search</label>
-					<input
-						type="search"
-						value={searchTerm}
-						onChange={event => setSearchTerm(event.target.value)}
-						placeholder="Patient name, ID, or phone"
-						className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-					/>
-				</div>
-			</section>
-
-			<section className="mx-auto mt-10 max-w-6xl rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
-				<h2 className="text-lg font-semibold text-slate-900">Appointment Status Overview</h2>
-				<div className="mt-6 flex h-48 items-end gap-6">
-					{chartData.map(item => {
-						const height = item.value === 0 ? 6 : Math.max((item.value / maxChartValue) * 100, 10);
-						return (
-							<div key={item.label} className="flex flex-1 flex-col items-center justify-end">
-								<div className="flex h-full w-full max-w-[3.5rem] items-end justify-center">
-									<div
-										className={`${item.color} w-full rounded-t-lg`}
-										style={{ height: `${height}%` }}
-									/>
-								</div>
-								<p className="mt-3 text-sm font-medium text-slate-700">{item.label}</p>
-								<p className="text-xs text-slate-500">{item.value}</p>
-							</div>
-						);
-					})}
-				</div>
-			</section>
-
-			<section className="mx-auto mt-8 max-w-6xl overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
-				<div className="overflow-x-auto">
-					<table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
-						<thead className="bg-slate-900 text-xs uppercase tracking-wide text-white">
-							<tr>
-								<th className="px-4 py-3 font-semibold">Patient ID</th>
-								<th className="px-4 py-3 font-semibold">Name</th>
-								<th className="px-4 py-3 font-semibold">Age</th>
-								<th className="px-4 py-3 font-semibold">Gender</th>
-								<th className="px-4 py-3 font-semibold">Complaint</th>
-								<th className="px-4 py-3 font-semibold">Status</th>
-								<th className="px-4 py-3 font-semibold">Clinicians</th>
-								<th className="px-4 py-3 font-semibold text-right">Actions</th>
-							</tr>
-						</thead>
-						<tbody className="divide-y divide-slate-100">
-							{filteredRows.length === 0 ? (
-								<tr>
-									<td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
-										No patients match the current filters.
-									</td>
-								</tr>
-							) : (
-								filteredRows.map(row => (
-									<tr key={(row.patient as AdminPatientRecord & { id?: string }).id ?? row.patient.patientId}>
-										<td className="px-4 py-4 font-medium text-slate-800">{row.patient.patientId}</td>
-										<td className="px-4 py-4 text-slate-700">{row.patient.name}</td>
-										<td className="px-4 py-4 text-slate-600">{row.age}</td>
-										<td className="px-4 py-4 text-slate-600">{row.patient.gender || '—'}</td>
-										<td className="px-4 py-4 text-slate-600">{row.patient.complaint || '—'}</td>
-										<td className="px-4 py-4">
-											<span
-												className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusBadgeClasses[row.status]}`}
-											>
-												{capitalize(row.status)}
-											</span>
-										</td>
-										<td className="px-4 py-4 text-slate-600">
-											{row.doctors.length ? row.doctors.join(', ') : 'N/A'}
-										</td>
-										<td className="px-4 py-4 text-right text-sm">
-											<button
-												type="button"
-												onClick={() => openModal(row)}
-												className="inline-flex items-center rounded-full border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700 transition hover:border-sky-400 hover:text-sky-800 focus-visible:border-sky-400 focus-visible:text-sky-800 focus-visible:outline-none"
-											>
-												<i className="fas fa-eye mr-1 text-[11px]" aria-hidden="true" />
-												View
-											</button>
-											<button
-												type="button"
-												onClick={() => handleViewStrengthConditioning(row.patient)}
-												className="ml-2 inline-flex items-center rounded-full border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700 transition hover:border-sky-400 hover:text-sky-800 focus-visible:border-sky-400 focus-visible:text-sky-800 focus-visible:outline-none"
-											>
-												<i className="fas fa-dumbbell mr-1 text-[11px]" aria-hidden="true" />
-												S&C
-											</button>
-											<button
-												type="button"
-												onClick={() => handleDelete(row.patient.patientId)}
-												className="ml-2 inline-flex items-center rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 transition hover:border-rose-400 hover:text-rose-700 focus-visible:border-rose-400 focus-visible:text-rose-700 focus-visible:outline-none"
-											>
-												<i className="fas fa-trash mr-1 text-[11px]" aria-hidden="true" />
-												Delete
-											</button>
-										</td>
-									</tr>
-								))
-							)}
-						</tbody>
-					</table>
-				</div>
 			</section>
 
 			{isModalOpen && modalContext && (
