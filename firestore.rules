@@ -105,6 +105,20 @@ service cloud.firestore {
     }
 
     // -------------------------------
+    // AUDIT LOGS COLLECTION
+    // -------------------------------
+    match /auditLogs/{id} {
+      // Admins can see all audit logs in the UI
+      allow read: if isAdmin();
+
+      // Any logged-in user or system component can write audit entries
+      allow create: if isLoggedIn();
+
+      // Only admins can modify or delete existing logs
+      allow update, delete: if isAdmin();
+    }
+
+    // -------------------------------
     // STAFF COLLECTION
     // -------------------------------
     match /staff/{id} {
@@ -240,6 +254,18 @@ service cloud.firestore {
       
       // Only admins can delete messages
       allow delete: if isAdmin();
+    }
+
+    // -------------------------------
+    // HEADER CONFIGS COLLECTION
+    // -------------------------------
+    // Stores configurable header/logo information for reports, billing, invoices, etc.
+    match /headerConfigs/{configId} {
+      // Any logged-in user can read header configs (used for printing, invoices, etc.)
+      allow read: if isLoggedIn();
+
+      // Only admins can create or update header configurations
+      allow write: if isAdmin();
     }
 
     // -------------------------------

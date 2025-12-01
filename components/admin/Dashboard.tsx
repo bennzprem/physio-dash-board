@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, where, getDocs, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDocs, orderBy, limit, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 
 import PageHeader from '@/components/PageHeader';
 import DashboardWidget from '@/components/dashboard/DashboardWidget';
@@ -44,6 +44,13 @@ interface UserRecord {
 	status: string;
 }
 
+interface AuditLogEntry {
+	id: string;
+	action: string;
+	userEmail?: string | null;
+	createdAt: string;
+}
+
 export default function Dashboard({ onNavigate }: DashboardProps) {
 	const { user } = useAuth();
 	const [patients, setPatients] = useState<PatientRecord[]>([]);
@@ -51,6 +58,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	const [staff, setStaff] = useState<StaffMember[]>([]);
 	const [users, setUsers] = useState<UserRecord[]>([]);
 	const [userProfile, setUserProfile] = useState<{ userName?: string; profileImage?: string }>({});
+	const [recentAuditLogs, setRecentAuditLogs] = useState<AuditLogEntry[]>([]);
 
 	// Check for birthdays on dashboard load (only once per day)
 	useEffect(() => {
@@ -257,6 +265,38 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		return () => unsubscribe();
 	}, []);
 
+	// Load recent audit logs (all employees, latest first)
+	useEffect(() => {
+		const q = query(
+			collection(db, 'auditLogs'),
+			orderBy('createdAt', 'desc'),
+			limit(8)
+		);
+
+		const unsubscribe = onSnapshot(
+			q,
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, any>;
+					const created = (data.createdAt as Timestamp | undefined)?.toDate?.();
+					return {
+						id: docSnap.id,
+						action: String(data.action || ''),
+						userEmail: data.userEmail ?? data.userId ?? null,
+						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || '',
+					} as AuditLogEntry;
+				});
+				setRecentAuditLogs(mapped);
+			},
+			error => {
+				console.error('Failed to load recent audit logs', error);
+				setRecentAuditLogs([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, []);
+
 	// Calculate statistics
 	const stats = useMemo(() => {
 		const pending = patients.filter(p => p.status === 'pending');
@@ -394,6 +434,21 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	const ICON_WRAPPER =
 		'flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600 transition group-hover:bg-gradient-to-r group-hover:from-blue-700 group-hover:via-blue-600 group-hover:to-blue-500 group-hover:text-white group-focus-visible:bg-gradient-to-r group-focus-visible:from-blue-700 group-focus-visible:via-blue-600 group-focus-visible:to-blue-500 group-focus-visible:text-white';
 
+	function formatAuditDateTime(iso: string) {
+		if (!iso) return '—';
+		try {
+			return new Intl.DateTimeFormat('en-US', {
+				month: 'short',
+				day: 'numeric',
+				year: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+			}).format(new Date(iso));
+		} catch {
+			return iso;
+		}
+	}
+
 	return (
 		<div className="min-h-svh bg-purple-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
@@ -521,62 +576,83 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				{/* Divider */}
 				<div className="border-t border-blue-200" />
 
-				{/* Operations & Resources Section */}
-				<section>
-					<div className="mb-6">
-						<h2 className="text-xl font-semibold text-blue-900">Operations & Resources</h2>
-						<p className="mt-1 text-sm text-blue-700">
-							Monitor daily operations and access helpful resources
-						</p>
-					</div>
-					<div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-						<div className="rounded-3xl bg-white border border-blue-200 p-6 shadow-lg">
-							<h3 className="text-lg font-semibold text-blue-900">Operational Snapshot</h3>
-							<p className="mt-1 text-sm text-blue-700">
-								Keep tabs on the day-to-day so handoffs stay smooth across teams.
-							</p>
-							<ul className="mt-4 space-y-3 text-sm text-blue-800">
-								<li className="flex items-start gap-2">
-									<i className="fas fa-user-shield mt-1 text-blue-600" aria-hidden="true" />
-									<span>Review pending staff invites to ensure new hires have access on day one.</span>
-								</li>
-								<li className="flex items-start gap-2">
-									<i className="fas fa-file-alt mt-1 text-blue-600" aria-hidden="true" />
-									<span>Export the latest patient roster before daily stand-up for quick reference.</span>
-								</li>
-								<li className="flex items-start gap-2">
-									<i className="fas fa-bell mt-1 text-blue-600" aria-hidden="true" />
-									<span>Check calendar notifications for schedule conflicts flagged overnight.</span>
-								</li>
-							</ul>
-						</div>
-						<div className="rounded-3xl bg-white border border-blue-200 p-6 shadow-lg">
-							<h3 className="text-lg font-semibold text-blue-900">Need A Quick Link?</h3>
-							<ul className="mt-4 space-y-3 text-sm text-blue-800">
-								<li>
-									<button
-										type="button"
-										onClick={() => handleQuickLinkClick('#analytics')}
-										className="inline-flex items-center text-blue-600 hover:text-blue-700 transition"
-									>
-										<i className="fas fa-chart-line mr-2 text-xs" aria-hidden="true" />
-										View performance overview
-									</button>
-								</li>
-								<li>
-									<button
-										type="button"
-										onClick={() => handleQuickLinkClick('#billing')}
-										className="inline-flex items-center text-blue-600 hover:text-blue-700 transition"
-									>
-										<i className="fas fa-wallet mr-2 text-xs" aria-hidden="true" />
-										Reconcile outstanding invoices
-									</button>
-								</li>
-							</ul>
-						</div>
-					</div>
-				</section>
+ 				{/* Operations & Recent Activity Section */}
+ 				<section>
+ 					<div className="mb-6">
+ 						<h2 className="text-xl font-semibold text-blue-900">Operations & Activity</h2>
+ 						<p className="mt-1 text-sm text-blue-700">
+ 							Monitor daily operations and recent activity from all employees.
+ 						</p>
+ 					</div>
+ 					<div className="grid gap-6 lg:grid-cols-[1.6fr,1.4fr]">
+ 						{/* Operational Snapshot */}
+ 						<div className="rounded-3xl bg-white border border-blue-200 p-6 shadow-lg">
+ 							<h3 className="text-lg font-semibold text-blue-900">Operational Snapshot</h3>
+ 							<p className="mt-1 text-sm text-blue-700">
+ 								Keep tabs on the day-to-day so handoffs stay smooth across teams.
+ 							</p>
+ 							<ul className="mt-4 space-y-3 text-sm text-blue-800">
+ 								<li className="flex items-start gap-2">
+ 									<i className="fas fa-user-shield mt-1 text-blue-600" aria-hidden="true" />
+ 									<span>Review pending staff invites to ensure new hires have access on day one.</span>
+ 								</li>
+ 								<li className="flex items-start gap-2">
+ 									<i className="fas fa-file-alt mt-1 text-blue-600" aria-hidden="true" />
+ 									<span>Export the latest patient roster before daily stand-up for quick reference.</span>
+ 								</li>
+ 								<li className="flex items-start gap-2">
+ 									<i className="fas fa-bell mt-1 text-blue-600" aria-hidden="true" />
+ 									<span>Check calendar and billing alerts for conflicts or overdue items.</span>
+ 								</li>
+ 							</ul>
+ 						</div>
+
+ 						{/* Recent Audit Logs */}
+ 						<div className="rounded-3xl bg-white border border-blue-200 p-6 shadow-lg flex flex-col">
+ 							<div className="flex items-center justify-between mb-4">
+ 								<h3 className="text-lg font-semibold text-blue-900">Recent Activity (Audit Logs)</h3>
+ 								{onNavigate && (
+ 									<button
+ 										type="button"
+ 										onClick={() => onNavigate('#audit-logs')}
+ 										className="inline-flex items-center rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:text-blue-900 focus-visible:outline-none"
+ 									>
+ 										<i className="fas fa-list-ul mr-1.5 text-[10px]" aria-hidden="true" />
+ 										View all
+ 									</button>
+ 								)}
+ 							</div>
+ 							<p className="text-xs text-blue-700 mb-3">
+ 								Latest actions from all employees, including logins and key operations.
+ 							</p>
+ 							<div className="flex-1 rounded-2xl border border-blue-100 bg-blue-50/40">
+ 								{recentAuditLogs.length === 0 ? (
+ 									<p className="py-6 text-center text-xs text-blue-700">
+ 										No activity recorded yet.
+ 									</p>
+ 								) : (
+ 									<ul className="divide-y divide-blue-100 max-h-64 overflow-y-auto">
+ 										{recentAuditLogs.map(log => (
+ 											<li key={log.id} className="flex items-center justify-between px-4 py-2.5">
+ 												<div className="min-w-0">
+ 													<p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
+ 														{log.action}
+ 													</p>
+ 													<p className="mt-0.5 text-xs text-blue-900 truncate">
+ 														{log.userEmail || 'Unknown user'}
+ 													</p>
+ 												</div>
+ 												<p className="ml-4 text-[11px] text-blue-700 whitespace-nowrap">
+ 													{formatAuditDateTime(log.createdAt)}
+ 												</p>
+ 											</li>
+ 										))}
+ 									</ul>
+ 								)}
+ 							</div>
+ 						</div>
+ 					</div>
+ 				</section>
 			</div>
 		</div>
 	);
