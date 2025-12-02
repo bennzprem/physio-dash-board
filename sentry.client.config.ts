@@ -41,13 +41,13 @@ if (dsn) {
         maskAllText: true,
         blockAllMedia: true,
       }),
-      Sentry.feedbackIntegration({
-        // Automatically shows feedback widget button in bottom-right corner
-        autoInject: true, // Explicitly enable auto-injection
-        colorScheme: "system", // or "light" | "dark"
-        showEmail: true,
-        showName: true,
-      }),
+      // Feedback widget removed - user requested removal
+      // Sentry.feedbackIntegration({
+      //   autoInject: true,
+      //   colorScheme: "system",
+      //   showEmail: true,
+      //   showName: true,
+      // }),
     ],
   });
 }
