@@ -2386,8 +2386,8 @@ export default function Billing() {
 			{/* Invoice Preview Modal */}
 			{isInvoiceOpen && editableInvoice && selectedBill && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6 overflow-y-auto">
-					<div className="w-full max-w-7xl rounded-2xl border border-slate-200 bg-white shadow-2xl my-8">
-						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+					<div className="w-full max-w-7xl rounded-2xl border border-slate-200 bg-white shadow-2xl my-8 flex flex-col max-h-[90vh]">
+						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4 flex-shrink-0">
 							<h2 className="text-lg font-semibold text-slate-900">Invoice Preview & Edit</h2>
 							<button
 								type="button"
@@ -2398,7 +2398,7 @@ export default function Billing() {
 								<i className="fas fa-times" aria-hidden="true" />
 							</button>
 						</header>
-						<div className="p-6">
+						<div className="p-6 overflow-y-auto flex-1">
 							<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 								{/* Editable Fields */}
 								<div className="space-y-4">
@@ -2559,7 +2559,7 @@ export default function Billing() {
 								</div>
 							</div>
 						</div>
-						<footer className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
+						<footer className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4 flex-shrink-0">
 							<button
 								type="button"
 								onClick={closeInvoice}
