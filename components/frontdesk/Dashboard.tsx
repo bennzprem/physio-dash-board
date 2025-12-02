@@ -399,7 +399,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			title: 'Total Registered',
 			subtitle: 'View full registry',
 			icon: <ClipboardIcon />,
-			iconBg: 'bg-sky-100 text-sky-700 ring-sky-200',
+			iconBg: 'bg-gradient-to-br from-sky-100 to-blue-100 text-sky-700 ring-sky-200',
 			count: stats.total,
 		},
 		{
@@ -407,7 +407,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			title: 'Pending',
 			subtitle: 'Awaiting confirmation',
 			icon: <ClockIcon />,
-			iconBg: 'bg-amber-100 text-amber-700 ring-amber-200',
+			iconBg: 'bg-gradient-to-br from-amber-100 to-yellow-100 text-amber-700 ring-amber-200',
 			count: stats.pending.length,
 		},
 		{
@@ -415,7 +415,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			title: 'Ongoing',
 			subtitle: 'Currently in progress',
 			icon: <StethoscopeIcon />,
-			iconBg: 'bg-indigo-100 text-indigo-700 ring-indigo-200',
+			iconBg: 'bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-700 ring-indigo-200',
 			count: stats.ongoing.length,
 		},
 		{
@@ -423,23 +423,23 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			title: 'Completed',
 			subtitle: 'Ready for billing',
 			icon: <CheckIcon />,
-			iconBg: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
+			iconBg: 'bg-gradient-to-br from-emerald-100 to-teal-100 text-emerald-700 ring-emerald-200',
 			count: stats.completed.length,
 		},
 	];
 
 	const quickLinks = [
 		{
-			href: '#register',
-			icon: 'fas fa-user-plus',
-			title: 'Register Patient',
-			summary: 'Add new patients to the system.',
+			href: '#patients',
+			icon: 'fas fa-users',
+			title: 'Patient Management',
+			summary: 'View, edit, and manage patient records.',
 		},
 		{
-			href: '#appointments',
-			icon: 'fas fa-calendar-check',
-			title: 'Appointments',
-			summary: 'Schedule and manage appointments.',
+			href: '#notifications',
+			icon: 'fas fa-bell',
+			title: 'Notification & Messaging',
+			summary: 'Stay updated and communicate with your team.',
 		},
 		{
 			href: '#billing',
@@ -457,7 +457,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
 
 	return (
-		<div className="min-h-svh bg-purple-50 px-6 py-10">
+		<div className="min-h-svh bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Front Desk Dashboard"
@@ -500,7 +500,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				/>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-indigo-200/50" />
 
 				{/* Statistics Overview Section */}
 				<section>
@@ -514,7 +514,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 									key={card.key}
 									type="button"
 									onClick={() => setModal(card.key)}
-									className="group card-base"
+									className="group card-base bg-gradient-to-br from-white to-slate-50/50 hover:from-white hover:to-indigo-50/30 border-indigo-100 hover:border-indigo-200 shadow-md hover:shadow-lg transition-all duration-300"
 								>
 									<div className="flex items-center justify-between">
 										<span className={`icon-wrapper-base ${card.iconBg}`} aria-hidden="true">
@@ -536,7 +536,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-indigo-200/50" />
 
 				{/* Analytics Section */}
 				<section>
@@ -545,23 +545,23 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 							Visualize appointment flow, patient distribution, and team workload in real time.
 						</p>
 						<div className="grid gap-6 lg:grid-cols-2">
-							<div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-								<p className="text-sm font-semibold text-slate-800">Weekly Appointment Trend</p>
-								<p className="text-xs text-slate-500">Includes the last 7 days of confirmed sessions.</p>
+							<div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-purple-50/30 p-4 shadow-md hover:shadow-lg transition-shadow">
+								<p className="text-sm font-semibold text-indigo-900">Weekly Appointment Trend</p>
+								<p className="text-xs text-indigo-700">Includes the last 7 days of confirmed sessions.</p>
 								<div className="mt-4">
 									<StatsChart type="line" data={appointmentTrendData} height={260} />
 								</div>
 							</div>
 							<div className="grid gap-6 sm:grid-cols-2">
-								<div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-									<p className="text-sm font-semibold text-slate-800">Patient Status Mix</p>
-									<p className="text-xs text-slate-500">Pending vs. ongoing vs. completed.</p>
+								<div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50/50 to-pink-50/30 p-4 shadow-md hover:shadow-lg transition-shadow">
+									<p className="text-sm font-semibold text-purple-900">Patient Status Mix</p>
+									<p className="text-xs text-purple-700">Pending vs. ongoing vs. completed.</p>
 									<div className="mt-4">
 										<StatsChart type="doughnut" data={statusDistributionData} height={220} />
 									</div>
 								</div>
-								<div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-									<p className="text-sm font-semibold text-slate-800">Team Workload</p>
+								<div className="rounded-2xl border border-pink-200 bg-gradient-to-br from-pink-50/50 to-rose-50/30 p-4 shadow-md hover:shadow-lg transition-shadow">
+									<p className="text-sm font-semibold text-pink-900">Team Workload</p>
 									<p className="text-xs text-slate-500">Active appointments by clinician.</p>
 									<div className="mt-4">
 										<StatsChart type="bar" data={staffLoadData} height={220} />
@@ -573,7 +573,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-indigo-200/50" />
 
 				{/* Quick Actions Section */}
 				<section>
@@ -604,7 +604,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-indigo-200/50" />
 
 				{/* Daily Operations Section */}
 				<section>
@@ -655,15 +655,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 										</div>
 									))}
 								</div>
-							</div>
-
-							<div className="section-card">
-								<h3 className="text-lg font-semibold text-slate-900">Quick Tips</h3>
-								<ul className="mt-4 space-y-3 text-sm text-slate-600">
-									<li>Confirm pending appointments by noon to keep the clinical team&apos;s schedule accurate.</li>
-									<li>Mark treatments as completed once documentation is received so billing can proceed without delay.</li>
-									<li>Export the latest roster before end-of-day reporting to catch outstanding paperwork.</li>
-								</ul>
 							</div>
 						</div>
 					</DashboardWidget>

@@ -462,7 +462,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			title: 'Active Caseload',
 			subtitle: 'Patients currently in your care',
 			icon: <BriefcaseIcon />,
-			iconBg: 'bg-indigo-100 text-indigo-700 ring-indigo-200',
+			iconBg: 'bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-700 ring-indigo-200',
 			count: caseload.length,
 		},
 		{
@@ -470,7 +470,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			title: "Today's Sessions",
 			subtitle: 'Appointments scheduled for today',
 			icon: <CalendarIcon />,
-			iconBg: 'bg-sky-100 text-sky-700 ring-sky-200',
+			iconBg: 'bg-gradient-to-br from-teal-100 to-cyan-100 text-teal-700 ring-teal-200',
 			count: todaysAppointments.length,
 		},
 		{
@@ -478,7 +478,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			title: 'Completed (7 days)',
 			subtitle: 'Sessions wrapped in the last week',
 			icon: <CheckIcon />,
-			iconBg: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
+			iconBg: 'bg-gradient-to-br from-emerald-100 to-teal-100 text-emerald-700 ring-emerald-200',
 			count: completedThisWeek.length,
 		},
 	];
@@ -526,7 +526,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		'flex h-12 w-12 items-center justify-center rounded-2xl shadow-sm ring-1 transition group-hover:-translate-y-0.5';
 
 	return (
-		<div className="min-h-svh bg-slate-50 px-6 py-10">
+		<div className="min-h-svh bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title={clinicianName ? 'Your Clinical Dashboard' : 'Clinical Team Dashboard'}
@@ -575,7 +575,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				)}
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-teal-200/50" />
 
 				{/* Statistics Overview Section */}
 				<section>
@@ -591,7 +591,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 								key={card.key}
 								type="button"
 								onClick={() => setModal(card.key)}
-								className="group card-base"
+								className="group card-base bg-gradient-to-br from-white to-emerald-50/40 hover:from-white hover:to-teal-50/50 border-emerald-100 hover:border-teal-200 shadow-md hover:shadow-lg transition-all duration-300"
 							>
 								<div className="flex items-center justify-between">
 									<span className={`${CARD_ICON_WRAPPER_BASE} ${card.iconBg}`} aria-hidden="true">
@@ -612,7 +612,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-teal-200/50" />
 
 				{/* Analytics Section */}
 				<section>
@@ -621,23 +621,23 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 							Visualize your appointment trends, patient distribution, and workload in real time.
 						</p>
 						<div className="grid gap-6 lg:grid-cols-2">
-							<div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-								<p className="text-sm font-semibold text-slate-800">Weekly Appointment Trend</p>
-								<p className="text-xs text-slate-500">Your appointments over the last 7 days.</p>
+							<div className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50/50 to-emerald-50/30 p-4 shadow-md hover:shadow-lg transition-shadow">
+								<p className="text-sm font-semibold text-teal-900">Weekly Appointment Trend</p>
+								<p className="text-xs text-teal-700">Your appointments over the last 7 days.</p>
 								<div className="mt-4">
 									<StatsChart type="line" data={appointmentTrendData} height={260} />
 								</div>
 							</div>
 							<div className="grid gap-6 sm:grid-cols-2">
-								<div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-									<p className="text-sm font-semibold text-slate-800">Patient Status Mix</p>
-									<p className="text-xs text-slate-500">Your caseload breakdown.</p>
+								<div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50/50 to-teal-50/30 p-4 shadow-md hover:shadow-lg transition-shadow">
+									<p className="text-sm font-semibold text-emerald-900">Patient Status Mix</p>
+									<p className="text-xs text-emerald-700">Your caseload breakdown.</p>
 									<div className="mt-4">
 										<StatsChart type="doughnut" data={statusDistributionData} height={220} />
 									</div>
 								</div>
-								<div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-									<p className="text-sm font-semibold text-slate-800">Weekly Completion</p>
+								<div className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50/50 to-teal-50/30 p-4 shadow-md hover:shadow-lg transition-shadow">
+									<p className="text-sm font-semibold text-cyan-900">Weekly Completion</p>
 									<p className="text-xs text-slate-500">Completed sessions this week.</p>
 									<div className="mt-4">
 										<StatsChart type="bar" data={weeklyCompletionData} height={220} />
@@ -649,7 +649,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-teal-200/50" />
 
 				{/* Quick Actions Section */}
 				{onNavigate && (
@@ -688,7 +688,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				)}
 
 				{/* Divider */}
-				<div className="border-t border-slate-200" />
+				<div className="border-t border-teal-200/50" />
 
 				{/* Daily Operations Section */}
 				<section>
