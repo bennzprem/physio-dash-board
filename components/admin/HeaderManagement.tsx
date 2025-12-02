@@ -240,7 +240,6 @@ export default function HeaderManagement() {
 			<div className="mx-auto max-w-6xl space-y-6">
 				<PageHeader
 					title="Header Management"
-					description="Configure headers and logos for reports and billing documents"
 				/>
 
 				{savedMessage && (

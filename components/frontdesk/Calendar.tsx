@@ -536,7 +536,6 @@ export default function Calendar() {
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Clinical Team Schedule"
-					description="View all clinical team schedules and appointments. Filter by doctor to focus on specific clinicians."
 					actions={
 						appointments.length === 0 ? (
 							<button

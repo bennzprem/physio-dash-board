@@ -454,7 +454,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Admin Dashboard"
-					description="Manage staff, monitor operations, and jump into core tooling without leaving this workspace."
 					statusCard={{
 						label: 'Today\'s Overview',
 						value: (

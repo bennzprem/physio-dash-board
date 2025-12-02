@@ -149,7 +149,6 @@ export default function AuditLogs() {
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Audit Logs"
-					description="Review activity across the system for support and accountability."
 					actions={
 						<button
 							type="button"

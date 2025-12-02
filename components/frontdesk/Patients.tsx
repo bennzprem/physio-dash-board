@@ -2132,7 +2132,6 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Patient Management"
-					description="View, edit, and manage patient records. Update patient information and remove records as needed."
 					actions={
 						<div className="flex w-full justify-center mt-12 md:mt-0">
 							<button type="button" onClick={handleOpenRegisterModal} className="btn-primary">

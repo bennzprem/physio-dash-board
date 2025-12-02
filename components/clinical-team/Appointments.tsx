@@ -1026,7 +1026,6 @@ export default function Appointments() {
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Appointments"
-					description="Review scheduled visits, update statuses in real time, and manage appointments with the same layout used in the legacy Super Admin console."
 					actions={
 						<button type="button" onClick={handleOpenBookingModal} className="btn-primary">
 							<i className="fas fa-plus text-xs" aria-hidden="true" />

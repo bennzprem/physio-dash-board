@@ -345,7 +345,6 @@ export default function Messaging() {
 			<div className="mx-auto max-w-7xl">
 				<PageHeader
 					title="Messaging"
-					description="Communicate with your team members. Send messages, emojis, and react to conversations."
 				/>
 
 				<div className="mt-6 grid h-[calc(100vh-12rem)] grid-cols-12 gap-4">

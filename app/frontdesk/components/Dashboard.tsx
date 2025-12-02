@@ -428,7 +428,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				<PageHeader
 					badge="Front Desk"
 					title="Front Desk Dashboard"
-					description="Stay on top of patient flow and appointment scheduling. Use the cards below to drill into the latest registries, statuses, and appointment analytics."
 					statusCard={{
 						label: 'Today\'s Overview',
 						value: `${stats.appointments.today} appointment${stats.appointments.today === 1 ? '' : 's'} today`,

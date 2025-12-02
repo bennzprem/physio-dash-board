@@ -459,7 +459,6 @@ export default function StrengthConditioningReport() {
 			<div className="mx-auto max-w-6xl space-y-6">
 				<PageHeader
 					title="Strength and Conditioning Assessment"
-					description="Complete the strength and conditioning assessment report with editable fields for all metrics."
 				/>
 
 				{/* Patient Selection */}

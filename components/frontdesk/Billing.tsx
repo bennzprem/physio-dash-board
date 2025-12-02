@@ -1397,7 +1397,6 @@ export default function Billing() {
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Billing & Payments"
-					description="Track invoices, process payments, and generate receipts for completed appointments."
 					statusCard={{
 						label: 'Monthly Total',
 						value: `Rs. ${monthlyTotal.toFixed(2)}`,

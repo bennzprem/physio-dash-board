@@ -904,7 +904,6 @@ export default function Calendar() {
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="My Calendar & Notifications"
-					description="View your scheduled appointments and manage upcoming reminders and notifications."
 				/>
 
 				{!clinicianName && (

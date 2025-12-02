@@ -530,7 +530,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title={clinicianName ? 'Your Clinical Dashboard' : 'Clinical Team Dashboard'}
-					description="Monitor the patients under your care, review today's sessions, and keep tabs on upcoming follow-ups. All counts update automatically as the front desk registers changes."
 					statusCard={{
 						label: 'Clinician',
 						value: (

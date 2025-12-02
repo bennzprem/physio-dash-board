@@ -461,7 +461,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Front Desk Dashboard"
-					description="Stay on top of patient flow and appointment scheduling. Use the cards below to drill into the latest registries, statuses, and appointment analytics."
 					statusCard={{
 						label: 'Today\'s Overview',
 						value: (

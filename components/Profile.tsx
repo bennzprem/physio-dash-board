@@ -248,7 +248,6 @@ export default function Profile() {
 				<PageHeader
 					badge="Profile"
 					title="My Profile"
-					description="Update your personal information and professional details"
 				/>
 
 				{savedMessage && (

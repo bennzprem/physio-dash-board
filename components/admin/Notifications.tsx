@@ -433,27 +433,26 @@ export default function Notifications() {
 	};
 
 	return (
-		<div className="min-h-svh bg-slate-50 px-6 py-10">
+		<div className="min-h-svh bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 px-6 py-10">
 			<div className="mx-auto max-w-7xl">
 				<PageHeader
 					title="Notifications & Messaging"
-					description="Stay updated with system notifications and communicate with your team."
 				/>
 
 				<div className="mt-6 grid h-[calc(100vh-12rem)] grid-cols-12 gap-4">
 					{/* Left Side: App Notifications */}
-					<div className="col-span-12 lg:col-span-5 flex flex-col rounded-2xl bg-white shadow-sm border border-slate-200">
-						<div className="p-4 border-b border-slate-200 flex items-center justify-between">
+					<div className="col-span-12 lg:col-span-5 flex flex-col rounded-2xl bg-white/80 backdrop-blur-sm shadow-lg border border-white/20 overflow-hidden">
+						<div className="p-4 border-b border-slate-200/50 bg-gradient-to-r from-purple-50 to-blue-50 flex items-center justify-between">
 							<div>
-								<h3 className="text-lg font-semibold text-slate-900">App Notifications</h3>
-								<p className="text-sm text-slate-500">
+								<h3 className="text-lg font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">App Notifications</h3>
+								<p className="text-sm text-slate-600 font-medium">
 									{unreadCount} unread · {notifications.length} total
 								</p>
 							</div>
 							<select
 								value={notificationFilter}
 								onChange={e => setNotificationFilter(e.target.value as typeof notificationFilter)}
-								className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+								className="rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 shadow-sm"
 							>
 								<option value="all">All types</option>
 								<option value="birthday">Birthdays</option>
@@ -461,10 +460,10 @@ export default function Notifications() {
 								<option value="employee_deleted">Employee Deletions</option>
 							</select>
 						</div>
-						<div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+						<div className="flex-1 overflow-y-auto divide-y divide-slate-100/50 bg-white/50">
 							{notificationsLoading ? (
 								<div className="p-8 text-center text-sm text-slate-500">
-									<div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-sky-600 border-t-transparent"></div>
+									<div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-purple-600 border-t-transparent"></div>
 									<p className="mt-2">Loading notifications...</p>
 								</div>
 							) : filteredNotifications.length === 0 ? (
@@ -476,29 +475,29 @@ export default function Notifications() {
 								filteredNotifications.map(notification => (
 									<div
 										key={notification.id}
-										className={`p-4 hover:bg-slate-50 transition-colors ${!notification.read ? 'bg-sky-50/50' : ''} ${getNotificationColor(notification.type)}`}
+										className={`p-4 hover:bg-gradient-to-r hover:from-purple-50/50 hover:to-blue-50/50 transition-all duration-200 ${!notification.read ? 'bg-gradient-to-r from-purple-50/70 to-blue-50/70 border-l-3 border-purple-500' : ''} ${getNotificationColor(notification.type)}`}
 									>
 										<div className="flex items-start gap-3">
-											<div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${getNotificationColor(notification.type)}`}>
-												<i className={`${getNotificationIcon(notification.type)} text-sm`} aria-hidden="true" />
+											<div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-md ${getNotificationColor(notification.type)}`}>
+												<i className={`${getNotificationIcon(notification.type)} text-base`} aria-hidden="true" />
 											</div>
 											<div className="flex-1 min-w-0">
-												<h4 className="font-semibold text-sm text-slate-900">{notification.title}</h4>
-												<p className="text-xs text-slate-600 mt-1">{notification.message}</p>
+												<h4 className="font-bold text-sm text-slate-900">{notification.title}</h4>
+												<p className="text-xs text-slate-700 mt-1 font-medium">{notification.message}</p>
 												{notification.metadata && (
-													<div className="mt-1 text-xs text-slate-500">
+													<div className="mt-1 text-xs text-slate-600">
 														{notification.metadata.deletedBy && (
 															<p>Deleted by: {notification.metadata.deletedByName || notification.metadata.deletedBy}</p>
 														)}
 													</div>
 												)}
 											</div>
-											<div className="flex-shrink-0 text-xs text-slate-500">
+											<div className="flex-shrink-0 text-xs text-slate-600 font-medium">
 												{formatTime(notification.createdAt)}
 											</div>
 											{!notification.read && (
 												<div className="flex-shrink-0">
-													<div className="w-2 h-2 rounded-full bg-sky-600"></div>
+													<div className="w-3 h-3 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 animate-pulse"></div>
 												</div>
 											)}
 										</div>
@@ -509,45 +508,45 @@ export default function Notifications() {
 					</div>
 
 					{/* Right Side: Messaging */}
-					<div className="col-span-12 lg:col-span-7 flex flex-col rounded-2xl bg-white shadow-sm border border-slate-200">
-						<div className="p-4 border-b border-slate-200 flex items-center justify-between">
-							<h3 className="text-lg font-semibold text-slate-900">Messaging</h3>
+					<div className="col-span-12 lg:col-span-7 flex flex-col rounded-2xl bg-white/80 backdrop-blur-sm shadow-lg border border-white/20 overflow-hidden">
+						<div className="p-4 border-b border-slate-200/50 bg-gradient-to-r from-indigo-50 to-purple-50 flex items-center justify-between">
+							<h3 className="text-lg font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Messaging</h3>
 						</div>
-						<div className="flex-1 flex overflow-hidden">
+						<div className="flex-1 flex overflow-hidden bg-gradient-to-br from-slate-50/50 to-white/50">
 							{/* Employee List */}
-							<div className="w-1/3 border-r border-slate-200 flex flex-col overflow-hidden">
-								<div className="p-3 border-b border-slate-200 bg-slate-50">
-									<p className="text-xs font-semibold text-slate-600 uppercase">Employees</p>
+							<div className="w-1/3 border-r border-slate-200/50 flex flex-col overflow-hidden bg-white/60">
+								<div className="p-3 border-b border-slate-200/50 bg-gradient-to-r from-indigo-50/50 to-purple-50/50">
+									<p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Employees</p>
 								</div>
 								<div className="flex-1 overflow-y-auto">
 									{staff.length === 0 ? (
 										<div className="p-4 text-center text-xs text-slate-500">No employees found</div>
 									) : (
-										<div className="divide-y divide-slate-100">
+										<div className="divide-y divide-slate-100/50">
 											{staff.map(employee => (
 												<button
 													key={employee.id}
 													type="button"
 													onClick={() => setSelectedEmployee(employee)}
-													className={`w-full p-3 text-left hover:bg-slate-50 transition-colors ${
-														selectedEmployee?.id === employee.id ? 'bg-sky-50 border-l-4 border-sky-500' : ''
+													className={`w-full p-3 text-left hover:bg-gradient-to-r hover:from-indigo-50/50 hover:to-purple-50/50 transition-all duration-200 ${
+														selectedEmployee?.id === employee.id ? 'bg-gradient-to-r from-indigo-100 to-purple-100 border-l-4 border-indigo-500 shadow-sm' : ''
 													}`}
 												>
-													<div className="flex items-center gap-2">
+													<div className="flex items-center gap-3">
 														{employee.profileImage ? (
 															<img
 																src={employee.profileImage}
 																alt={employee.userName}
-																className="h-8 w-8 rounded-full object-cover"
+																className="h-10 w-10 rounded-full object-cover ring-2 ring-white shadow-md"
 															/>
 														) : (
-															<div className="h-8 w-8 rounded-full bg-sky-100 flex items-center justify-center">
-																<i className="fas fa-user text-sky-600 text-xs" aria-hidden="true" />
+															<div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center shadow-md ring-2 ring-white">
+																<i className="fas fa-user text-white text-sm" aria-hidden="true" />
 															</div>
 														)}
 														<div className="flex-1 min-w-0">
-															<p className="font-semibold text-sm text-slate-900 truncate">{employee.userName}</p>
-															<p className="text-xs text-slate-500 truncate">{employee.role}</p>
+															<p className="font-bold text-sm text-slate-900 truncate">{employee.userName}</p>
+															<p className="text-xs text-slate-600 truncate font-medium">{employee.role}</p>
 														</div>
 													</div>
 												</button>
@@ -558,31 +557,36 @@ export default function Notifications() {
 							</div>
 
 							{/* Chat Area */}
-							<div className="flex-1 flex flex-col">
+							<div className="flex-1 flex flex-col bg-gradient-to-b from-white/80 to-slate-50/50">
 								{selectedEmployee ? (
 									<>
-										<div className="p-3 border-b border-slate-200 flex items-center gap-2 bg-slate-50">
+										<div className="p-4 border-b border-slate-200/50 flex items-center gap-3 bg-gradient-to-r from-indigo-50/50 to-purple-50/50 shadow-sm">
 											{selectedEmployee.profileImage ? (
 												<img
 													src={selectedEmployee.profileImage}
 													alt={selectedEmployee.userName}
-													className="h-8 w-8 rounded-full object-cover"
+													className="h-10 w-10 rounded-full object-cover ring-2 ring-white shadow-md"
 												/>
 											) : (
-												<div className="h-8 w-8 rounded-full bg-sky-100 flex items-center justify-center">
-													<i className="fas fa-user text-sky-600 text-xs" aria-hidden="true" />
+												<div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center shadow-md ring-2 ring-white">
+													<i className="fas fa-user text-white text-sm" aria-hidden="true" />
 												</div>
 											)}
 											<div>
-												<p className="font-semibold text-sm text-slate-900">{selectedEmployee.userName}</p>
-												<p className="text-xs text-slate-500">{selectedEmployee.role}</p>
+												<p className="font-bold text-sm text-slate-900">{selectedEmployee.userName}</p>
+												<p className="text-xs text-slate-600 font-medium">{selectedEmployee.role}</p>
 											</div>
 										</div>
 
-										<div className="flex-1 overflow-y-auto p-3 space-y-2">
+										<div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-transparent to-slate-50/30">
 											{messages.length === 0 ? (
 												<div className="flex items-center justify-center h-full">
-													<p className="text-xs text-slate-500">No messages yet. Start the conversation!</p>
+													<div className="text-center">
+														<div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 mb-3">
+															<i className="fas fa-comments text-2xl text-indigo-500" aria-hidden="true" />
+														</div>
+														<p className="text-sm text-slate-600 font-medium">No messages yet. Start the conversation!</p>
+													</div>
 												</div>
 											) : (
 												messages.map(message => {
@@ -590,7 +594,7 @@ export default function Notifications() {
 													return (
 														<div
 															key={message.id}
-															className={`flex gap-2 ${isOwn ? 'justify-end' : 'justify-start'}`}
+															className={`flex gap-3 ${isOwn ? 'justify-end' : 'justify-start'} items-end`}
 														>
 															{!isOwn && (
 																<div className="flex-shrink-0">
@@ -598,39 +602,42 @@ export default function Notifications() {
 																		<img
 																			src={message.senderImage}
 																			alt={message.senderName}
-																			className="h-6 w-6 rounded-full object-cover"
+																			className="h-8 w-8 rounded-full object-cover ring-2 ring-white shadow-md"
 																		/>
 																	) : (
-																		<div className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center">
-																			<i className="fas fa-user text-slate-600 text-xs" aria-hidden="true" />
+																		<div className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-md ring-2 ring-white">
+																			<i className="fas fa-user text-white text-xs" aria-hidden="true" />
 																		</div>
 																	)}
 																</div>
 															)}
 															<div className={`flex flex-col max-w-[75%] ${isOwn ? 'items-end' : 'items-start'}`}>
+																{!isOwn && (
+																	<p className="text-xs font-semibold text-slate-700 mb-1 px-1">{message.senderName}</p>
+																)}
 																<div
-																	className={`rounded-lg px-3 py-1.5 text-xs ${
+																	className={`rounded-2xl px-4 py-2.5 text-sm shadow-md ${
 																		isOwn
-																			? 'bg-sky-600 text-white'
-																			: 'bg-slate-100 text-slate-900'
+																			? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-medium'
+																			: 'bg-white text-slate-900 border-2 border-emerald-200 font-medium'
 																	}`}
 																>
-																	<p className="whitespace-pre-wrap break-words">{message.text}</p>
+																	<p className="whitespace-pre-wrap break-words leading-relaxed">{message.text}</p>
 																</div>
-																<div className="flex items-center gap-1 mt-0.5">
-																	<p className="text-xs text-slate-400">{formatTime(message.createdAt)}</p>
+																<div className="flex items-center gap-2 mt-1.5 px-1">
+																	<p className={`text-xs font-medium ${isOwn ? 'text-slate-500' : 'text-slate-600'}`}>{formatTime(message.createdAt)}</p>
 																	{message.reactions && Object.keys(message.reactions).length > 0 && (
-																		<div className="flex gap-0.5">
+																		<div className="flex gap-1">
 																			{Object.entries(message.reactions).map(([emoji, userIds]) => (
 																				<button
 																					key={emoji}
 																					type="button"
 																					onClick={() => handleReaction(message.id, emoji)}
-																					className={`text-xs px-1.5 py-0.5 rounded-full border ${
+																					className={`text-xs px-2 py-0.5 rounded-full border-2 shadow-sm ${
 																						userIds.includes(user?.uid || '')
-																							? 'bg-sky-100 border-sky-300 text-sky-700'
+																							? 'bg-indigo-100 border-indigo-300 text-indigo-700'
 																							: 'bg-white border-slate-200 text-slate-600'
-																					} hover:bg-sky-50 transition-colors`}
+																					} hover:bg-indigo-50 transition-all duration-200 hover:scale-105`}
 																				>
 																					{emoji} {userIds.length}
 																				</button>
@@ -640,18 +647,18 @@ export default function Notifications() {
 																	<div className="relative group">
 																		<button
 																			type="button"
-																			className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+																			className={`text-xs transition-colors hover:scale-110 ${isOwn ? 'text-white/70 hover:text-white' : 'text-slate-400 hover:text-slate-600'}`}
 																			title="Add reaction"
 																		>
 																			<i className="far fa-smile" aria-hidden="true" />
 																		</button>
-																		<div className="absolute bottom-full left-0 mb-2 hidden group-hover:flex gap-1 bg-white rounded-full shadow-lg border border-slate-200 p-1 z-10">
+																		<div className="absolute bottom-full left-0 mb-2 hidden group-hover:flex gap-1 bg-white rounded-full shadow-xl border-2 border-slate-200 p-2 z-10">
 																			{REACTION_EMOJIS.map(emoji => (
 																				<button
 																					key={emoji}
 																					type="button"
 																					onClick={() => handleReaction(message.id, emoji)}
-																					className="text-sm hover:scale-125 transition-transform p-1"
+																					className="text-base hover:scale-125 transition-transform p-1.5 hover:bg-indigo-50 rounded-full"
 																				>
 																					{emoji}
 																				</button>
@@ -666,11 +673,11 @@ export default function Notifications() {
 																		<img
 																			src={message.senderImage}
 																			alt={message.senderName}
-																			className="h-6 w-6 rounded-full object-cover"
+																			className="h-8 w-8 rounded-full object-cover ring-2 ring-white shadow-md"
 																		/>
 																	) : (
-																		<div className="h-6 w-6 rounded-full bg-sky-100 flex items-center justify-center">
-																			<i className="fas fa-user text-sky-600 text-xs" aria-hidden="true" />
+																		<div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center shadow-md ring-2 ring-white">
+																			<i className="fas fa-user text-white text-xs" aria-hidden="true" />
 																		</div>
 																	)}
 																</div>
@@ -682,16 +689,16 @@ export default function Notifications() {
 											<div ref={messagesEndRef} />
 										</div>
 
-										<div className="p-3 border-t border-slate-200">
+										<div className="p-4 border-t border-slate-200/50 bg-gradient-to-r from-white to-slate-50/50">
 											{showEmojiPicker && (
-												<div className="mb-2 p-2 bg-white rounded-lg border border-slate-200 shadow-lg max-h-32 overflow-y-auto">
-													<div className="grid grid-cols-10 gap-0.5">
+												<div className="mb-3 p-3 bg-white rounded-xl border-2 border-indigo-200 shadow-xl max-h-40 overflow-y-auto">
+													<div className="grid grid-cols-10 gap-1">
 														{EMOJI_LIST.map(emoji => (
 															<button
 																key={emoji}
 																type="button"
 																onClick={() => insertEmoji(emoji)}
-																className="text-sm hover:scale-125 transition-transform p-0.5 hover:bg-slate-100 rounded"
+																className="text-base hover:scale-125 transition-transform p-1 hover:bg-indigo-50 rounded-lg"
 															>
 																{emoji}
 															</button>
@@ -703,10 +710,10 @@ export default function Notifications() {
 												<button
 													type="button"
 													onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-													className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+													className="p-2.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm"
 													title="Add emoji"
 												>
-													<i className="far fa-smile text-sm" aria-hidden="true" />
+													<i className="far fa-smile text-lg" aria-hidden="true" />
 												</button>
 												<textarea
 													ref={inputRef}
@@ -719,14 +726,14 @@ export default function Notifications() {
 														}
 													}}
 													placeholder="Type a message..."
-													className="flex-1 resize-none rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+													className="flex-1 resize-none rounded-xl border-2 border-indigo-200 bg-white px-4 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 shadow-sm"
 													rows={1}
 												/>
 												<button
 													type="button"
 													onClick={handleSendMessage}
 													disabled={!messageText.trim()}
-													className="px-4 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+													className="px-6 py-2.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white rounded-xl text-sm font-bold hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 disabled:from-slate-300 disabled:via-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 disabled:hover:scale-100"
 												>
 													Send
 												</button>
@@ -734,10 +741,12 @@ export default function Notifications() {
 										</div>
 									</>
 								) : (
-									<div className="flex items-center justify-center h-full">
+									<div className="flex items-center justify-center h-full bg-gradient-to-br from-indigo-50/30 to-purple-50/30">
 										<div className="text-center">
-											<i className="fas fa-comments text-3xl text-slate-300 mb-2" aria-hidden="true" />
-											<p className="text-xs text-slate-500">Select an employee to start messaging</p>
+											<div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 mb-4 shadow-lg">
+												<i className="fas fa-comments text-3xl text-indigo-500" aria-hidden="true" />
+											</div>
+											<p className="text-sm text-slate-600 font-semibold">Select an employee to start messaging</p>
 										</div>
 									</div>
 								)}

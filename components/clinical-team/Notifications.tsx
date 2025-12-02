@@ -11,7 +11,6 @@ export default function Notifications() {
 		<div className="p-6">
 			<PageHeader
 				title="Notifications"
-				description="Stay updated with appointments, reminders, and important updates for your patients and schedule."
 			/>
 
 			<div className="mt-6">

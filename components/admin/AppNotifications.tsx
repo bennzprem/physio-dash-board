@@ -128,7 +128,6 @@ export default function AppNotifications() {
 			<div className="mx-auto max-w-6xl">
 				<PageHeader
 					title="App Notifications"
-					description="Stay updated with birthdays, deletions, and important system events."
 				/>
 
 				<div className="mt-6 rounded-2xl bg-white shadow-sm border border-slate-200">
