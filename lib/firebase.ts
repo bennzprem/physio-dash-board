@@ -1,13 +1,8 @@
 import { getAnalytics } from 'firebase/analytics';
 import { getApps, initializeApp, type FirebaseOptions } from 'firebase/app';
-<<<<<<< Updated upstream
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
-=======
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
->>>>>>> Stashed changes
 
 type FirebaseConfigKey =
 	| 'API_KEY'

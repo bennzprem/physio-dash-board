@@ -375,11 +375,7 @@ export default function Notifications() {
 
 			// Create message
 			const messagePreview = messageText.trim() || (attachments.length > 0 ? `Sent ${attachments.length} file(s)` : '');
-<<<<<<< Updated upstream
 			const messageData: Record<string, unknown> = {
-=======
-			await addDoc(collection(db, 'messages'), {
->>>>>>> Stashed changes
 				conversationId: convId,
 				senderId: user.uid,
 				senderName,
@@ -390,7 +386,6 @@ export default function Notifications() {
 				createdAt: serverTimestamp(),
 				read: false,
 				reactions: {},
-<<<<<<< Updated upstream
 			};
 			
 			// Only include attachments if there are any (Firestore doesn't allow undefined)
@@ -399,10 +394,6 @@ export default function Notifications() {
 			}
 			
 			await addDoc(collection(db, 'messages'), messageData);
-=======
-				attachments: attachments.length > 0 ? attachments : undefined,
-			});
->>>>>>> Stashed changes
 
 			// Update conversation
 			try {

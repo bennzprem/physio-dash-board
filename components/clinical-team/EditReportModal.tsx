@@ -1955,6 +1955,59 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										/>
 									</div>
 								</div>
+
+								{/* Package Information */}
+								{(reportPatientData?.packageAmount || reportPatientData?.packageName) && (
+									<div className="mt-4 rounded-lg border-2 border-purple-200 bg-purple-50/50 p-4">
+										<h4 className="mb-3 text-sm font-semibold text-purple-900">Package Information</h4>
+										<div className="grid gap-3 sm:grid-cols-2">
+											{reportPatientData.packageName && (
+												<div>
+													<label className="block text-xs font-medium text-slate-600">Package Name</label>
+													<p className="mt-1 text-sm font-semibold text-slate-900">{reportPatientData.packageName}</p>
+												</div>
+											)}
+											{typeof reportPatientData.totalSessionsRequired === 'number' && (
+												<div>
+													<label className="block text-xs font-medium text-slate-600">Total Sessions</label>
+													<p className="mt-1 text-sm font-semibold text-slate-900">{reportPatientData.totalSessionsRequired}</p>
+												</div>
+											)}
+											{typeof reportPatientData.remainingSessions === 'number' && (
+												<div>
+													<label className="block text-xs font-medium text-slate-600">Remaining Sessions</label>
+													<p className="mt-1 text-sm font-semibold text-slate-900">{reportPatientData.remainingSessions}</p>
+												</div>
+											)}
+											{typeof reportPatientData.packageAmount === 'number' && (
+												<div>
+													<label className="block text-xs font-medium text-slate-600">Package Amount</label>
+													<p className="mt-1 text-sm font-semibold text-slate-900">₹{reportPatientData.packageAmount.toFixed(2)}</p>
+												</div>
+											)}
+											{reportPatientData.paymentType && (
+												<div>
+													<label className="block text-xs font-medium text-slate-600">Consultation Type</label>
+													<p className="mt-1 text-sm font-semibold text-slate-900">
+														{reportPatientData.paymentType === 'with' ? 'With Consultation' : 'Without Consultation'}
+													</p>
+												</div>
+											)}
+											{typeof reportPatientData.concessionPercent === 'number' && reportPatientData.concessionPercent > 0 && (
+												<div>
+													<label className="block text-xs font-medium text-slate-600">Discount</label>
+													<p className="mt-1 text-sm font-semibold text-green-600">{reportPatientData.concessionPercent}%</p>
+												</div>
+											)}
+											{reportPatientData.packageDescription && (
+												<div className="sm:col-span-2">
+													<label className="block text-xs font-medium text-slate-600">Description</label>
+													<p className="mt-1 text-sm text-slate-700">{reportPatientData.packageDescription}</p>
+												</div>
+											)}
+										</div>
+									</div>
+								)}
 							</div>
 
 							{/* Assessment Section */}

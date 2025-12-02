@@ -674,6 +674,11 @@ export default function EditReport() {
 									: undefined,
 						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
 						reportAccessDoctors: data.reportAccessDoctors ? (data.reportAccessDoctors as string[]) : undefined,
+						packageAmount: typeof data.packageAmount === 'number' ? data.packageAmount : undefined,
+						concessionPercent: typeof data.concessionPercent === 'number' ? data.concessionPercent : undefined,
+						paymentType: data.paymentType ? String(data.paymentType) : undefined,
+						packageName: data.packageName ? String(data.packageName) : undefined,
+						packageDescription: data.packageDescription ? String(data.packageDescription) : undefined,
 						complaints: data.complaints ? String(data.complaints) : undefined,
 						presentHistory: data.presentHistory ? String(data.presentHistory) : undefined,
 						pastHistory: data.pastHistory ? String(data.pastHistory) : undefined,
@@ -4020,6 +4025,59 @@ export default function EditReport() {
 								/>
 							</div>
 						</div>
+
+						{/* Package Information */}
+						{(selectedPatient?.packageAmount || selectedPatient?.packageName) && (
+							<div className="mt-4 rounded-lg border-2 border-purple-200 bg-purple-50/50 p-4">
+								<h4 className="mb-3 text-sm font-semibold text-purple-900">Package Information</h4>
+								<div className="grid gap-3 sm:grid-cols-2">
+									{selectedPatient.packageName && (
+										<div>
+											<label className="block text-xs font-medium text-slate-600">Package Name</label>
+											<p className="mt-1 text-sm font-semibold text-slate-900">{selectedPatient.packageName}</p>
+										</div>
+									)}
+									{typeof selectedPatient.totalSessionsRequired === 'number' && (
+										<div>
+											<label className="block text-xs font-medium text-slate-600">Total Sessions</label>
+											<p className="mt-1 text-sm font-semibold text-slate-900">{selectedPatient.totalSessionsRequired}</p>
+										</div>
+									)}
+									{typeof selectedPatient.remainingSessions === 'number' && (
+										<div>
+											<label className="block text-xs font-medium text-slate-600">Remaining Sessions</label>
+											<p className="mt-1 text-sm font-semibold text-slate-900">{selectedPatient.remainingSessions}</p>
+										</div>
+									)}
+									{typeof selectedPatient.packageAmount === 'number' && (
+										<div>
+											<label className="block text-xs font-medium text-slate-600">Package Amount</label>
+											<p className="mt-1 text-sm font-semibold text-slate-900">₹{selectedPatient.packageAmount.toFixed(2)}</p>
+										</div>
+									)}
+									{selectedPatient.paymentType && (
+										<div>
+											<label className="block text-xs font-medium text-slate-600">Consultation Type</label>
+											<p className="mt-1 text-sm font-semibold text-slate-900">
+												{selectedPatient.paymentType === 'with' ? 'With Consultation' : 'Without Consultation'}
+											</p>
+										</div>
+									)}
+									{typeof selectedPatient.concessionPercent === 'number' && selectedPatient.concessionPercent > 0 && (
+										<div>
+											<label className="block text-xs font-medium text-slate-600">Discount</label>
+											<p className="mt-1 text-sm font-semibold text-green-600">{selectedPatient.concessionPercent}%</p>
+										</div>
+									)}
+									{selectedPatient.packageDescription && (
+										<div className="sm:col-span-2">
+											<label className="block text-xs font-medium text-slate-600">Description</label>
+											<p className="mt-1 text-sm text-slate-700">{selectedPatient.packageDescription}</p>
+										</div>
+									)}
+								</div>
+							</div>
+						)}
 					</div>
 
 					{/* Assessment Section */}

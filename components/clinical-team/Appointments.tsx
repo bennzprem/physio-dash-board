@@ -139,6 +139,17 @@ export default function Appointments() {
 	const [conflictWarning, setConflictWarning] = useState<string | null>(null);
 	const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
 	const [showPatientAppointmentsModal, setShowPatientAppointmentsModal] = useState(false);
+	const [showPackageModal, setShowPackageModal] = useState(false);
+	const [packagePatientId, setPackagePatientId] = useState<string | null>(null);
+	const [packageForm, setPackageForm] = useState({
+		packageName: '',
+		totalSessions: '',
+		amount: '',
+		consultationType: 'without' as 'with' | 'without',
+		discount: '0',
+		description: '',
+	});
+	const [packageSubmitting, setPackageSubmitting] = useState(false);
 
 	// Load appointments from Firestore
 	useEffect(() => {
@@ -206,6 +217,11 @@ export default function Appointments() {
 						sessionAllowance: data.sessionAllowance
 							? normalizeSessionAllowance(data.sessionAllowance as Record<string, unknown>)
 							: undefined,
+						packageAmount: typeof data.packageAmount === 'number' ? data.packageAmount : undefined,
+						concessionPercent: typeof data.concessionPercent === 'number' ? data.concessionPercent : undefined,
+						paymentType: data.paymentType ? String(data.paymentType) : undefined,
+						packageName: data.packageName ? String(data.packageName) : undefined,
+						packageDescription: data.packageDescription ? String(data.packageDescription) : undefined,
 					} as PatientRecordWithSessions;
 				});
 				setPatients(mapped);
@@ -1149,11 +1165,125 @@ export default function Appointments() {
 		}
 	};
 
+	const handleAddPackage = async () => {
+		if (!packagePatientId) return;
+
+		const selectedPatient = patients.find(p => p.patientId === packagePatientId);
+		if (!selectedPatient) {
+			alert('Patient not found.');
+			return;
+		}
+
+		// Validate form
+		if (!packageForm.packageName.trim() || !packageForm.totalSessions || !packageForm.amount) {
+			alert('Please fill in all required fields: Package Name, Total Sessions, and Amount.');
+			return;
+		}
+
+		const totalSessionsValue = Number(packageForm.totalSessions);
+		const packageAmountValue = Number(packageForm.amount);
+		const consultationDiscountValue = packageForm.consultationType === 'with' && packageForm.discount
+			? Number(packageForm.discount)
+			: null;
+
+		if (totalSessionsValue <= 0 || packageAmountValue <= 0) {
+			alert('Total Sessions and Amount must be greater than 0.');
+			return;
+		}
+
+		// Calculate total amount with discount
+		const totalAmount = consultationDiscountValue && consultationDiscountValue > 0
+			? Number((packageAmountValue * (1 - consultationDiscountValue / 100)).toFixed(2))
+			: packageAmountValue;
+
+		setPackageSubmitting(true);
+		try {
+			// Create billing entry
+			const billingId = `PKG-${selectedPatient.patientId}-${Date.now()}`;
+			await addDoc(collection(db, 'billing'), {
+				billingId,
+				patient: selectedPatient.name,
+				patientId: selectedPatient.patientId,
+				doctor: user?.displayName || user?.email?.split('@')[0] || 'Clinical Team',
+				amount: totalAmount,
+				packageAmount: packageAmountValue,
+				concessionPercent: consultationDiscountValue,
+				amountPaid: 0,
+				date: new Date().toISOString().split('T')[0],
+				status: 'Pending',
+				paymentMode: null,
+				utr: null,
+				packageSessions: totalSessionsValue,
+				packageName: packageForm.packageName.trim(),
+				packageDescription: packageForm.description.trim() || null,
+				createdAt: serverTimestamp(),
+				updatedAt: serverTimestamp(),
+			});
+
+			// Update patient's totalSessionsRequired and remainingSessions
+			const patientRef = doc(db, 'patients', selectedPatient.id);
+			const currentTotalSessions = typeof selectedPatient.totalSessionsRequired === 'number'
+				? selectedPatient.totalSessionsRequired
+				: 0;
+			const newTotalSessions = currentTotalSessions + totalSessionsValue;
+			
+			// Calculate remaining sessions (starts at total - 1)
+			const completedCount = appointments.filter(
+				a => a.patientId === selectedPatient.patientId && a.status === 'completed'
+			).length;
+			const newRemainingSessions = Math.max(0, newTotalSessions - 1 - completedCount);
+
+			await updateDoc(patientRef, {
+				totalSessionsRequired: newTotalSessions,
+				remainingSessions: newRemainingSessions,
+				packageAmount: packageAmountValue,
+				concessionPercent: consultationDiscountValue,
+				paymentType: packageForm.consultationType === 'with' ? 'with' : 'without',
+				packageName: packageForm.packageName.trim(),
+				packageDescription: packageForm.description.trim() || null,
+			});
+
+			// Update local state
+			setPatients(prev =>
+				prev.map(p =>
+					p.id === selectedPatient.id
+						? {
+								...p,
+								totalSessionsRequired: newTotalSessions,
+								remainingSessions: newRemainingSessions,
+								packageAmount: packageAmountValue,
+								concessionPercent: consultationDiscountValue,
+							}
+						: p
+				)
+			);
+
+			// Close modal and reset form
+			setShowPackageModal(false);
+			setPackagePatientId(null);
+			setPackageForm({
+				packageName: '',
+				totalSessions: '',
+				amount: '',
+				consultationType: 'without',
+				discount: '0',
+				description: '',
+			});
+
+			alert(`Package "${packageForm.packageName}" added successfully! Billing entry created with status Pending.`);
+		} catch (error) {
+			console.error('Failed to add package', error);
+			alert(`Failed to add package: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		} finally {
+			setPackageSubmitting(false);
+		}
+	};
+
 	return (
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
-					title="Appointments"
+					title="Patient Management"
 					actions={
 						<button type="button" onClick={handleOpenBookingModal} className="btn-primary">
 							<i className="fas fa-plus text-xs" aria-hidden="true" />
@@ -1258,23 +1388,46 @@ export default function Appointments() {
 										return (
 											<tr key={group.patientId}>
 												<td className="px-4 py-4">
-													<p className="text-sm font-medium text-slate-800">{group.patientName}</p>
-													<p className="text-xs text-slate-500">
-														<span className="font-semibold text-slate-600">ID:</span> {group.patientId}
-													</p>
-													{patientDetails?.patientType && (
+													<div className="space-y-1">
+														<p className="text-sm font-medium text-slate-800">{group.patientName}</p>
 														<p className="text-xs text-slate-500">
-															<span className="font-semibold text-slate-600">Type:</span> {patientDetails.patientType}
+															<span className="font-semibold text-slate-600">ID:</span> {group.patientId}
 														</p>
-													)}
-													<p className="text-xs text-slate-500">
-														{patientDetails?.phone ? `Phone: ${patientDetails.phone}` : 'Phone not provided'}
-													</p>
-													{patientDetails?.email && (
+														{patientDetails?.patientType && (
+															<p className="text-xs text-slate-500">
+																<span className="font-semibold text-slate-600">Type:</span> {patientDetails.patientType}
+															</p>
+														)}
 														<p className="text-xs text-slate-500">
-															Email: {patientDetails.email}
+															{patientDetails?.phone ? `Phone: ${patientDetails.phone}` : 'Phone not provided'}
 														</p>
-													)}
+														{patientDetails?.email && (
+															<p className="text-xs text-slate-500">
+																Email: {patientDetails.email}
+															</p>
+														)}
+														<div className="pt-2">
+															<button
+																type="button"
+																onClick={() => {
+																	setPackagePatientId(group.patientId);
+																	setShowPackageModal(true);
+																	setPackageForm({
+																		packageName: '',
+																		totalSessions: '',
+																		amount: '',
+																		consultationType: 'without',
+																		discount: '0',
+																		description: '',
+																	});
+																}}
+																className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-purple-500 via-purple-600 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md hover:from-purple-600 hover:via-purple-700 hover:to-indigo-700 transition-all duration-200 hover:scale-105"
+															>
+																<i className="fas fa-box text-xs" aria-hidden="true" />
+																Add Package
+															</button>
+														</div>
+													</div>
 												</td>
 												<td className="px-4 py-4">
 													<p className="text-sm font-semibold text-slate-900">
@@ -2036,6 +2189,214 @@ export default function Appointments() {
 								className="btn-secondary"
 							>
 								Close
+							</button>
+						</footer>
+					</div>
+				</div>
+			)}
+
+			{/* Add Package Modal */}
+			{showPackageModal && packagePatientId && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+					<div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+							<div>
+								<h2 className="text-lg font-semibold text-slate-900">Add Package</h2>
+								<p className="text-xs text-slate-500">
+									Patient: {patients.find(p => p.patientId === packagePatientId)?.name || packagePatientId}
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={() => {
+									setShowPackageModal(false);
+									setPackagePatientId(null);
+									setPackageForm({
+										packageName: '',
+										totalSessions: '',
+										amount: '',
+										consultationType: 'without',
+										discount: '0',
+										description: '',
+									});
+								}}
+								className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:bg-slate-100 focus-visible:text-slate-600 focus-visible:outline-none"
+								aria-label="Close dialog"
+							>
+								<i className="fas fa-times" aria-hidden="true" />
+							</button>
+						</header>
+						<div className="max-h-[600px] overflow-y-auto px-6 py-4">
+							<div className="space-y-4">
+								{/* Package Name */}
+								<div>
+									<label className="block text-sm font-medium text-slate-700">
+										Package Name <span className="text-rose-500">*</span>
+									</label>
+									<input
+										type="text"
+										value={packageForm.packageName}
+										onChange={e => setPackageForm(prev => ({ ...prev, packageName: e.target.value }))}
+										className="input-base mt-2"
+										placeholder="Enter package name"
+										required
+									/>
+								</div>
+
+								{/* Total Sessions */}
+								<div>
+									<label className="block text-sm font-medium text-slate-700">
+										Total Sessions <span className="text-rose-500">*</span>
+									</label>
+									<input
+										type="number"
+										min="1"
+										value={packageForm.totalSessions}
+										onChange={e => setPackageForm(prev => ({ ...prev, totalSessions: e.target.value }))}
+										className="input-base mt-2"
+										placeholder="Enter number of sessions"
+										required
+									/>
+								</div>
+
+								{/* Amount */}
+								<div>
+									<label className="block text-sm font-medium text-slate-700">
+										Amount (₹) <span className="text-rose-500">*</span>
+									</label>
+									<input
+										type="number"
+										min="0"
+										step="0.01"
+										value={packageForm.amount}
+										onChange={e => setPackageForm(prev => ({ ...prev, amount: e.target.value }))}
+										className="input-base mt-2"
+										placeholder="Enter package amount"
+										required
+									/>
+								</div>
+
+								{/* Consultation Type */}
+								<div>
+									<label className="block text-sm font-medium text-slate-700 mb-2">
+										Consultation Type <span className="text-rose-500">*</span>
+									</label>
+									<select
+										value={packageForm.consultationType}
+										onChange={e => setPackageForm(prev => ({
+											...prev,
+											consultationType: e.target.value as 'with' | 'without',
+											discount: e.target.value === 'without' ? '0' : prev.discount,
+										}))}
+										className="select-base"
+									>
+										<option value="without">Without Consultation</option>
+										<option value="with">With Consultation</option>
+									</select>
+								</div>
+
+								{/* Discount (if With Consultation) */}
+								{packageForm.consultationType === 'with' && (
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-2">
+											Discount (%)
+										</label>
+										<select
+											value={packageForm.discount}
+											onChange={e => setPackageForm(prev => ({ ...prev, discount: e.target.value }))}
+											className="select-base"
+										>
+											{[5, 10, 15, 20, 25, 30, 35, 40, 45, 50].map(percent => (
+												<option key={percent} value={percent}>
+													{percent}%
+												</option>
+											))}
+										</select>
+									</div>
+								)}
+
+								{/* Total Amount Display */}
+								{packageForm.amount && (
+									<div className="rounded-lg border-2 border-purple-200 bg-purple-50 p-4">
+										<div className="flex items-center justify-between text-sm mb-1">
+											<span className="font-medium text-slate-700">Package Amount:</span>
+											<span className="font-semibold text-slate-900">₹{Number(packageForm.amount).toFixed(2)}</span>
+										</div>
+										{packageForm.consultationType === 'with' && Number(packageForm.discount) > 0 && (
+											<>
+												<div className="flex items-center justify-between text-xs mt-1 text-slate-600">
+													<span>Discount ({packageForm.discount}%):</span>
+													<span className="text-red-600">
+														-₹{((Number(packageForm.amount) * Number(packageForm.discount)) / 100).toFixed(2)}
+													</span>
+												</div>
+												<div className="flex items-center justify-between text-sm mt-2 pt-2 border-t border-slate-200">
+													<span className="font-bold text-slate-900">Total Amount:</span>
+													<span className="font-bold text-purple-600">
+														₹{(Number(packageForm.amount) * (1 - Number(packageForm.discount) / 100)).toFixed(2)}
+													</span>
+												</div>
+											</>
+										)}
+										{packageForm.consultationType === 'without' && (
+											<div className="flex items-center justify-between text-sm mt-2 pt-2 border-t border-slate-200">
+												<span className="font-bold text-slate-900">Total Amount:</span>
+												<span className="font-bold text-purple-600">₹{Number(packageForm.amount).toFixed(2)}</span>
+											</div>
+										)}
+									</div>
+								)}
+
+								{/* Description */}
+								<div>
+									<label className="block text-sm font-medium text-slate-700">Description (Optional)</label>
+									<textarea
+										value={packageForm.description}
+										onChange={e => setPackageForm(prev => ({ ...prev, description: e.target.value }))}
+										className="input-base mt-2"
+										rows={4}
+										placeholder="Enter package description..."
+									/>
+								</div>
+							</div>
+						</div>
+						<footer className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
+							<button
+								type="button"
+								onClick={() => {
+									setShowPackageModal(false);
+									setPackagePatientId(null);
+									setPackageForm({
+										packageName: '',
+										totalSessions: '',
+										amount: '',
+										consultationType: 'without',
+										discount: '0',
+										description: '',
+									});
+								}}
+								className="btn-secondary"
+								disabled={packageSubmitting}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleAddPackage}
+								disabled={packageSubmitting || !packageForm.packageName.trim() || !packageForm.totalSessions || !packageForm.amount}
+								className="btn-primary"
+							>
+								{packageSubmitting ? (
+									<>
+										<div className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-white border-t-transparent animate-spin mr-2" aria-hidden="true" />
+										Adding...
+									</>
+								) : (
+									<>
+										<i className="fas fa-check text-xs" aria-hidden="true" />
+										Add Package
+									</>
+								)}
 							</button>
 						</footer>
 					</div>

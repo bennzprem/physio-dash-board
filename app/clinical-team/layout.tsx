@@ -22,7 +22,7 @@ type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'availability
 const clinicalTeamLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-dumbbell' },
 	{ href: '#calendar', label: 'Calendar', icon: 'fas fa-calendar-week' },
-	{ href: '#appointments', label: 'Appointments', icon: 'fas fa-calendar-check' },
+	{ href: '#appointments', label: 'Patient Management', icon: 'fas fa-calendar-check' },
 	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
 	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
 	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
