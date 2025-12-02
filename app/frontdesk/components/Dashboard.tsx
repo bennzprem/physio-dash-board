@@ -596,15 +596,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 									))}
 								</div>
 							</div>
-
-							<div className="section-card">
-								<h3 className="text-lg font-semibold text-slate-900">Quick Tips</h3>
-								<ul className="mt-4 space-y-3 text-sm text-slate-600">
-									<li>Confirm pending appointments by noon to keep the clinical team&apos;s schedule accurate.</li>
-									<li>Mark treatments as completed once documentation is received so billing can proceed without delay.</li>
-									<li>Export the latest roster before end-of-day reporting to catch outstanding paperwork.</li>
-								</ul>
-							</div>
 						</div>
 					</DashboardWidget>
 				</section>

@@ -68,13 +68,19 @@ type PatientRecordWithSessions = PatientRecord & {
 };
 
 interface BookingForm {
-	patientId: string;
+	patientIds: string[]; // Array of selected patient IDs for multiple patients per slot
 	staffId: string;
 	date: string;
 	time: string; // Keep for backward compatibility with templates
 	selectedTimes: string[]; // Array of selected time slots for current date
 	selectedAppointments: Map<string, string[]>; // Map of date -> array of time slots (saved selections across multiple days)
 	notes?: string;
+	// Package fields
+	addPackage: boolean;
+	packageSessions: string;
+	packageAmount: string;
+	withConsultation: boolean;
+	consultationDiscount: string; // Percentage discount (5% to 50%)
 }
 
 const SLOT_INTERVAL_MINUTES = 30;
@@ -116,13 +122,18 @@ export default function Appointments() {
 	const [updating, setUpdating] = useState<Record<string, boolean>>({});
 	const [showBookingModal, setShowBookingModal] = useState(false);
 	const [bookingForm, setBookingForm] = useState<BookingForm>({
-		patientId: '',
+		patientIds: [],
 		staffId: '',
 		date: '',
 		time: '',
 		selectedTimes: [],
 		selectedAppointments: new Map(),
 		notes: '',
+		addPackage: false,
+		packageSessions: '',
+		packageAmount: '',
+		withConsultation: false,
+		consultationDiscount: '0',
 	});
 	const [bookingLoading, setBookingLoading] = useState(false);
 	const [conflictWarning, setConflictWarning] = useState<string | null>(null);
@@ -338,7 +349,8 @@ export default function Appointments() {
 		}
 
 		// Get all booked appointments for this staff and date (expand by duration)
-		const bookedSlotSet = new Set<string>();
+		// Count patients per slot instead of just marking as booked
+		const slotPatientCounts = new Map<string, number>();
 		appointments
 			.filter(apt => apt.doctor === selectedStaff.userName && apt.date === bookingForm.date && apt.status !== 'cancelled')
 			.forEach(apt => {
@@ -348,10 +360,10 @@ export default function Appointments() {
 				const startMinutes = timeStringToMinutes(apt.time);
 				for (let block = 0; block < blocks; block += 1) {
 					const blockStartMinutes = startMinutes + block * SLOT_INTERVAL_MINUTES;
-					bookedSlotSet.add(minutesToTimeString(blockStartMinutes));
+					const slotTime = minutesToTimeString(blockStartMinutes);
+					slotPatientCounts.set(slotTime, (slotPatientCounts.get(slotTime) || 0) + 1);
 				}
 			});
-		const bookedSlots = [...bookedSlotSet];
 
 		if (process.env.NODE_ENV === 'development') {
 			console.log('📋 Availability Details:', {
@@ -403,16 +415,11 @@ export default function Appointments() {
 			}
 
 			// Only generate slots within this specific availability range
+			// Show ALL slots (including booked ones) - we'll display patient counts
 			let currentTime = new Date(startTime);
 			while (currentTime < endTime) {
 				const timeString = `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}`;
 				
-				// Skip if already booked
-				if (bookedSlots.includes(timeString)) {
-					currentTime.setMinutes(currentTime.getMinutes() + 30);
-					continue;
-				}
-
 				// If it's today, filter out past time slots
 				if (isToday) {
 					// Compare time strings (HH:MM format) to determine if slot is in the past
@@ -422,6 +429,7 @@ export default function Appointments() {
 					}
 				}
 				
+				// Include all slots (booked or not) - we'll show patient counts
 				slots.push(timeString);
 				currentTime.setMinutes(currentTime.getMinutes() + 30);
 			}
@@ -436,14 +444,18 @@ export default function Appointments() {
 				isToday,
 				currentTime: currentTimeString,
 				availabilityRanges: dayAvailability.slots.map(s => `${s.start}-${s.end}`),
-				bookedSlots,
+				slotPatientCounts: Object.fromEntries(slotPatientCounts),
 				generatedSlots: sortedSlots,
 				totalSlots: sortedSlots.length,
 				filteredPastSlots: isToday ? 'Yes - past slots filtered' : 'No - future date',
 			});
 		}
 		
-		return sortedSlots;
+		// Return slots with patient counts attached
+		return sortedSlots.map(slot => ({
+			time: slot,
+			patientCount: slotPatientCounts.get(slot) || 0,
+		}));
 	}, [bookingForm.staffId, bookingForm.date, staff, appointments]);
 
 	// Get current user's name for filtering
@@ -810,26 +822,36 @@ export default function Appointments() {
 	const handleOpenBookingModal = () => {
 		setShowBookingModal(true);
 		setBookingForm({
-			patientId: '',
+			patientIds: [],
 			staffId: '',
 			date: '',
 			time: '',
 			selectedTimes: [],
 			selectedAppointments: new Map(),
 			notes: '',
+			addPackage: false,
+			packageSessions: '',
+			packageAmount: '',
+			withConsultation: false,
+			consultationDiscount: '0',
 		});
 	};
 
 	const handleCloseBookingModal = () => {
 		setShowBookingModal(false);
 		setBookingForm({
-			patientId: '',
+			patientIds: [],
 			staffId: '',
 			date: '',
 			time: '',
 			selectedTimes: [],
 			selectedAppointments: new Map(),
 			notes: '',
+			addPackage: false,
+			packageSessions: '',
+			packageAmount: '',
+			withConsultation: false,
+			consultationDiscount: '0',
 		});
 	};
 
@@ -859,16 +881,42 @@ export default function Appointments() {
 		// Flatten to get total count
 		const totalAppointments = allAppointments.reduce((sum, apt) => sum + apt.times.length, 0);
 
-		if (!bookingForm.patientId || !bookingForm.staffId || totalAppointments === 0) {
-			alert('Please fill in all required fields and select at least one time slot across any day.');
+		if (bookingForm.patientIds.length === 0 || !bookingForm.staffId || totalAppointments === 0) {
+			alert('Please select at least one patient, clinician, and at least one time slot across any day.');
 			return;
 		}
 
-		const selectedPatient = patients.find(p => p.patientId === bookingForm.patientId);
+		// Validate package fields if package is enabled
+		if (bookingForm.addPackage) {
+			if (!bookingForm.packageSessions || Number(bookingForm.packageSessions) <= 0) {
+				alert('Please enter a valid number of sessions for the package.');
+				return;
+			}
+			if (!bookingForm.packageAmount || Number(bookingForm.packageAmount) <= 0) {
+				alert('Please enter a valid package amount.');
+				return;
+			}
+		}
+
+		const selectedPatients = bookingForm.patientIds
+			.map(pid => patients.find(p => p.patientId === pid))
+			.filter((p): p is PatientRecordWithSessions => p !== undefined);
+		
 		const selectedStaff = staff.find(s => s.id === bookingForm.staffId);
 
-		if (!selectedPatient || !selectedStaff) {
+		if (selectedPatients.length === 0 || !selectedStaff) {
 			alert('Invalid patient or staff selection.');
+			return;
+		}
+
+		// Check if any selected patient has no existing appointments (consultation check)
+		const patientsWithoutAppointments = selectedPatients.filter(patient => {
+			return appointments.filter(a => a.patientId === patient.patientId).length === 0;
+		});
+
+		if (patientsWithoutAppointments.length > 0) {
+			const patientNames = patientsWithoutAppointments.map(p => p.name).join(', ');
+			alert(`Consultations can only be created from the Front Desk. The following patient(s) need their first appointment assigned by the frontdesk: ${patientNames}`);
 			return;
 		}
 
@@ -909,14 +957,6 @@ export default function Appointments() {
 			}
 		}
 
-		// Check if patient has any existing appointments - consultations can only be created from front desk
-		const patientAllAppointments = appointments.filter(
-			a => a.patientId === bookingForm.patientId
-		);
-		if (patientAllAppointments.length === 0) {
-			alert('Consultations can only be created from the Front Desk. Please ask the front desk to create the first appointment (consultation) for this patient.');
-			return;
-		}
 
 		setBookingLoading(true);
 		try {
@@ -924,95 +964,183 @@ export default function Appointments() {
 			let appointmentIndex = 0;
 			const baseTimestamp = Date.now();
 			
-			// Create appointments for all days and times
-			for (const apt of allAppointments) {
-				for (const time of apt.times) {
-					// Generate unique appointment ID for each
-					const appointmentId = `APT${baseTimestamp}${appointmentIndex}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+			// Create appointments for all selected patients, all days and times
+			for (const selectedPatient of selectedPatients) {
+				const patientAppointments: string[] = [];
+				
+				for (const apt of allAppointments) {
+					for (const time of apt.times) {
+						// Generate unique appointment ID for each
+						const appointmentId = `APT${baseTimestamp}${appointmentIndex}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-					await addDoc(collection(db, 'appointments'), {
-						appointmentId,
-						patientId: bookingForm.patientId,
-						patient: selectedPatient.name,
-						doctor: selectedStaff.userName,
-						staffId: selectedStaff.id,
-						date: apt.date,
-						time: time,
-						status: 'pending' as AdminAppointmentStatus,
-						notes: bookingForm.notes?.trim() || null,
-						isConsultation: false, // Clinical team cannot create consultations
-						createdAt: serverTimestamp(),
-					});
-
-					createdAppointments.push(appointmentId);
-					appointmentIndex++;
-				}
-			}
-
-			// Update remaining sessions for the patient, if totalSessionsRequired is set
-			if (typeof selectedPatient.totalSessionsRequired === 'number') {
-				const completedCount = appointments.filter(
-					a => a.patientId === bookingForm.patientId && a.status === 'completed'
-				).length;
-				// remainingSessions starts at totalSessionsRequired - 1 and decreases with each completed appointment
-				const newRemaining = Math.max(0, selectedPatient.totalSessionsRequired - 1 - completedCount);
-
-				const patientRef = doc(db, 'patients', selectedPatient.id);
-				await updateDoc(patientRef, {
-					remainingSessions: newRemaining,
-				});
-
-				setPatients(prev =>
-					prev.map(p =>
-						p.id === selectedPatient.id ? { ...p, remainingSessions: newRemaining } : p
-					)
-				);
-			}
-
-			// Ensure the patient's record reflects the assigned clinician and status
-			if (selectedPatient.id) {
-				try {
-					const patientRef = doc(db, 'patients', selectedPatient.id);
-					const patientUpdate: Record<string, unknown> = {
-						assignedDoctor: selectedStaff.userName,
-					};
-					if (!selectedPatient.status || selectedPatient.status === 'pending') {
-						patientUpdate.status = 'ongoing';
-					}
-
-					await updateDoc(patientRef, patientUpdate);
-				} catch (patientUpdateError) {
-					console.error('Failed to update patient assignment', patientUpdateError);
-				}
-			}
-
-			// Send email notification if patient has email (only once for all appointments)
-			if (selectedPatient.email && totalAppointments > 0) {
-				try {
-					const datesList = allAppointments.map(apt => 
-						`${formatDateLabel(apt.date)}: ${apt.times.join(', ')}`
-					).join('\n');
-					await sendEmailNotification({
-						to: selectedPatient.email,
-						subject: `${totalAppointments} Appointment(s) Scheduled`,
-						template: 'appointment-created',
-						data: {
-							patientName: selectedPatient.name,
-							patientEmail: selectedPatient.email,
-							patientId: bookingForm.patientId,
+						await addDoc(collection(db, 'appointments'), {
+							appointmentId,
+							patientId: selectedPatient.patientId,
+							patient: selectedPatient.name,
 							doctor: selectedStaff.userName,
-							date: allAppointments.map(a => formatDateLabel(a.date)).join(', '),
-							time: allAppointments.map(a => a.times.join(', ')).join('; '),
-							appointmentId: createdAppointments.join(', '),
-						},
+							staffId: selectedStaff.id,
+							date: apt.date,
+							time: time,
+							status: 'pending' as AdminAppointmentStatus,
+							notes: bookingForm.notes?.trim() || null,
+							isConsultation: false, // Clinical team cannot create consultations
+							createdAt: serverTimestamp(),
+						});
+
+						createdAppointments.push(appointmentId);
+						patientAppointments.push(appointmentId);
+						appointmentIndex++;
+					}
+				}
+
+				// Update remaining sessions for each patient, if totalSessionsRequired is set
+				if (typeof selectedPatient.totalSessionsRequired === 'number') {
+					const completedCount = appointments.filter(
+						a => a.patientId === selectedPatient.patientId && a.status === 'completed'
+					).length;
+					// remainingSessions starts at totalSessionsRequired - 1 and decreases with each completed appointment
+					const newRemaining = Math.max(0, selectedPatient.totalSessionsRequired - 1 - completedCount);
+
+					const patientRef = doc(db, 'patients', selectedPatient.id);
+					await updateDoc(patientRef, {
+						remainingSessions: newRemaining,
 					});
-				} catch (emailError) {
-					console.error('Failed to send appointment confirmation email:', emailError);
+
+					setPatients(prev =>
+						prev.map(p =>
+							p.id === selectedPatient.id ? { ...p, remainingSessions: newRemaining } : p
+						)
+					);
+				}
+
+				// Ensure each patient's record reflects the assigned clinician and status
+				if (selectedPatient.id) {
+					try {
+						const patientRef = doc(db, 'patients', selectedPatient.id);
+						const patientUpdate: Record<string, unknown> = {
+							assignedDoctor: selectedStaff.userName,
+						};
+						if (!selectedPatient.status || selectedPatient.status === 'pending') {
+							patientUpdate.status = 'ongoing';
+						}
+
+						await updateDoc(patientRef, patientUpdate);
+					} catch (patientUpdateError) {
+						console.error('Failed to update patient assignment', patientUpdateError);
+					}
+				}
+
+				// Send email notification to each patient
+				if (selectedPatient.email && totalAppointments > 0) {
+					try {
+						const datesList = allAppointments.map(apt => 
+							`${formatDateLabel(apt.date)}: ${apt.times.join(', ')}`
+						).join('\n');
+						await sendEmailNotification({
+							to: selectedPatient.email,
+							subject: `${totalAppointments} Appointment(s) Scheduled`,
+							template: 'appointment-created',
+							data: {
+								patientName: selectedPatient.name,
+								patientEmail: selectedPatient.email,
+								patientId: selectedPatient.patientId,
+								doctor: selectedStaff.userName,
+								date: allAppointments.map(a => formatDateLabel(a.date)).join(', '),
+								time: allAppointments.map(a => a.times.join(', ')).join('; '),
+								appointmentId: patientAppointments.join(', '),
+							},
+						});
+					} catch (emailError) {
+						console.error('Failed to send appointment confirmation email:', emailError);
+					}
 				}
 			}
 
+			// Handle package creation if enabled
+			if (bookingForm.addPackage && bookingForm.packageSessions && bookingForm.packageAmount) {
+				const packageSessionsValue = Number(bookingForm.packageSessions);
+				const packageAmountValue = Number(bookingForm.packageAmount);
+				const consultationDiscountValue = bookingForm.withConsultation && bookingForm.consultationDiscount
+					? Number(bookingForm.consultationDiscount)
+					: null;
+
+				// Calculate total amount with discount
+				const totalAmount = consultationDiscountValue && consultationDiscountValue > 0
+					? Number((packageAmountValue * (1 - consultationDiscountValue / 100)).toFixed(2))
+					: packageAmountValue;
+
+				// Create package billing for each selected patient
+				for (const selectedPatient of selectedPatients) {
+					try {
+						const billingId = `PKG-${selectedPatient.patientId}-${Date.now()}`;
+						
+						// Create billing entry
+						await addDoc(collection(db, 'billing'), {
+							billingId,
+							patient: selectedPatient.name,
+							patientId: selectedPatient.patientId,
+							doctor: selectedStaff.userName,
+							amount: totalAmount,
+							packageAmount: packageAmountValue,
+							concessionPercent: consultationDiscountValue,
+							amountPaid: 0,
+							date: new Date().toISOString().split('T')[0],
+							status: 'Pending',
+							paymentMode: null,
+							utr: null,
+							packageSessions: packageSessionsValue,
+							createdAt: serverTimestamp(),
+							updatedAt: serverTimestamp(),
+						});
+
+						// Update patient's totalSessionsRequired and remainingSessions
+						const patientRef = doc(db, 'patients', selectedPatient.id);
+						const currentTotalSessions = typeof selectedPatient.totalSessionsRequired === 'number'
+							? selectedPatient.totalSessionsRequired
+							: 0;
+						const newTotalSessions = currentTotalSessions + packageSessionsValue;
+						
+						// Calculate remaining sessions (starts at total - 1)
+						const completedCount = appointments.filter(
+							a => a.patientId === selectedPatient.patientId && a.status === 'completed'
+						).length;
+						const newRemainingSessions = Math.max(0, newTotalSessions - 1 - completedCount);
+
+						await updateDoc(patientRef, {
+							totalSessionsRequired: newTotalSessions,
+							remainingSessions: newRemainingSessions,
+							packageAmount: packageAmountValue,
+							concessionPercent: consultationDiscountValue,
+							paymentType: bookingForm.withConsultation ? 'with' : 'without',
+						});
+
+						// Update local state
+						setPatients(prev =>
+							prev.map(p =>
+								p.id === selectedPatient.id
+									? {
+											...p,
+											totalSessionsRequired: newTotalSessions,
+											remainingSessions: newRemainingSessions,
+											packageAmount: packageAmountValue,
+											concessionPercent: consultationDiscountValue,
+										}
+									: p
+							)
+						);
+					} catch (packageError) {
+						console.error('Failed to create package for patient:', selectedPatient.name, packageError);
+						// Continue with other patients even if one fails
+					}
+				}
+			}
+
+			const totalCreated = createdAppointments.length;
+			const packageMessage = bookingForm.addPackage && bookingForm.packageSessions && bookingForm.packageAmount
+				? ` Package(s) added and billing created.`
+				: '';
 			handleCloseBookingModal();
-			alert(`Successfully created ${totalAppointments} appointment(s) across ${allAppointments.length} day(s)!`);
+			alert(`Successfully created ${totalCreated} appointment(s) for ${selectedPatients.length} patient(s) across ${allAppointments.length} day(s)!${packageMessage}`);
 		} catch (error) {
 			console.error('Failed to create appointment(s)', error);
 			alert(`Failed to create appointment(s): ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1232,34 +1360,92 @@ export default function Appointments() {
 						</header>
 						<div className="max-h-[600px] overflow-y-auto px-6 py-4">
 							<div className="space-y-4">
-								{/* Patient Selection */}
+								{/* Patient Selection - Multiple Patients */}
 								<div>
-									<label className="block text-sm font-medium text-slate-700">
-										Patient <span className="text-rose-500">*</span>
-									</label>
-									<select
-										value={bookingForm.patientId}
-										onChange={e => setBookingForm(prev => ({ ...prev, patientId: e.target.value }))}
-										className="select-base mt-2"
-										required
-									>
-										<option value="">Select a patient</option>
-										{availablePatients.length === 0 ? (
-											<option value="" disabled>
-												No patients available (patients must have their first appointment assigned by frontdesk)
-											</option>
-										) : (
-											availablePatients.map(patient => (
-												<option key={patient.id} value={patient.patientId}>
-													{patient.name} ({patient.patientId})
-												</option>
-											))
+									<label className="block text-sm font-medium text-slate-700 mb-2">
+										Patients <span className="text-rose-500">*</span>
+										{bookingForm.patientIds.length > 0 && (
+											<span className="ml-2 text-xs font-normal text-slate-500">
+												({bookingForm.patientIds.length} selected)
+											</span>
 										)}
-									</select>
-									{availablePatients.length === 0 && (
-										<p className="mt-1 text-xs text-amber-600">
-											No patients available. Patients must have their first appointment assigned by the frontdesk before clinical team can schedule additional appointments.
-										</p>
+									</label>
+									{availablePatients.length === 0 ? (
+										<div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+											<p>No patients available. Patients must have their first appointment assigned by the frontdesk before clinical team can schedule additional appointments.</p>
+										</div>
+									) : (
+										<div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3">
+											<div className="space-y-2">
+												{availablePatients.map(patient => {
+													const isSelected = bookingForm.patientIds.includes(patient.patientId);
+													return (
+														<label
+															key={patient.id}
+															className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-all ${
+																isSelected
+																	? 'border-indigo-500 bg-indigo-50'
+																	: 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+															}`}
+														>
+															<input
+																type="checkbox"
+																checked={isSelected}
+																onChange={e => {
+																	if (e.target.checked) {
+																		setBookingForm(prev => ({
+																			...prev,
+																			patientIds: [...prev.patientIds, patient.patientId],
+																		}));
+																	} else {
+																		setBookingForm(prev => ({
+																			...prev,
+																			patientIds: prev.patientIds.filter(id => id !== patient.patientId),
+																		}));
+																	}
+																}}
+																className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500"
+															/>
+															<div className="flex-1">
+																<p className="text-sm font-medium text-slate-900">{patient.name}</p>
+																<p className="text-xs text-slate-500">ID: {patient.patientId}</p>
+															</div>
+															{isSelected && (
+																<i className="fas fa-check text-indigo-600" aria-hidden="true" />
+															)}
+														</label>
+													);
+												})}
+											</div>
+										</div>
+									)}
+									{bookingForm.patientIds.length > 0 && (
+										<div className="mt-2 flex flex-wrap gap-2">
+											{bookingForm.patientIds.map(pid => {
+												const patient = availablePatients.find(p => p.patientId === pid);
+												return patient ? (
+													<span
+														key={pid}
+														className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700"
+													>
+														{patient.name}
+														<button
+															type="button"
+															onClick={() => {
+																setBookingForm(prev => ({
+																	...prev,
+																	patientIds: prev.patientIds.filter(id => id !== pid),
+																}));
+															}}
+															className="ml-1 rounded-full hover:bg-indigo-200 p-0.5"
+															title="Remove patient"
+														>
+															<i className="fas fa-times text-xs" aria-hidden="true" />
+														</button>
+													</span>
+												) : null;
+											})}
+										</div>
 									)}
 								</div>
 
@@ -1373,8 +1559,11 @@ export default function Appointments() {
 										{availableTimeSlots.length > 0 ? (
 											<>
 												<div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
-													{availableTimeSlots.map(slot => {
+													{availableTimeSlots.map(slotData => {
+														const slot = typeof slotData === 'string' ? slotData : slotData.time;
+														const patientCount = typeof slotData === 'object' ? slotData.patientCount : 0;
 														const isSelected = bookingForm.selectedTimes.includes(slot);
+														const isEmpty = patientCount === 0;
 														return (
 															<button
 																key={slot}
@@ -1391,15 +1580,33 @@ export default function Appointments() {
 																		};
 																	});
 																}}
-																className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+																className={`rounded-lg border px-3 py-2 text-sm font-medium transition relative ${
 																	isSelected
 																		? 'border-sky-500 bg-sky-50 text-sky-700 ring-2 ring-sky-200'
+																		: isEmpty
+																		? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:border-emerald-400 hover:bg-emerald-100'
 																		: 'border-slate-300 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
 																}`}
+																title={isEmpty ? 'No patients booked at this slot' : `${patientCount} patient${patientCount === 1 ? '' : 's'} booked at this slot`}
 															>
-																{slot}
+																<div className="flex flex-col items-center gap-1">
+																	<span>{slot}</span>
+																	{isEmpty ? (
+																		<span className="text-xs font-normal text-emerald-600">
+																			<i className="fas fa-circle text-[6px] mr-1" aria-hidden="true" />
+																			No patients
+																		</span>
+																	) : (
+																		<span className={`text-xs font-semibold ${
+																			isSelected ? 'text-sky-600' : 'text-slate-600'
+																		}`}>
+																			<i className="fas fa-users mr-1" aria-hidden="true" />
+																			{patientCount} {patientCount === 1 ? 'patient' : 'patients'}
+																		</span>
+																	)}
+																</div>
 																{isSelected && (
-																	<i className="fas fa-check ml-1 text-xs" aria-hidden="true" />
+																	<i className="fas fa-check absolute top-1 right-1 text-xs" aria-hidden="true" />
 																)}
 															</button>
 														);
@@ -1485,6 +1692,137 @@ export default function Appointments() {
 									</div>
 								)}
 
+								{/* Package Section */}
+								{bookingForm.patientIds.length > 0 && (
+									<div className="rounded-lg border-2 border-purple-200 bg-purple-50/50 p-4">
+										<div className="mb-3 flex items-center justify-between">
+											<label className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+												<input
+													type="checkbox"
+													checked={bookingForm.addPackage}
+													onChange={e => {
+														setBookingForm(prev => ({
+															...prev,
+															addPackage: e.target.checked,
+															withConsultation: e.target.checked ? prev.withConsultation : false,
+															consultationDiscount: e.target.checked ? prev.consultationDiscount : '0',
+														}));
+													}}
+													className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-2 focus:ring-purple-500"
+												/>
+												<span>Add Package</span>
+											</label>
+										</div>
+
+										{bookingForm.addPackage && (
+											<div className="space-y-3 mt-3">
+												{/* Number of Sessions */}
+												<div>
+													<label className="block text-xs font-medium text-slate-700 mb-1">
+														Number of Sessions <span className="text-rose-500">*</span>
+													</label>
+													<input
+														type="number"
+														min="1"
+														value={bookingForm.packageSessions}
+														onChange={e => setBookingForm(prev => ({ ...prev, packageSessions: e.target.value }))}
+														className="input-base"
+														placeholder="Enter number of sessions"
+														required
+													/>
+												</div>
+
+												{/* Package Amount */}
+												<div>
+													<label className="block text-xs font-medium text-slate-700 mb-1">
+														Package Amount (₹) <span className="text-rose-500">*</span>
+													</label>
+													<input
+														type="number"
+														min="0"
+														step="0.01"
+														value={bookingForm.packageAmount}
+														onChange={e => setBookingForm(prev => ({ ...prev, packageAmount: e.target.value }))}
+														className="input-base"
+														placeholder="Enter package amount"
+														required
+													/>
+												</div>
+
+												{/* With/Without Consultation */}
+												<div>
+													<label className="flex items-center gap-2 text-xs font-medium text-slate-700 mb-2">
+														<input
+															type="checkbox"
+															checked={bookingForm.withConsultation}
+															onChange={e => {
+																setBookingForm(prev => ({
+																	...prev,
+																	withConsultation: e.target.checked,
+																	consultationDiscount: e.target.checked ? prev.consultationDiscount : '0',
+																}));
+															}}
+															className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-2 focus:ring-purple-500"
+														/>
+														<span>With Consultation</span>
+													</label>
+
+													{bookingForm.withConsultation && (
+														<div className="mt-2">
+															<label className="block text-xs font-medium text-slate-700 mb-1">
+																Consultation Discount (%)
+															</label>
+															<select
+																value={bookingForm.consultationDiscount}
+																onChange={e => setBookingForm(prev => ({ ...prev, consultationDiscount: e.target.value }))}
+																className="select-base"
+															>
+																{[5, 10, 15, 20, 25, 30, 35, 40, 45, 50].map(percent => (
+																	<option key={percent} value={percent}>
+																		{percent}%
+																	</option>
+																))}
+															</select>
+														</div>
+													)}
+												</div>
+
+												{/* Total Amount Display */}
+												{bookingForm.packageAmount && (
+													<div className="rounded-lg border border-purple-300 bg-white p-3">
+														<div className="flex items-center justify-between text-sm">
+															<span className="font-medium text-slate-700">Package Amount:</span>
+															<span className="font-semibold text-slate-900">₹{Number(bookingForm.packageAmount).toFixed(2)}</span>
+														</div>
+														{bookingForm.withConsultation && Number(bookingForm.consultationDiscount) > 0 && (
+															<>
+																<div className="flex items-center justify-between text-xs mt-1 text-slate-600">
+																	<span>Discount ({bookingForm.consultationDiscount}%):</span>
+																	<span className="text-red-600">
+																		-₹{((Number(bookingForm.packageAmount) * Number(bookingForm.consultationDiscount)) / 100).toFixed(2)}
+																	</span>
+																</div>
+																<div className="flex items-center justify-between text-sm mt-2 pt-2 border-t border-slate-200">
+																	<span className="font-bold text-slate-900">Total Amount:</span>
+																	<span className="font-bold text-purple-600">
+																		₹{(Number(bookingForm.packageAmount) * (1 - Number(bookingForm.consultationDiscount) / 100)).toFixed(2)}
+																	</span>
+																</div>
+															</>
+														)}
+														{!bookingForm.withConsultation && (
+															<div className="flex items-center justify-between text-sm mt-2 pt-2 border-t border-slate-200">
+																<span className="font-bold text-slate-900">Total Amount:</span>
+																<span className="font-bold text-purple-600">₹{Number(bookingForm.packageAmount).toFixed(2)}</span>
+															</div>
+														)}
+													</div>
+												)}
+											</div>
+										)}
+									</div>
+								)}
+
 								{/* Notes */}
 								<div>
 									<label className="block text-sm font-medium text-slate-700">Notes (Optional)</label>
@@ -1512,7 +1850,7 @@ export default function Appointments() {
 									type="button"
 									onClick={handleCreateAppointment}
 									className="btn-primary"
-									disabled={bookingLoading || !bookingForm.patientId || !bookingForm.staffId || !bookingForm.date || (bookingForm.selectedTimes.length === 0 && bookingForm.selectedAppointments.size === 0 && !bookingForm.time)}
+									disabled={bookingLoading || bookingForm.patientIds.length === 0 || !bookingForm.staffId || !bookingForm.date || (bookingForm.selectedTimes.length === 0 && bookingForm.selectedAppointments.size === 0 && !bookingForm.time)}
 								>
 								{bookingLoading ? (
 									<>

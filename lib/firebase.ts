@@ -1,7 +1,13 @@
 import { getAnalytics } from 'firebase/analytics';
 import { getApps, initializeApp, type FirebaseOptions } from 'firebase/app';
+<<<<<<< Updated upstream
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+=======
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
+>>>>>>> Stashed changes
 
 type FirebaseConfigKey =
 	| 'API_KEY'
@@ -138,5 +144,17 @@ try {
 	throw error;
 }
 
-export { auth, db, analytics };
+// Initialize Storage
+let storage;
+try {
+	storage = getStorage(app);
+	if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+		console.log('✅ Firebase Storage initialized');
+	}
+} catch (error) {
+	console.error('❌ Firebase Storage initialization error:', error);
+	throw error;
+}
+
+export { auth, db, analytics, storage };
 

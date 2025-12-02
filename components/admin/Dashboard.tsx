@@ -450,7 +450,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	}
 
 	return (
-		<div className="min-h-svh bg-purple-50 px-6 py-10">
+		<div className="min-h-svh bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Admin Dashboard"
@@ -493,7 +493,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				/>
 
 				{/* Divider */}
-				<div className="border-t border-blue-200" />
+				<div className="border-t border-indigo-200/50" />
 
 				{/* Quick Actions Section */}
 				<section>
@@ -512,7 +512,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 							key={link.href}
 							type="button"
 							onClick={() => handleQuickLinkClick(link.href)}
-							className="group rounded-3xl bg-white border border-blue-200 px-6 py-5 shadow-lg hover:shadow-blue-200 transition-all hover:scale-[1.02] gap-3 flex flex-col"
+							className="group rounded-3xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/20 border border-blue-200 px-6 py-5 shadow-lg hover:shadow-xl hover:shadow-blue-300/50 transition-all hover:scale-[1.02] gap-3 flex flex-col"
 						>
 								<span className={ICON_WRAPPER} aria-hidden="true">
 									<i className={link.icon} />
@@ -530,11 +530,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-blue-200" />
+				<div className="border-t border-indigo-200/50" />
 
 				{/* Analytics Section */}
 				<section>
-					<div className="rounded-3xl bg-white border border-blue-200 p-6 shadow-lg space-y-6">
+					<div className="rounded-3xl bg-gradient-to-br from-white via-indigo-50/40 to-purple-50/30 border border-indigo-200 p-6 shadow-xl space-y-6">
 						<div className="flex items-center justify-between">
 							<div>
 								<h2 className="text-xl font-semibold text-blue-900">Analytics Overview</h2>
@@ -545,8 +545,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 							<i className="fas fa-chart-line text-blue-600 text-2xl" aria-hidden="true" />
 						</div>
 						<div className="grid gap-6 lg:grid-cols-2">
-							<div className="rounded-2xl border border-blue-200 bg-white p-5 shadow-lg hover:shadow-xl transition-shadow duration-300">
-								<p className="text-sm font-semibold text-blue-900 mb-1">Weekly Appointment Trend</p>
+							<div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/60 to-blue-50/40 p-5 shadow-lg hover:shadow-xl transition-shadow duration-300">
+								<p className="text-sm font-semibold text-indigo-900 mb-1">Weekly Appointment Trend</p>
 								<p className="text-xs text-blue-700 mb-4">Includes the last 7 days of confirmed sessions.</p>
 								<div className="mt-2">
 									<StatsChart type="line" data={appointmentTrendData} height={260} />
@@ -573,7 +573,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				</section>
 
 				{/* Divider */}
-				<div className="border-t border-blue-200" />
+				<div className="border-t border-indigo-200/50" />
 
  				{/* Operations & Recent Activity Section */}
  				<section>
