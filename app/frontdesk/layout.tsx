@@ -9,9 +9,11 @@ import Billing from '@/components/frontdesk/Billing';
 import Calendar from '@/components/frontdesk/Calendar';
 import Profile from '@/components/Profile';
 import Notifications from '@/components/admin/Notifications';
+import InventoryManagement from '@/components/InventoryManagement';
+import LeaveManagement from '@/components/LeaveManagement';
 import { useAuth } from '@/contexts/AuthContext';
 
-type FrontdeskPage = 'dashboard' | 'patients' | 'billing' | 'calendar' | 'notifications' | 'profile';
+type FrontdeskPage = 'dashboard' | 'patients' | 'billing' | 'calendar' | 'notifications' | 'inventory' | 'leave' | 'profile';
 
 const frontdeskLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-home' },
@@ -19,6 +21,8 @@ const frontdeskLinks: SidebarLink[] = [
 	{ href: '#calendar', label: 'Calendar', icon: 'fas fa-calendar-alt' },
 	{ href: '#billing', label: 'Billing', icon: 'fas fa-file-invoice-dollar' },
 	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
+	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
+	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
 ];
 
 export default function FrontdeskLayout({ children }: { children: React.ReactNode }) {
@@ -59,7 +63,7 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 	useEffect(() => {
 		const handleHashChange = () => {
 			const hash = window.location.hash.replace('#', '');
-			if (hash && ['dashboard', 'patients', 'calendar', 'billing', 'notifications', 'profile'].includes(hash)) {
+			if (hash && ['dashboard', 'patients', 'calendar', 'billing', 'notifications', 'inventory', 'leave', 'profile'].includes(hash)) {
 				setActivePage(hash as FrontdeskPage);
 			}
 		};
@@ -73,7 +77,7 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 		// Listen for custom navigation events
 		const handleCustomNav = (event: CustomEvent) => {
 			const page = event.detail?.page;
-			if (page && ['dashboard', 'patients', 'calendar', 'billing', 'notifications', 'profile'].includes(page)) {
+			if (page && ['dashboard', 'patients', 'calendar', 'billing', 'notifications', 'inventory', 'leave', 'profile'].includes(page)) {
 				setActivePage(page as FrontdeskPage);
 			}
 		};
@@ -96,12 +100,16 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 				return <Calendar />;
 			case 'billing':
 				return <Billing />;
-			case 'notifications':
-				return <Notifications />;
-			case 'profile':
-				return <Profile />;
-			default:
-				return <Dashboard onNavigate={handleLinkClick} />;
+		case 'notifications':
+			return <Notifications />;
+		case 'inventory':
+			return <InventoryManagement />;
+		case 'leave':
+			return <LeaveManagement />;
+		case 'profile':
+			return <Profile />;
+		default:
+			return <Dashboard onNavigate={handleLinkClick} />;
 		}
 	};
 

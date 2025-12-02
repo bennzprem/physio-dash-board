@@ -17,12 +17,15 @@ service cloud.firestore {
       }
       // Try to get the staff document first (primary collection)
       let staffDoc = get(/databases/$(database)/documents/staff/$(request.auth.uid));
-      if (staffDoc.exists && 'role' in staffDoc.data) {
+      if (staffDoc != null && staffDoc.exists && 'role' in staffDoc.data) {
         return staffDoc.data.role;
       }
       // Fallback to users collection for backward compatibility
       let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return userDoc.exists && 'role' in userDoc.data ? userDoc.data.role : null;
+      if (userDoc != null && userDoc.exists && 'role' in userDoc.data) {
+        return userDoc.data.role;
+      }
+      return null;
     }
 
     // Role Checks (Case insensitive just to be safe if you want)
@@ -102,6 +105,16 @@ service cloud.firestore {
       allow read: if isLoggedIn();
       allow create, update: if isFrontdesk() || isAdmin();
       allow delete: if isAdmin();
+    }
+
+    // -------------------------------
+    // BILLING CYCLES COLLECTION
+    // -------------------------------
+    match /billingCycles/{id} {
+      // All logged-in users can read billing cycles
+      allow read: if isLoggedIn();
+      // Only Admin and FrontDesk can create/update/delete billing cycles
+      allow create, update, delete: if isFrontdesk() || isAdmin();
     }
 
     // -------------------------------

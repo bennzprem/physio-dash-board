@@ -13,15 +13,19 @@ import Profile from '@/components/Profile';
 import Transfer from '@/components/clinical-team/Transfer';
 import SessionTransfer from '@/components/clinical-team/SessionTransfer';
 import MyPerformance from '@/components/clinical-team/MyPerformance';
+import InventoryManagement from '@/components/InventoryManagement';
+import LeaveManagement from '@/components/LeaveManagement';
 import { useAuth } from '@/contexts/AuthContext';
 
-type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'availability' | 'transfer' | 'session-transfer' | 'appointments' | 'notifications' | 'profile' | 'my-performance';
+type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'availability' | 'transfer' | 'session-transfer' | 'appointments' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'my-performance';
 
 const clinicalTeamLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-dumbbell' },
 	{ href: '#calendar', label: 'Calendar', icon: 'fas fa-calendar-week' },
 	{ href: '#appointments', label: 'Appointments', icon: 'fas fa-calendar-check' },
 	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
+	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
+	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
 	{ href: '#edit-report', label: 'View/Edit Reports', icon: 'fas fa-notes-medical' },
 	{ href: '#availability', label: 'My Availability', icon: 'fas fa-calendar-check' },
 	{ href: '#transfer', label: 'Transfer Patients', icon: 'fas fa-exchange-alt' },
@@ -76,6 +80,10 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 			setActivePage('appointments');
 		} else if (pathname?.includes('/notifications')) {
 			setActivePage('notifications');
+		} else if (pathname?.includes('/inventory')) {
+			setActivePage('inventory');
+		} else if (pathname?.includes('/leave')) {
+			setActivePage('leave');
 		} else if (pathname?.includes('/availability')) {
 			setActivePage('availability');
 		} else if (pathname?.includes('/transfer')) {
@@ -128,10 +136,14 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 				return <Calendar />;
 			case 'appointments':
 				return <Appointments />;
-			case 'notifications':
-				return <Notifications />;
-			case 'edit-report':
-				return <EditReport />;
+		case 'notifications':
+			return <Notifications />;
+		case 'inventory':
+			return <InventoryManagement />;
+		case 'leave':
+			return <LeaveManagement />;
+		case 'edit-report':
+			return <EditReport />;
 			case 'availability':
 				return <Availability />;
 			case 'transfer':

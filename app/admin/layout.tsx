@@ -14,9 +14,11 @@ import AuditLogs from '@/components/admin/AuditLogs';
 import HeaderManagement from '@/components/admin/HeaderManagement';
 import Notifications from '@/components/admin/Notifications';
 import Profile from '@/components/Profile';
+import InventoryManagement from '@/components/InventoryManagement';
+import LeaveManagement from '@/components/LeaveManagement';
 import { useAuth } from '@/contexts/AuthContext';
 
-type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'profile';
+type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile';
 
 const adminLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-columns' },
@@ -26,6 +28,8 @@ const adminLinks: SidebarLink[] = [
 	{ href: '#billing', label: 'Billing & Payments', icon: 'fas fa-file-invoice-dollar' },
 	{ href: '#analytics', label: 'Analytics', icon: 'fas fa-chart-pie' },
 	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
+	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
+	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
 	{ href: '#headers', label: 'Header Management', icon: 'fas fa-heading' },
 	{ href: '#audit', label: 'Audit Logs', icon: 'fas fa-clipboard-list' },
 	{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
@@ -91,6 +95,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 			return <AuditLogs />;
 		case 'notifications':
 			return <Notifications />;
+		case 'inventory':
+			return <InventoryManagement />;
+		case 'leave':
+			return <LeaveManagement />;
 		case 'profile':
 			return <Profile />;
 		default:

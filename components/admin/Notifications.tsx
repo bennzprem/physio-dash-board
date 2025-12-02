@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { collection, doc, onSnapshot, addDoc, setDoc, updateDoc, query, where, orderBy, serverTimestamp, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
+import { collection, doc, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
@@ -89,6 +89,8 @@ export default function Notifications() {
 	const [conversations, setConversations] = useState<Conversation[]>([]);
 	const [messageText, setMessageText] = useState('');
 	const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+	const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
+	const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -382,6 +384,37 @@ export default function Notifications() {
 		inputRef.current?.focus();
 	};
 
+	const handleDeleteMessage = async (messageId: string) => {
+		if (!user?.uid) return;
+
+		const message = messages.find(m => m.id === messageId);
+		if (!message) return;
+
+		// Only allow sender or admin to delete
+		const isSender = message.senderId === user.uid;
+		const isAdmin = user.role === 'Admin' || user.role === 'admin';
+
+		if (!isSender && !isAdmin) {
+			alert('You can only delete your own messages.');
+			return;
+		}
+
+		// Confirm deletion
+		if (!confirm('Are you sure you want to delete this message?')) {
+			return;
+		}
+
+		setDeletingMessageId(messageId);
+		try {
+			await deleteDoc(doc(db, 'messages', messageId));
+			setDeletingMessageId(null);
+		} catch (error) {
+			console.error('Failed to delete message', error);
+			alert('Failed to delete message. Please try again.');
+			setDeletingMessageId(null);
+		}
+	};
+
 	const formatTime = (dateString: string) => {
 		const date = new Date(dateString);
 		const now = new Date();
@@ -591,10 +624,16 @@ export default function Notifications() {
 											) : (
 												messages.map(message => {
 													const isOwn = message.senderId === user?.uid;
+													const isAdmin = user?.role === 'Admin' || user?.role === 'admin';
+													const canDelete = isOwn || isAdmin;
+													const isHovered = hoveredMessageId === message.id;
+													const isDeleting = deletingMessageId === message.id;
 													return (
 														<div
 															key={message.id}
-															className={`flex gap-3 ${isOwn ? 'justify-end' : 'justify-start'} items-end`}
+															className={`flex gap-3 ${isOwn ? 'justify-end' : 'justify-start'} items-end group relative`}
+															onMouseEnter={() => setHoveredMessageId(message.id)}
+															onMouseLeave={() => setHoveredMessageId(null)}
 														>
 															{!isOwn && (
 																<div className="flex-shrink-0">
@@ -611,17 +650,32 @@ export default function Notifications() {
 																	)}
 																</div>
 															)}
-															<div className={`flex flex-col max-w-[75%] ${isOwn ? 'items-end' : 'items-start'}`}>
+															<div className={`flex flex-col max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} relative`}>
 																{!isOwn && (
 																	<p className="text-xs font-semibold text-slate-700 mb-1 px-1">{message.senderName}</p>
 																)}
 																<div
-																	className={`rounded-2xl px-4 py-2.5 text-sm shadow-md ${
+																	className={`rounded-2xl px-4 py-2.5 text-sm shadow-md relative ${
 																		isOwn
 																			? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-medium'
 																			: 'bg-white text-slate-900 border-2 border-emerald-200 font-medium'
-																	}`}
+																	} ${isDeleting ? 'opacity-50' : ''}`}
 																>
+																	{canDelete && isHovered && (
+																		<button
+																			type="button"
+																			onClick={() => handleDeleteMessage(message.id)}
+																			disabled={isDeleting}
+																			className={`absolute -top-2 ${isOwn ? '-left-2' : '-right-2'} z-10 p-1.5 rounded-full bg-red-500 text-white shadow-lg hover:bg-red-600 transition-all duration-200 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed`}
+																			title="Delete message"
+																		>
+																			{isDeleting ? (
+																				<i className="fas fa-spinner fa-spin text-xs" aria-hidden="true" />
+																			) : (
+																				<i className="fas fa-trash text-xs" aria-hidden="true" />
+																			)}
+																		</button>
+																	)}
 																	<p className="whitespace-pre-wrap break-words leading-relaxed">{message.text}</p>
 																</div>
 																<div className="flex items-center gap-2 mt-1.5 px-1">
