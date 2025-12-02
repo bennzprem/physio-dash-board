@@ -8,7 +8,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import type { AdminGenderOption, AdminPatientStatus } from '@/lib/adminMockData';
 import { generatePhysiotherapyReportPDF, type PatientReportData, type ReportSection } from '@/lib/pdfGenerator';
-import type { PatientRecordFull } from '@/lib/types';
+import type { PatientRecordFull, Appointment } from '@/lib/types';
 import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
 import { getHeaderConfig, getDefaultHeaderConfig } from '@/lib/headerConfig';
 import type { HeaderConfig } from '@/components/admin/HeaderManagement';
@@ -588,6 +588,8 @@ export default function EditReport() {
 
 	const [patientAppointments, setPatientAppointments] = useState<Record<string, Array<{
 		id: string;
+		appointmentId?: string;
+		patientId?: string;
 		date: string;
 		time: string;
 		doctor: string;
@@ -598,6 +600,8 @@ export default function EditReport() {
 		totalSessions?: number;
 		isConsultation?: boolean;
 		packageCategory?: string;
+		duration?: number;
+		transferredFrom?: string;
 	}>>>({});
 	const appointmentSubscriptionsRef = useRef<Record<string, () => void>>({});
 	
@@ -1542,12 +1546,14 @@ export default function EditReport() {
 	const handleOpenPackageModal = (patient: PatientRecordFull) => {
 		setPackageModalPatient(patient);
 		setPackageForm({
+			clientType: '',
+			category: '',
 			selectedPackage: '',
 			totalNoOfSessions: patient.totalSessionsRequired ? String(patient.totalSessionsRequired) : '',
-			paymentType: (patient.paymentType as PaymentTypeOption) ?? '',
-			paymentDescription: patient.paymentDescription ?? '',
-			packageAmount: patient.packageAmount ? String(patient.packageAmount) : '',
-			concessionPercent: patient.concessionPercent != null ? String(patient.concessionPercent) : '',
+			paymentType: ((patient as any).paymentType as PaymentTypeOption) ?? '',
+			paymentDescription: (patient as any).paymentDescription ?? '',
+			packageAmount: (patient as any).packageAmount ? String((patient as any).packageAmount) : '',
+			concessionPercent: (patient as any).concessionPercent != null ? String((patient as any).concessionPercent) : '',
 		});
 		setPackageFormErrors({});
 		setShowPackageModal(true);
@@ -2201,6 +2207,8 @@ export default function EditReport() {
 							const data = docSnap.data();
 							return {
 								id: docSnap.id,
+								appointmentId: data.appointmentId ? String(data.appointmentId) : undefined,
+								patientId: data.patientId ? String(data.patientId) : patient.patientId,
 								date: data.date ? String(data.date) : '',
 								time: data.time ? String(data.time) : '',
 								doctor: data.doctor ? String(data.doctor) : '',
@@ -3116,7 +3124,17 @@ export default function EditReport() {
 																									onClick={(e) => {
 																										e.stopPropagation();
 																										console.log('Book Appointment button clicked for appointment:', appointment.id, 'patient:', patient.patientId);
-																										handleOpenBookingModal(patient, appointment);
+																										handleOpenBookingModal(patient, appointment.id ? {
+																											patientId: appointment.patientId || patient.patientId,
+																											patient: patient.name,
+																											doctor: appointment.doctor,
+																											date: appointment.date,
+																											time: appointment.time,
+																											status: appointment.status as 'pending' | 'ongoing' | 'completed' | 'cancelled',
+																											notes: appointment.notes,
+																											createdAt: new Date().toISOString(),
+																											isConsultation: appointment.isConsultation,
+																										} : undefined);
 																									}}
 																									className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-green-500 hover:bg-green-50 hover:text-green-700 focus-visible:outline-none"
 																								>
