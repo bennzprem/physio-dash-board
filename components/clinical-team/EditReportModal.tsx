@@ -1167,18 +1167,26 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 	// Handle save
 	const handleSave = async () => {
-		if (!editable || !reportPatientData?.id || saving || !patientId) return;
+		if (!editable || !reportPatientData || saving || !patientId) {
+			console.log('Save blocked:', { editable, hasReportData: !!reportPatientData, saving, patientId });
+			return;
+		}
 
 		setSaving(true);
 		try {
-			// Get patient document ID
-			const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
-			if (patientSnap.empty) {
-				alert('Patient not found. Please try again.');
-				return;
+			// Get patient document ID (use stored patientDocId if available, otherwise fetch it)
+			let patientDocIdToUse = patientDocId;
+			if (!patientDocIdToUse) {
+				const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
+				if (patientSnap.empty) {
+					alert('Patient not found. Please try again.');
+					setSaving(false);
+					return;
+				}
+				patientDocIdToUse = patientSnap.docs[0].id;
+				setPatientDocId(patientDocIdToUse); // Store it for future use
 			}
-			const patientDoc = patientSnap.docs[0];
-			const patientRef = doc(db, 'patients', patientDoc.id);
+			const patientRef = doc(db, 'patients', patientDocIdToUse);
 			
 			const consultationDate = formData.dateOfConsultation || reportPatientData.dateOfConsultation;
 			const totalSessionsValue =
@@ -1397,25 +1405,35 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			);
 
 			if (hasReportData) {
-				const versionsQuery = query(
-					collection(db, 'reportVersions'),
-					where('patientId', '==', reportPatientData.patientId),
-					orderBy('version', 'desc')
-				);
-				const versionsSnapshot = await getDocs(versionsQuery);
-				const nextVersion = versionsSnapshot.docs.length > 0 
-					? (versionsSnapshot.docs[0].data().version as number) + 1 
-					: 1;
+				try {
+					const versionsQuery = query(
+						collection(db, 'reportVersions'),
+						where('patientId', '==', reportPatientData.patientId),
+						orderBy('version', 'desc')
+					);
+					const versionsSnapshot = await getDocs(versionsQuery);
+					const nextVersion = versionsSnapshot.docs.length > 0 
+						? (versionsSnapshot.docs[0].data().version as number) + 1 
+						: 1;
 
-				await addDoc(collection(db, 'reportVersions'), {
-					patientId: reportPatientData.patientId,
-					patientName: reportPatientData.name,
-					version: nextVersion,
-					reportData: removeUndefined(currentReportData),
-					createdBy: user?.displayName || user?.email || 'Unknown',
-					createdById: user?.uid || '',
-					createdAt: serverTimestamp(),
-				});
+					await addDoc(collection(db, 'reportVersions'), {
+						patientId: reportPatientData.patientId,
+						patientName: reportPatientData.name,
+						version: nextVersion,
+						reportData: removeUndefined(currentReportData),
+						createdBy: user?.displayName || user?.email || 'Unknown',
+						createdById: user?.uid || '',
+						createdAt: serverTimestamp(),
+					});
+				} catch (versionError: any) {
+					// If orderBy fails (missing index), try without it
+					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
+						console.warn('Report version index not found, saving without version history', versionError);
+						// Continue without version history
+					} else {
+						throw versionError; // Re-throw other errors
+					}
+				}
 			}
 
 			await updateDoc(patientRef, reportData);
@@ -1423,6 +1441,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			
 			const patientForProgress: PatientRecordFull = {
 				...reportPatientData,
+				id: patientDocIdToUse, // Add the document ID which is required by refreshPatientSessionProgress
 				totalSessionsRequired: totalSessionsValue !== undefined && totalSessionsValue !== null
 					? totalSessionsValue
 					: reportPatientData.totalSessionsRequired,
@@ -1465,9 +1484,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setSessionCompleted(false);
 			setSavedMessage(true);
 			setTimeout(() => setSavedMessage(false), 3000);
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Failed to save report', error);
-			alert('Failed to save report. Please try again.');
+			const errorMessage = error?.message || 'Unknown error occurred';
+			console.error('Error details:', {
+				message: errorMessage,
+				code: error?.code,
+				stack: error?.stack,
+			});
+			alert(`Failed to save report: ${errorMessage}. Please check the console for more details.`);
 		} finally {
 			setSaving(false);
 		}

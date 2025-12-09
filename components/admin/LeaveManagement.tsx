@@ -219,6 +219,48 @@ export default function AdminLeaveManagement() {
 
 						await Promise.allSettled(transferPromises);
 						console.log(`Transferred ${appointmentsToTransfer.length} appointments to ${handoverStaffName}`);
+
+						// Update patient records to show handover information
+						// Get unique patient IDs from transferred appointments
+						const patientIds = new Set<string>();
+						appointmentsToTransfer.forEach(appointmentDoc => {
+							const data = appointmentDoc.data();
+							if (data.patientId) {
+								patientIds.add(data.patientId);
+							}
+						});
+
+						// Update each patient's assignedDoctor and store original therapist
+						const patientUpdatePromises = Array.from(patientIds).map(async (patientId) => {
+							try {
+								// Find patient document by patientId
+								const patientsQuery = query(
+									collection(db, 'patients'),
+									where('patientId', '==', patientId)
+								);
+								const patientsSnapshot = await getDocs(patientsQuery);
+								
+								if (!patientsSnapshot.empty) {
+									const patientDoc = patientsSnapshot.docs[0];
+									const patientData = patientDoc.data();
+									const currentAssignedDoctor = patientData.assignedDoctor;
+									
+									// Only update if patient was assigned to the employee taking leave
+									if (currentAssignedDoctor === employeeStaffName) {
+										await updateDoc(patientDoc.ref, {
+											assignedDoctor: handoverStaffName,
+											transferredFromDoctor: employeeStaffName, // Store original therapist
+											transferredAt: serverTimestamp(),
+											transferReason: 'Leave approval',
+										});
+									}
+								}
+							} catch (error) {
+								console.error(`Failed to update patient ${patientId}:`, error);
+							}
+						});
+
+						await Promise.allSettled(patientUpdatePromises);
 					}
 				} catch (transferError) {
 					console.error('Failed to transfer appointments:', transferError);

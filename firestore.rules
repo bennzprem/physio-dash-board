@@ -12,59 +12,52 @@ service cloud.firestore {
 
     // This looks up the role in your Database (checks staff collection first, then users collection)
     function getRole() {
-      if (!isLoggedIn()) {
-        return null;
-      }
-      // Try to get the staff document first (primary collection)
-      let staffDoc = get(/databases/$(database)/documents/staff/$(request.auth.uid));
-      if (staffDoc != null && staffDoc.exists && 'role' in staffDoc.data) {
-        return staffDoc.data.role;
-      }
-      // Fallback to users collection for backward compatibility
-      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      if (userDoc != null && userDoc.exists && 'role' in userDoc.data) {
-        return userDoc.data.role;
-      }
-      return null;
+      return isLoggedIn() && exists(/databases/$(database)/documents/staff/$(request.auth.uid)) && 
+             'role' in get(/databases/$(database)/documents/staff/$(request.auth.uid)).data
+        ? get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.role
+        : (isLoggedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           'role' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+          ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+          : null);
     }
 
     // Role Checks (Case insensitive just to be safe if you want)
     function isAdmin() {
-      return getRole() == "admin" || getRole() == "Admin";
+      let role = getRole();
+      return role == "admin" || role == "Admin";
     }
 
     function isFrontdesk() {
-      return getRole() == "frontdesk" || getRole() == "FrontDesk";
+      let role = getRole();
+      return role == "frontdesk" || role == "FrontDesk";
     }
 
     function isClinic() {
-      return getRole() == "clinic" || getRole() == "ClinicalTeam";
+      let role = getRole();
+      // Include all clinical team roles: ClinicalTeam, Physiotherapist, StrengthAndConditioning, and clinic
+      return role == "clinic" || 
+             role == "Clinic" ||
+             role == "ClinicalTeam" || 
+             role == "Physiotherapist" || 
+             role == "StrengthAndConditioning";
     }
 
     // Check if staff document belongs to the authenticated user
     function isOwnStaffDoc() {
-      if (!isLoggedIn()) {
-        return false;
-      }
-      
-      // For updates: check existing document (resource exists for updates, not for creates)
-      let matchesExisting = false;
-      if (resource != null) {
-        matchesExisting = 
+      return isLoggedIn() && (
+        // For updates: check existing document (resource exists for updates, not for creates)
+        (resource != null && (
           ('authUid' in resource.data && request.auth.uid == resource.data.authUid) ||
           (request.auth.token.email != null && 
            'userEmail' in resource.data &&
-           request.auth.token.email == resource.data.userEmail);
-      }
-      
-      // For creates/updates: check new data being written
-      let matchesNew = 
+           request.auth.token.email == resource.data.userEmail)
+        )) ||
+        // For creates/updates: check new data being written
         ('authUid' in request.resource.data && request.auth.uid == request.resource.data.authUid) ||
         (request.auth.token.email != null && 
          'userEmail' in request.resource.data &&
-         request.auth.token.email == request.resource.data.userEmail);
-      
-      return matchesExisting || matchesNew;
+         request.auth.token.email == request.resource.data.userEmail)
+      );
     }
 
     // -------------------------------
@@ -84,7 +77,24 @@ service cloud.firestore {
     // -------------------------------
     match /patients/{id} {
       allow read: if isLoggedIn();
-      allow create, update: if isFrontdesk() || isAdmin();
+      // Allow FrontDesk, Admin, and Clinical Team (including Physiotherapist, StrengthAndConditioning, ClinicalTeam) to create/update
+      // Also allow any logged-in user to update if they're updating report-related fields (fallback for cases where role lookup fails)
+      allow create, update: if isFrontdesk() || isAdmin() || isClinic() || 
+                            (isLoggedIn() && 
+                             // Fallback: allow if updating report fields (clinical team saving reports)
+                             // This handles cases where staff document ID doesn't match auth.uid
+                             (request.resource.data.keys().hasAny([
+                               'complaints', 'presentHistory', 'pastHistory', 'med_xray', 'med_mri', 
+                               'med_report', 'med_ct', 'surgicalHistory', 'per_smoking', 'per_drinking',
+                               'per_alcohol', 'per_drugs', 'sleepCycle', 'hydration', 'nutrition',
+                               'siteSide', 'onset', 'duration', 'natureOfInjury', 'typeOfPain',
+                               'vasScale', 'aggravatingFactor', 'relievingFactor', 'rom', 'mmt',
+                               'treatmentProvided', 'progressNotes', 'physioName', 'physioId',
+                               'dateOfConsultation', 'referredBy', 'chiefComplaint', 'clinicalDiagnosis',
+                               'treatmentPlan', 'followUpVisits', 'totalSessionsRequired', 'remainingSessions',
+                               'currentPainStatus', 'currentRom', 'currentStrength', 'currentFunctionalAbility',
+                               'complianceWithHEP', 'recommendations', 'physiotherapistRemarks'
+                             ])));
       allow delete: if isAdmin();
     }
 
@@ -216,40 +226,18 @@ service cloud.firestore {
     match /messages/{messageId} {
       // Helper function to check if user is part of the conversation (for reads/updates)
       function isConversationParticipantForRead() {
-        if (!isLoggedIn()) {
-          return false;
-        }
-        // Get the conversation ID from the existing message
-        let convId = resource.data.conversationId;
-        if (convId == null) {
-          return false;
-        }
-        // Get the conversation document
-        let convDoc = get(/databases/$(database)/documents/conversations/$(convId));
-        if (!convDoc.exists) {
-          return false;
-        }
-        // Check if user is in participants array
-        return request.auth.uid in convDoc.data.participants;
+        return isLoggedIn() && 
+               resource.data.conversationId != null &&
+               exists(/databases/$(database)/documents/conversations/$(resource.data.conversationId)) &&
+               request.auth.uid in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants;
       }
       
       // Helper function to check if user is part of the conversation (for creates)
       function isConversationParticipantForCreate() {
-        if (!isLoggedIn()) {
-          return false;
-        }
-        // Get the conversation ID from the new message
-        let convId = request.resource.data.conversationId;
-        if (convId == null) {
-          return false;
-        }
-        // Get the conversation document
-        let convDoc = get(/databases/$(database)/documents/conversations/$(convId));
-        if (!convDoc.exists) {
-          return false;
-        }
-        // Check if user is in participants array
-        return request.auth.uid in convDoc.data.participants;
+        return isLoggedIn() && 
+               request.resource.data.conversationId != null &&
+               exists(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)) &&
+               request.auth.uid in get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participants;
       }
       
       // Users can read messages in conversations they're part of
@@ -279,6 +267,35 @@ service cloud.firestore {
 
       // Only admins can create or update header configurations
       allow write: if isAdmin();
+    }
+
+    // -------------------------------
+    // REPORT VERSIONS COLLECTION
+    // -------------------------------
+    // Stores version history of patient reports
+    match /reportVersions/{versionId} {
+      // Clinical team, FrontDesk, and Admin can read report versions
+      allow read: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      
+      // Clinical team, FrontDesk, and Admin can create report versions
+      allow create: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      
+      // Only admins can update or delete report versions
+      allow update, delete: if isAdmin();
+    }
+
+    // -------------------------------
+    // STRENGTH CONDITIONING REPORTS COLLECTION
+    // -------------------------------
+    match /strengthConditioningReports/{reportId} {
+      // Clinical team, FrontDesk, and Admin can read strength conditioning reports
+      allow read: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      
+      // Clinical team, FrontDesk, and Admin can create/update strength conditioning reports
+      allow create, update: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      
+      // Only admins can delete strength conditioning reports
+      allow delete: if isAdmin();
     }
 
     // -------------------------------

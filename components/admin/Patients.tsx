@@ -224,6 +224,8 @@ export default function Patients() {
 						deletedAt: deleted ? deleted.toISOString() : (data.deletedAt as string | undefined) || null,
 						patientType: data.patientType ? String(data.patientType) : '',
 						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
+						transferredFromDoctor: data.transferredFromDoctor ? String(data.transferredFromDoctor) : undefined,
+						transferReason: data.transferReason ? String(data.transferReason) : undefined,
 						totalSessionsRequired: typeof data.totalSessionsRequired === 'number' ? data.totalSessionsRequired : (data.totalSessionsRequired ? Number(data.totalSessionsRequired) : undefined),
 						remainingSessions: typeof data.remainingSessions === 'number' ? data.remainingSessions : (data.remainingSessions ? Number(data.remainingSessions) : undefined),
 						feedback: data.feedback ? String(data.feedback) : undefined,
@@ -1492,7 +1494,17 @@ export default function Patients() {
 													{patient.phone || '—'}
 												</td>
 												<td className="px-2 py-4 text-xs text-slate-600 truncate" title={(patient as any).assignedDoctor || '—'}>
-													{(patient as any).assignedDoctor || '—'}
+													{(() => {
+														const assignedDoctor = (patient as any).assignedDoctor;
+														const transferredFrom = (patient as any).transferredFromDoctor;
+														const transferReason = (patient as any).transferReason;
+														
+														// Show "original --> current" format only for leave handovers
+														if (transferredFrom && transferReason === 'Leave approval' && assignedDoctor) {
+															return `${transferredFrom} --> ${assignedDoctor}`;
+														}
+														return assignedDoctor || '—';
+													})()}
 												</td>
 												<td className="px-2 py-4">
 													<span
