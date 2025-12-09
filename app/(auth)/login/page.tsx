@@ -273,6 +273,11 @@ export default function LoginPage() {
 					</div>
 				</div>
 			</div>
+
+			{/* Copyright Notice - Bottom Left */}
+			<div className="absolute bottom-4 left-4 lg:left-8 text-white text-sm">
+				<p>© 2025 Centre for Sports Science. All rights reserved.</p>
+			</div>
 		</div>
 	);
 }
