@@ -60,10 +60,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	const [userProfile, setUserProfile] = useState<{ userName?: string; profileImage?: string }>({});
 	const [recentAuditLogs, setRecentAuditLogs] = useState<AuditLogEntry[]>([]);
 
-	// Check for birthdays on dashboard load (only once per day)
-	useEffect(() => {
-		const checkBirthdays = async () => {
-			if (!user || user.role?.trim() !== 'Admin') return;
+		// Check for birthdays on dashboard load (only once per day)
+		useEffect(() => {
+			const checkBirthdays = async () => {
+				const userRole = user?.role?.trim();
+				if (!user || (userRole !== 'Admin' && userRole !== 'SuperAdmin')) return;
 
 			// Check if we've already checked birthdays today
 			const lastCheck = localStorage.getItem('lastBirthdayCheck');
@@ -169,262 +170,133 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
 	// Load patients from Firestore
 	useEffect(() => {
-		// Wait for user to be authenticated before setting up listeners
-		if (!user) return;
-
-		let unsubscribe: (() => void) | null = null;
-		let isMounted = true;
-
-		try {
-			unsubscribe = onSnapshot(
-				collection(db, 'patients'),
-				(snapshot: QuerySnapshot) => {
-					if (!isMounted) return;
-					const mapped = snapshot.docs.map(docSnap => {
-						const data = docSnap.data() as Record<string, unknown>;
-						return {
-							id: docSnap.id,
-							patientId: data.patientId ? String(data.patientId) : '',
-							name: data.name ? String(data.name) : '',
-							status: (data.status as AdminPatientStatus) ?? 'pending',
-						} as PatientRecord;
-					});
-					setPatients(mapped);
-				},
-				error => {
-					if (!isMounted) return;
-					console.error('Failed to load patients', error);
-					// Only set empty array if it's a permission error, not internal errors
-					if (error.code !== 'internal') {
-						setPatients([]);
-					}
-				}
-			);
-		} catch (error) {
-			console.error('Error setting up patients listener:', error);
-		}
-
-		return () => {
-			isMounted = false;
-			if (unsubscribe) {
-				try {
-					unsubscribe();
-				} catch (error) {
-					// Ignore errors during cleanup
-					console.warn('Error unsubscribing from patients listener:', error);
-				}
+		const unsubscribe = onSnapshot(
+			collection(db, 'patients'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						id: docSnap.id,
+						patientId: data.patientId ? String(data.patientId) : '',
+						name: data.name ? String(data.name) : '',
+						status: (data.status as AdminPatientStatus) ?? 'pending',
+					} as PatientRecord;
+				});
+				setPatients(mapped);
+			},
+			error => {
+				console.error('Failed to load patients', error);
+				setPatients([]);
 			}
-		};
-	}, [user]);
+		);
+		return () => unsubscribe();
+	}, []);
 
 	// Load appointments from Firestore
 	useEffect(() => {
-		// Wait for user to be authenticated before setting up listeners
-		if (!user) return;
-
-		let unsubscribe: (() => void) | null = null;
-		let isMounted = true;
-
-		try {
-			unsubscribe = onSnapshot(
-				collection(db, 'appointments'),
-				(snapshot: QuerySnapshot) => {
-					if (!isMounted) return;
-					const mapped = snapshot.docs.map(docSnap => {
-						const data = docSnap.data() as Record<string, unknown>;
-						return {
-							id: docSnap.id,
-							patientId: data.patientId ? String(data.patientId) : '',
-							patient: data.patient ? String(data.patient) : '',
-							doctor: data.doctor ? String(data.doctor) : '',
-							date: data.date ? String(data.date) : '',
-							status: (data.status as AdminAppointmentStatus) ?? 'pending',
-						} as AppointmentRecord;
-					});
-					setAppointments(mapped);
-				},
-				error => {
-					if (!isMounted) return;
-					console.error('Failed to load appointments', error);
-					// Only set empty array if it's a permission error, not internal errors
-					if (error.code !== 'internal') {
-						setAppointments([]);
-					}
-				}
-			);
-		} catch (error) {
-			console.error('Error setting up appointments listener:', error);
-		}
-
-		return () => {
-			isMounted = false;
-			if (unsubscribe) {
-				try {
-					unsubscribe();
-				} catch (error) {
-					// Ignore errors during cleanup
-					console.warn('Error unsubscribing from appointments listener:', error);
-				}
+		const unsubscribe = onSnapshot(
+			collection(db, 'appointments'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						id: docSnap.id,
+						patientId: data.patientId ? String(data.patientId) : '',
+						patient: data.patient ? String(data.patient) : '',
+						doctor: data.doctor ? String(data.doctor) : '',
+						date: data.date ? String(data.date) : '',
+						status: (data.status as AdminAppointmentStatus) ?? 'pending',
+					} as AppointmentRecord;
+				});
+				setAppointments(mapped);
+			},
+			error => {
+				console.error('Failed to load appointments', error);
+				setAppointments([]);
 			}
-		};
-	}, [user]);
+		);
+		return () => unsubscribe();
+	}, []);
 
 	// Load staff from Firestore
 	useEffect(() => {
-		// Wait for user to be authenticated before setting up listeners
-		if (!user) return;
-
-		let unsubscribe: (() => void) | null = null;
-		let isMounted = true;
-
-		try {
-			unsubscribe = onSnapshot(
-				collection(db, 'staff'),
-				(snapshot: QuerySnapshot) => {
-					if (!isMounted) return;
-					const mapped = snapshot.docs.map(docSnap => {
-						const data = docSnap.data() as Record<string, unknown>;
-						return {
-							id: docSnap.id,
-							userName: data.userName ? String(data.userName) : '',
-							role: data.role ? String(data.role) : '',
-							status: data.status ? String(data.status) : '',
-						} as StaffMember;
-					});
-					setStaff(mapped.filter(s => s.status === 'Active'));
-				},
-				error => {
-					if (!isMounted) return;
-					console.error('Failed to load staff', error);
-					// Only set empty array if it's a permission error, not internal errors
-					if (error.code !== 'internal') {
-						setStaff([]);
-					}
-				}
-			);
-		} catch (error) {
-			console.error('Error setting up staff listener:', error);
-		}
-
-		return () => {
-			isMounted = false;
-			if (unsubscribe) {
-				try {
-					unsubscribe();
-				} catch (error) {
-					// Ignore errors during cleanup
-					console.warn('Error unsubscribing from staff listener:', error);
-				}
+		const unsubscribe = onSnapshot(
+			collection(db, 'staff'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						id: docSnap.id,
+						userName: data.userName ? String(data.userName) : '',
+						role: data.role ? String(data.role) : '',
+						status: data.status ? String(data.status) : '',
+					} as StaffMember;
+				});
+				setStaff(mapped.filter(s => s.status === 'Active'));
+			},
+			error => {
+				console.error('Failed to load staff', error);
+				setStaff([]);
 			}
-		};
-	}, [user]);
+		);
+		return () => unsubscribe();
+	}, []);
 
 	// Load users from Firestore
 	useEffect(() => {
-		// Wait for user to be authenticated before setting up listeners
-		if (!user) return;
-
-		let unsubscribe: (() => void) | null = null;
-		let isMounted = true;
-
-		try {
-			unsubscribe = onSnapshot(
-				collection(db, 'users'),
-				(snapshot: QuerySnapshot) => {
-					if (!isMounted) return;
-					const mapped = snapshot.docs.map(docSnap => {
-						const data = docSnap.data() as Record<string, unknown>;
-						return {
-							id: docSnap.id,
-							email: data.email ? String(data.email) : '',
-							role: data.role ? String(data.role) : '',
-							status: data.status ? String(data.status) : '',
-						} as UserRecord;
-					});
-					setUsers(mapped.filter(u => u.status === 'Active'));
-				},
-				error => {
-					if (!isMounted) return;
-					console.error('Failed to load users', error);
-					// Only set empty array if it's a permission error, not internal errors
-					if (error.code !== 'internal') {
-						setUsers([]);
-					}
-				}
-			);
-		} catch (error) {
-			console.error('Error setting up users listener:', error);
-		}
-
-		return () => {
-			isMounted = false;
-			if (unsubscribe) {
-				try {
-					unsubscribe();
-				} catch (error) {
-					// Ignore errors during cleanup
-					console.warn('Error unsubscribing from users listener:', error);
-				}
+		const unsubscribe = onSnapshot(
+			collection(db, 'users'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						id: docSnap.id,
+						email: data.email ? String(data.email) : '',
+						role: data.role ? String(data.role) : '',
+						status: data.status ? String(data.status) : '',
+					} as UserRecord;
+				});
+				setUsers(mapped.filter(u => u.status === 'Active'));
+			},
+			error => {
+				console.error('Failed to load users', error);
+				setUsers([]);
 			}
-		};
-	}, [user]);
+		);
+		return () => unsubscribe();
+	}, []);
 
 	// Load recent audit logs (all employees, latest first)
 	useEffect(() => {
-		// Wait for user to be authenticated before setting up listeners
-		if (!user) return;
+		const q = query(
+			collection(db, 'auditLogs'),
+			orderBy('createdAt', 'desc'),
+			limit(8)
+		);
 
-		let unsubscribe: (() => void) | null = null;
-		let isMounted = true;
-
-		try {
-			const q = query(
-				collection(db, 'auditLogs'),
-				orderBy('createdAt', 'desc'),
-				limit(8)
-			);
-
-			unsubscribe = onSnapshot(
-				q,
-				(snapshot: QuerySnapshot) => {
-					if (!isMounted) return;
-					const mapped = snapshot.docs.map(docSnap => {
-						const data = docSnap.data() as Record<string, any>;
-						const created = (data.createdAt as Timestamp | undefined)?.toDate?.();
-						return {
-							id: docSnap.id,
-							action: String(data.action || ''),
-							userEmail: data.userEmail ?? data.userId ?? null,
-							createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || '',
-						} as AuditLogEntry;
-					});
-					setRecentAuditLogs(mapped);
-				},
-				error => {
-					if (!isMounted) return;
-					console.error('Failed to load recent audit logs', error);
-					// Only set empty array if it's a permission error, not internal errors
-					if (error.code !== 'internal') {
-						setRecentAuditLogs([]);
-					}
-				}
-			);
-		} catch (error) {
-			console.error('Error setting up audit logs listener:', error);
-		}
-
-		return () => {
-			isMounted = false;
-			if (unsubscribe) {
-				try {
-					unsubscribe();
-				} catch (error) {
-					// Ignore errors during cleanup
-					console.warn('Error unsubscribing from audit logs listener:', error);
-				}
+		const unsubscribe = onSnapshot(
+			q,
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, any>;
+					const created = (data.createdAt as Timestamp | undefined)?.toDate?.();
+					return {
+						id: docSnap.id,
+						action: String(data.action || ''),
+						userEmail: data.userEmail ?? data.userId ?? null,
+						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || '',
+					} as AuditLogEntry;
+				});
+				setRecentAuditLogs(mapped);
+			},
+			error => {
+				console.error('Failed to load recent audit logs', error);
+				setRecentAuditLogs([]);
 			}
-		};
-	}, [user]);
+		);
+
+		return () => unsubscribe();
+	}, []);
 
 	// Calculate statistics
 	const stats = useMemo(() => {

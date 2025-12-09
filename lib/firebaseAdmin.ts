@@ -99,11 +99,15 @@ if (getApps().length === 0) {
 	if (serviceAccountKey) {
 		try {
 			console.log(`✅ Firebase Admin SDK: Built credentials from FIREBASE_ADMIN_${isStaging ? 'STAGING_' : ''}* variables`);
-			// Prioritize service account's project_id as it's the source of truth
+			// Use client's project ID to match tokens, even if service account has different project_id
+			const clientProjectId = getProjectId() || 'sixs-physio';
 			app = initializeApp({
-				credential: cert(serviceAccountKey),
-				projectId: serviceAccountKey.project_id || getProjectId() || 'sixs-physio',
+				credential: cert(serviceAccountKey as any),
+				projectId: clientProjectId,
 			});
+			if (serviceAccountKey.project_id && serviceAccountKey.project_id !== clientProjectId) {
+				console.warn(`   ⚠️  Service account project_id (${serviceAccountKey.project_id}) differs from client project (${clientProjectId}). Using ${clientProjectId} to match client tokens.`);
+			}
 		} catch (error) {
 			console.error('❌ Failed to initialize Firebase Admin using FIREBASE_ADMIN_* variables:', (error as Error).message);
 		}
@@ -120,18 +124,22 @@ if (getApps().length === 0) {
 		process.env.GOOGLE_APPLICATION_CREDENTIALS || 
 		(process.cwd() ? join(process.cwd(), 'firebase-service-account.json') : null);
 	
-	if (credentialsPath && !app) {
+	if (credentialsPath) {
 		try {
 			const filePath = credentialsPath.startsWith('/') || credentialsPath.match(/^[A-Z]:/) 
 				? credentialsPath 
 				: join(process.cwd(), credentialsPath);
 			const serviceAccountKey = JSON.parse(readFileSync(filePath, 'utf8'));
 			console.log(`✅ Firebase Admin SDK: Loaded credentials from file (${isStaging ? 'STAGING' : 'PRODUCTION'}):`, filePath);
-			// Prioritize service account's project_id as it's the source of truth
+			// Use client's project ID to match tokens, even if service account file has different project_id
+			const clientProjectId = getProjectId() || 'sixs-physio';
 			app = initializeApp({
 				credential: cert(serviceAccountKey),
-				projectId: serviceAccountKey.project_id || getProjectId() || 'sixs-physio',
+				projectId: clientProjectId,
 			});
+			if (serviceAccountKey.project_id && serviceAccountKey.project_id !== clientProjectId) {
+				console.warn(`   ⚠️  Service account project_id (${serviceAccountKey.project_id}) differs from client project (${clientProjectId}). Using ${clientProjectId} to match client tokens.`);
+			}
 		} catch (error: any) {
 			// File doesn't exist or can't be read - that's okay, try other methods
 			if (error.code !== 'ENOENT') {
@@ -159,11 +167,15 @@ if (getApps().length === 0) {
 			try {
 				const serviceAccountKey = JSON.parse(serviceAccount);
 				console.log(`✅ Firebase Admin SDK: Successfully loaded service account credentials from env var (${isStaging ? 'STAGING' : 'PRODUCTION'})`);
-				// Prioritize service account's project_id as it's the source of truth
+				// Use client's project ID to match tokens, even if service account file has different project_id
+				const clientProjectId = getProjectId() || 'sixs-physio';
 				app = initializeApp({
 					credential: cert(serviceAccountKey),
-					projectId: serviceAccountKey.project_id || getProjectId() || 'sixs-physio',
+					projectId: clientProjectId,
 				});
+				if (serviceAccountKey.project_id && serviceAccountKey.project_id !== clientProjectId) {
+					console.warn(`   ⚠️  Service account project_id (${serviceAccountKey.project_id}) differs from client project (${clientProjectId}). Using ${clientProjectId} to match client tokens.`);
+				}
 			} catch (error) {
 				console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', error);
 				console.error('Service account string length:', serviceAccount.length);

@@ -21,7 +21,7 @@ import { db, auth } from '@/lib/firebase';
 import PageHeader from '@/components/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
 
-type EmployeeRole = 'FrontDesk' | 'ClinicalTeam' | 'Physiotherapist' | 'StrengthAndConditioning' | 'Admin';
+type EmployeeRole = 'FrontDesk' | 'ClinicalTeam' | 'Physiotherapist' | 'StrengthAndConditioning' | 'Admin' | 'SuperAdmin';
 type EmployeeStatus = 'Active' | 'Inactive';
 
 interface Employee {
@@ -49,8 +49,9 @@ interface Employee {
 	profileImage?: string;
 }
 
-type LimitedRoles = Extract<EmployeeRole, 'Admin' | 'FrontDesk' | 'ClinicalTeam'>;
-const ALLOWED_ROLES: LimitedRoles[] = ['Admin', 'FrontDesk', 'ClinicalTeam'];
+type LimitedRoles = Extract<EmployeeRole, 'Admin' | 'SuperAdmin' | 'FrontDesk' | 'ClinicalTeam'>;
+// SuperAdmin and Admin can create all roles, including SuperAdmin
+const ALLOWED_ROLES: LimitedRoles[] = ['SuperAdmin', 'Admin', 'FrontDesk', 'ClinicalTeam'];
 
 interface FormState {
 	userName: string;
@@ -61,6 +62,7 @@ interface FormState {
 }
 
 const ROLE_LABELS: Record<EmployeeRole, string> = {
+	SuperAdmin: 'Super Admin',
 	Admin: 'Admin',
 	FrontDesk: 'Front Desk',
 	ClinicalTeam: 'Clinical Team',
@@ -70,6 +72,7 @@ const ROLE_LABELS: Record<EmployeeRole, string> = {
 
 // Color mappings for roles - More vibrant and distinct colors
 const ROLE_COLORS: Record<EmployeeRole, { bg: string; text: string }> = {
+	SuperAdmin: { bg: 'bg-purple-100', text: 'text-purple-800' },
 	Admin: { bg: 'bg-violet-100', text: 'text-violet-800' },
 	FrontDesk: { bg: 'bg-cyan-100', text: 'text-cyan-800' },
 	ClinicalTeam: { bg: 'bg-amber-100', text: 'text-amber-800' },
@@ -84,6 +87,7 @@ const STATUS_COLORS: Record<EmployeeStatus, { bg: string; text: string }> = {
 };
 
 const ROLE_OPTIONS: Array<{ value: FormState['userRole']; label: string }> = [
+	{ value: 'SuperAdmin', label: 'Super Admin' },
 	{ value: 'Admin', label: 'Admin' },
 	{ value: 'FrontDesk', label: 'Front Desk' },
 	{ value: 'ClinicalTeam', label: 'Clinical Team' },
@@ -255,9 +259,10 @@ export default function Users() {
 		const frontDesk = activeEmployees.filter(emp => emp.role === 'FrontDesk').length;
 		const clinical = activeEmployees.filter(emp => emp.role === 'ClinicalTeam').length;
 		const adminCount = activeEmployees.filter(emp => emp.role === 'Admin').length;
+		const superAdminCount = activeEmployees.filter(emp => emp.role === 'SuperAdmin').length;
 		const deletedCount = employees.filter(emp => emp.deleted === true).length;
 
-		return { total, active, inactive, frontDesk, clinical, adminCount, deletedCount };
+		return { total, active, inactive, frontDesk, clinical, adminCount, superAdminCount, deletedCount };
 	}, [employees]);
 
 	const openCreateDialog = () => {
@@ -298,18 +303,28 @@ export default function Users() {
 		}
 
 		try {
-			// Get all active admins from staff collection
-			// Note: We query for Admin role and Active status, then filter out deleted in code
+			// Get all active admins and super admins from staff collection
+			// Note: We query for Admin/SuperAdmin role and Active status, then filter out deleted in code
 			// This avoids needing a composite index for deleted field
-			const staffQuery = query(
+			// We need to query separately for Admin and SuperAdmin roles
+			const adminQuery = query(
 				collection(db, 'staff'),
 				where('role', '==', 'Admin'),
 				where('status', '==', 'Active')
 			);
-			const staffSnapshot = await getDocs(staffQuery);
+			const superAdminQuery = query(
+				collection(db, 'staff'),
+				where('role', '==', 'SuperAdmin'),
+				where('status', '==', 'Active')
+			);
+			const [adminSnapshot, superAdminSnapshot] = await Promise.all([
+				getDocs(adminQuery),
+				getDocs(superAdminQuery)
+			]);
+			const allAdmins = [...adminSnapshot.docs, ...superAdminSnapshot.docs];
 			
 			const adminIds: string[] = [];
-			staffSnapshot.forEach((docSnap) => {
+			allAdmins.forEach((docSnap) => {
 				const data = docSnap.data();
 				// Exclude deleted admins and the current admin
 				if (!data.deleted && docSnap.id !== user.uid) {
@@ -481,10 +496,12 @@ export default function Users() {
 			throw new Error('Your admin session expired. Please sign in again and retry.');
 		}
 		
-		// Verify user is admin (case-insensitive check)
+		// Verify user is admin or super admin (case-insensitive check)
 		// Note: The API route will also verify admin access, so this is a client-side check
 		const userRole = user?.role?.trim();
-		if (!userRole || (userRole !== 'Admin' && userRole.toLowerCase() !== 'admin')) {
+		const isAdmin = userRole === 'Admin' || userRole?.toLowerCase() === 'admin';
+		const isSuperAdmin = userRole === 'SuperAdmin' || userRole?.toLowerCase() === 'superadmin';
+		if (!userRole || (!isAdmin && !isSuperAdmin)) {
 			console.warn('User role check failed:', { 
 				userRole, 
 				userId: user?.uid, 
@@ -496,7 +513,7 @@ export default function Users() {
 			if (!userRole) {
 				throw new Error('Unable to verify admin access. Your role information is missing. Please refresh the page and try again. If the problem persists, contact your administrator.');
 			}
-			throw new Error(`Only admins can create employee accounts. Your current role is: ${userRole}. Please contact an administrator if you believe this is an error.`);
+			throw new Error(`Only admins or super admins can create employee accounts. Your current role is: ${userRole}. Please contact an administrator if you believe this is an error.`);
 		}
 		
 		let token: string;
@@ -1191,6 +1208,13 @@ export default function Users() {
 		EmployeeRole,
 		Array<{ title: string; description: string; allowed: boolean }>
 	> = {
+		SuperAdmin: [
+			{ title: 'Full system access', description: 'Complete control over all features and settings', allowed: true },
+			{ title: 'User management', description: 'Create and manage all employee roles including SuperAdmin', allowed: true },
+			{ title: 'Global settings', description: 'Manage platform-level configuration and teams', allowed: true },
+			{ title: 'Billing dashboards', description: 'Approve billing cycles and refunds', allowed: true },
+			{ title: 'Clinical data', description: 'Read/write all reports and assessments', allowed: true },
+		],
 		Admin: [
 			{ title: 'Global settings', description: 'Manage platform-level configuration and teams', allowed: true },
 			{ title: 'Billing dashboards', description: 'Approve billing cycles and refunds', allowed: true },
@@ -1334,9 +1358,10 @@ export default function Users() {
 									className="w-full appearance-none rounded-xl border-2 border-blue-200 bg-white px-4 py-3 pl-10 pr-10 text-sm font-medium text-blue-900 shadow-md transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 hover:border-blue-300 hover:shadow-lg"
 								>
 									<option value="all">All Roles</option>
+									<option value="SuperAdmin">Super Admin</option>
+									<option value="Admin">Admin</option>
 									<option value="FrontDesk">Front Desk</option>
 									<option value="ClinicalTeam">Clinical Team</option>
-									<option value="Admin">Admin</option>
 								</select>
 								<div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
 									<i className="fas fa-chevron-down text-blue-600 text-xs" aria-hidden="true" />
@@ -1347,7 +1372,7 @@ export default function Users() {
 							</div>
 						</div>
 					</div>
-					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
 						<div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
 							<p className="text-xs uppercase tracking-wide text-slate-500">Total staff</p>
 							<p className="mt-2 text-2xl font-semibold text-slate-900">{analytics.total}</p>
@@ -1359,6 +1384,14 @@ export default function Users() {
 						<div className="rounded-xl border border-slate-200 bg-slate-100 p-4">
 							<p className="text-xs uppercase tracking-wide text-slate-600">Inactive</p>
 							<p className="mt-2 text-2xl font-semibold text-slate-800">{analytics.inactive}</p>
+						</div>
+						<div className="rounded-xl border border-slate-200 bg-purple-50 p-4">
+							<p className="text-xs uppercase tracking-wide text-purple-700">Super Admin</p>
+							<p className="mt-2 text-2xl font-semibold text-purple-900">{analytics.superAdminCount || 0}</p>
+						</div>
+						<div className="rounded-xl border border-slate-200 bg-violet-50 p-4">
+							<p className="text-xs uppercase tracking-wide text-violet-700">Admin</p>
+							<p className="mt-2 text-2xl font-semibold text-violet-900">{analytics.adminCount}</p>
 						</div>
 						<div className="rounded-xl border border-slate-200 bg-sky-50 p-4">
 							<p className="text-xs uppercase tracking-wide text-sky-700">Front desk</p>

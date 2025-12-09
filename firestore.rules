@@ -24,7 +24,12 @@ service cloud.firestore {
     // Role Checks (Case insensitive just to be safe if you want)
     function isAdmin() {
       let role = getRole();
-      return role == "admin" || role == "Admin";
+      return role == "admin" || role == "Admin" || role == "SuperAdmin" || role == "superadmin";
+    }
+    
+    function isSuperAdmin() {
+      let role = getRole();
+      return role == "SuperAdmin" || role == "superadmin";
     }
 
     function isFrontdesk() {
@@ -64,9 +69,9 @@ service cloud.firestore {
     // USERS COLLECTION
     // -------------------------------
     match /users/{uid} {
-      // Allow all logged-in users to read (to prevent blocking admin page access)
-      // The UI should filter to show only appropriate users based on role
-      allow read: if isLoggedIn();
+      // Users can view their own profile; admins can view all
+      allow read: if isLoggedIn() && 
+                  (request.auth.uid == uid || isAdmin());
       
       // Admin can edit any user; user can edit their own doc
       allow write: if isAdmin() || request.auth.uid == uid;
@@ -132,9 +137,7 @@ service cloud.firestore {
     // -------------------------------
     match /auditLogs/{id} {
       // Admins can see all audit logs in the UI
-      // Fallback: allow read if logged in (to prevent blocking admin page access)
-      // The UI should filter to show only admin-appropriate logs
-      allow read: if isAdmin() || isLoggedIn();
+      allow read: if isAdmin();
 
       // Any logged-in user or system component can write audit entries
       allow create: if isLoggedIn();

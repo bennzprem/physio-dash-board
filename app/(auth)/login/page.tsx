@@ -8,9 +8,10 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 
-type AllowedRole = 'Admin' | 'FrontDesk' | 'ClinicalTeam';
+type AllowedRole = 'SuperAdmin' | 'Admin' | 'FrontDesk' | 'ClinicalTeam';
 
 const ROLE_ROUTES: Record<AllowedRole, string> = {
+	SuperAdmin: '/super-admin',
 	Admin: '/admin',
 	FrontDesk: '/frontdesk',
 	ClinicalTeam: '/clinical-team',
@@ -67,13 +68,15 @@ export default function LoginPage() {
 				const lowerRole = normalizedRole.toLowerCase();
 				
 				// Map common variations to expected roles
-				if (lowerRole === 'admin') {
+				if (lowerRole === 'superadmin' || lowerRole === 'super admin' || lowerRole === 'super-admin') {
+					role = 'SuperAdmin';
+				} else if (lowerRole === 'admin') {
 					role = 'Admin';
 				} else if (lowerRole === 'frontdesk' || lowerRole === 'front desk' || lowerRole === 'front-desk') {
 					role = 'FrontDesk';
 				} else if (lowerRole === 'clinicalteam' || lowerRole === 'clinical team' || lowerRole === 'clinical-team' || lowerRole === 'clinic') {
 					role = 'ClinicalTeam';
-				} else if (normalizedRole === 'Admin' || normalizedRole === 'FrontDesk' || normalizedRole === 'ClinicalTeam') {
+				} else if (normalizedRole === 'SuperAdmin' || normalizedRole === 'Admin' || normalizedRole === 'FrontDesk' || normalizedRole === 'ClinicalTeam') {
 					role = normalizedRole as AllowedRole;
 				}
 			}

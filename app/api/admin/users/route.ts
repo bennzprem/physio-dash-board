@@ -82,7 +82,7 @@ async function requireAdmin(request: NextRequest, fallbackRole?: string) {
 		let role = (decoded as any).role || (decoded as any).claims?.role;
 		
 		// If role not in token claims, check Firestore profile (if Admin SDK is configured)
-		if (!role || (role !== 'Admin' && role !== 'admin')) {
+		if (!role || (role !== 'Admin' && role !== 'admin' && role !== 'SuperAdmin' && role !== 'superadmin')) {
 			try {
 				// Only try Firestore if Admin SDK is properly initialized
 				if (dbAdmin) {
@@ -110,15 +110,15 @@ async function requireAdmin(request: NextRequest, fallbackRole?: string) {
 		}
 		
 		// Use fallback role if provided (for development when Admin SDK isn't configured)
-		if ((!role || (role !== 'Admin' && role !== 'admin')) && fallbackRole) {
-			if (fallbackRole === 'Admin' || fallbackRole === 'admin') {
+		if ((!role || (role !== 'Admin' && role !== 'admin' && role !== 'SuperAdmin' && role !== 'superadmin')) && fallbackRole) {
+			if (fallbackRole === 'Admin' || fallbackRole === 'admin' || fallbackRole === 'SuperAdmin' || fallbackRole === 'superadmin') {
 				role = fallbackRole;
 			}
 		}
-		
-		// Check for 'Admin' (capitalized) to match the app's role naming convention
-		if (role !== 'Admin' && role !== 'admin') {
-			return { ok: false, status: 403, message: 'Forbidden: admin role required' as const };
+
+		// Check for 'Admin' or 'SuperAdmin' (capitalized) to match the app's role naming convention
+		if (role !== 'Admin' && role !== 'admin' && role !== 'SuperAdmin' && role !== 'superadmin') {
+			return { ok: false, status: 403, message: 'Forbidden: admin or super admin role required' as const };
 		}
 		return { ok: true as const, uid: decoded.uid };
 	} catch (err: any) {

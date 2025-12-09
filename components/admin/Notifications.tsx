@@ -428,9 +428,10 @@ export default function Notifications() {
 		const message = messages.find(m => m.id === messageId);
 		if (!message) return;
 
-		// Only allow sender or admin to delete
+		// Only allow sender or admin/super admin to delete
 		const isSender = message.senderId === user.uid;
-		const isAdmin = user.role === 'Admin' || user.role === 'admin';
+		const userRole = user.role?.trim();
+		const isAdmin = userRole === 'Admin' || userRole === 'admin' || userRole === 'SuperAdmin' || userRole === 'superadmin';
 
 		if (!isSender && !isAdmin) {
 			alert('You can only delete your own messages.');
@@ -684,7 +685,8 @@ export default function Notifications() {
 											) : (
 												messages.map(message => {
 													const isOwn = message.senderId === user?.uid;
-													const isAdmin = user?.role === 'Admin' || user?.role === 'admin';
+													const userRole = user?.role?.trim();
+													const isAdmin = userRole === 'Admin' || userRole === 'admin' || userRole === 'SuperAdmin' || userRole === 'superadmin';
 													const canDelete = isOwn || isAdmin;
 													const isHovered = hoveredMessageId === message.id;
 													const isDeleting = deletingMessageId === message.id;
