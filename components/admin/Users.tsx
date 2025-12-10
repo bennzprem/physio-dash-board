@@ -120,6 +120,29 @@ export default function Users() {
 	const [error, setError] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
 	const [roleFilter, setRoleFilter] = useState<'all' | EmployeeRole>('all');
+	
+	// Check if current user is Admin (not SuperAdmin)
+	const currentUserRole = user?.role?.trim();
+	const isCurrentUserAdmin = currentUserRole === 'Admin' || currentUserRole?.toLowerCase() === 'admin';
+	const isCurrentUserSuperAdmin = currentUserRole === 'SuperAdmin' || currentUserRole?.toLowerCase() === 'superadmin';
+	
+	// Helper function to check if an employee can be deleted by the current user
+	const canDeleteEmployee = (employee: Employee): boolean => {
+		// SuperAdmin can delete anyone
+		if (isCurrentUserSuperAdmin) {
+			return true;
+		}
+		// Admin cannot delete other Admins or SuperAdmins
+		if (isCurrentUserAdmin) {
+			const employeeRole = employee.role?.trim();
+			const isEmployeeAdmin = employeeRole === 'Admin' || employeeRole?.toLowerCase() === 'admin';
+			const isEmployeeSuperAdmin = employeeRole === 'SuperAdmin' || employeeRole?.toLowerCase() === 'superadmin';
+			if (isEmployeeAdmin || isEmployeeSuperAdmin) {
+				return false;
+			}
+		}
+		return true;
+	};
 
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -407,6 +430,14 @@ export default function Users() {
 		if (!deleteConfirmation.employee) return;
 
 		const employee = deleteConfirmation.employee;
+		
+		// Check if current user can delete this employee
+		if (!canDeleteEmployee(employee)) {
+			setError('You do not have permission to delete this employee. Only Super Admins can delete Admins and Super Admins.');
+			setDeleteConfirmation({ employee: null, nameInput: '' });
+			return;
+		}
+		
 		const enteredName = deleteConfirmation.nameInput.trim();
 		const correctName = employee.userName.trim();
 
@@ -1491,8 +1522,8 @@ export default function Users() {
 														View profile
 													</button>
 
-													{/* DELETE - Only show for active employees */}
-													{!showDeletedEmployees && !employee.deleted && (
+													{/* DELETE - Only show for active employees and if user has permission */}
+													{!showDeletedEmployees && !employee.deleted && canDeleteEmployee(employee) && (
 														<button
 															type="button"
 															onClick={() => handleDeleteClick(employee)}
