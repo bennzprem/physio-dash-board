@@ -772,6 +772,9 @@ export default function Patients() {
 		if (!deleteConfirmation.patient || !deleteConfirmation.patient.id) return;
 
 		const patient = deleteConfirmation.patient;
+		const patientId = patient.id; // Extract id to ensure it's defined
+		if (!patientId) return; // Additional type guard
+		
 		const enteredName = deleteConfirmation.nameInput.trim();
 		const correctName = patient.name.trim();
 
@@ -801,7 +804,8 @@ export default function Patients() {
 			}
 
 			// Soft delete the patient (set deleted flag instead of actually deleting)
-			await updateDoc(doc(db, 'patients', patient.id), {
+			// patientId is guaranteed to be a string at this point due to the checks above
+			await updateDoc(doc(db, 'patients', patientId as string), {
 				deleted: true,
 				deletedAt: serverTimestamp(),
 				status: 'cancelled',

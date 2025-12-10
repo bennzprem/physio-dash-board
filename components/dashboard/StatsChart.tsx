@@ -36,7 +36,7 @@ interface StatsChartProps {
 			label: string;
 			data: number[];
 			backgroundColor?: string | string[];
-			borderColor?: string;
+			borderColor?: string | string[];
 			borderWidth?: number;
 		}>;
 	};

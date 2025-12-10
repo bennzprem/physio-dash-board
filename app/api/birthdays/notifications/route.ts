@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dbAdmin } from '@/lib/firebaseAdmin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { requireRole } from '@/lib/authz';
 
 interface StaffRecord {
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
 					message: `Wishing you a wonderful birthday filled with joy and happiness! Have an amazing day! 🎂🎈🎁`,
 					category: 'birthday',
 					status: 'unread',
-					createdAt: dbAdmin.FieldValue.serverTimestamp(),
+					createdAt: FieldValue.serverTimestamp(),
 					channels: {
 						inApp: true,
 					},
@@ -120,7 +121,7 @@ export async function GET(request: NextRequest) {
 						message: `Today is ${birthdayPerson.userName}'s birthday! 🎉 Let's celebrate and wish them a wonderful day! 🎈🎁`,
 						category: 'birthday',
 						status: 'unread',
-						createdAt: dbAdmin.FieldValue.serverTimestamp(),
+						createdAt: FieldValue.serverTimestamp(),
 						channels: {
 							inApp: true,
 						},
