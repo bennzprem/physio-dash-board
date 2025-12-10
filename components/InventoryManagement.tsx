@@ -45,7 +45,6 @@ export default function InventoryManagement() {
 	const { user } = useAuth();
 	const [items, setItems] = useState<InventoryItem[]>([]);
 	const [issueRecords, setIssueRecords] = useState<IssueRecord[]>([]);
-	const [staff, setStaff] = useState<Array<{ id: string; userName: string; userEmail: string; role: string }>>([]);
 	const [loading, setLoading] = useState(true);
 
 	// Form states
@@ -55,43 +54,13 @@ export default function InventoryManagement() {
 
 	const [newItem, setNewItem] = useState({ name: '', type: 'Physiotherapy' as ItemType, totalQuantity: 0 });
 	const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-	const [issueForm, setIssueForm] = useState({ itemId: '', quantity: 0, issuedTo: '' });
+	const [issueForm, setIssueForm] = useState({ itemId: '', quantity: 0 });
 	const [returnForm, setReturnForm] = useState({ issueRecordId: '', quantity: 0 });
 	const [selectedIssueRecord, setSelectedIssueRecord] = useState<IssueRecord | null>(null);
 
 	const [submitting, setSubmitting] = useState(false);
 	const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-	// Load staff members (for issuing to clinical team)
-	useEffect(() => {
-		if (!user) return;
-
-		const unsubscribe = onSnapshot(
-			collection(db, 'staff'),
-			(snapshot: QuerySnapshot) => {
-				const mapped = snapshot.docs
-					.map(docSnap => {
-						const data = docSnap.data();
-						return {
-							id: docSnap.id,
-							userName: data.userName || data.name || '',
-							userEmail: data.userEmail || '',
-							role: data.role || '',
-							status: data.status || 'Active',
-						};
-					})
-					.filter(s => s.status !== 'Inactive' && (s.role === 'ClinicalTeam' || s.role === 'Physiotherapist' || s.role === 'StrengthAndConditioning'));
-
-				setStaff(mapped);
-			},
-			error => {
-				console.error('Failed to load staff', error);
-				setStaff([]);
-			}
-		);
-
-		return () => unsubscribe();
-	}, [user]);
 
 	// Load inventory items
 	useEffect(() => {
@@ -315,7 +284,6 @@ export default function InventoryManagement() {
 		setIssueForm({
 			itemId: item.id,
 			quantity: 0,
-			issuedTo: '',
 		});
 		setShowIssueModal(true);
 	};
@@ -372,7 +340,7 @@ export default function InventoryManagement() {
 			return;
 		}
 
-		if (!issueForm.itemId || !issueForm.issuedTo || issueForm.quantity <= 0) {
+		if (!issueForm.itemId || issueForm.quantity <= 0) {
 			alert('Please fill all fields correctly');
 			return;
 		}
@@ -385,12 +353,6 @@ export default function InventoryManagement() {
 
 		if (issueForm.quantity > selectedItem.remainingQuantity) {
 			alert(`Only ${selectedItem.remainingQuantity} items available`);
-			return;
-		}
-
-		const selectedStaff = staff.find(s => s.id === issueForm.issuedTo);
-		if (!selectedStaff) {
-			alert('Staff member not found');
 			return;
 		}
 
@@ -415,16 +377,16 @@ export default function InventoryManagement() {
 				quantity: issueForm.quantity,
 				issuedBy: user.uid,
 				issuedByName: user.displayName || user.email?.split('@')[0] || 'FrontDesk',
-				issuedTo: issueForm.issuedTo,
-				issuedToName: selectedStaff.userName,
-				issuedToEmail: selectedStaff.userEmail,
+				issuedTo: '',
+				issuedToName: '',
+				issuedToEmail: null,
 				status: 'acknowledged',
 				returnedQuantity: 0,
 				createdAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
 			});
 
-			setIssueForm({ itemId: '', quantity: 0, issuedTo: '' });
+			setIssueForm({ itemId: '', quantity: 0 });
 			setShowIssueModal(false);
 			alert('Item issued successfully!');
 		} catch (error) {
@@ -610,7 +572,7 @@ export default function InventoryManagement() {
 							<button
 								type="button"
 								onClick={() => {
-									setIssueForm({ itemId: '', quantity: 0, issuedTo: '' });
+									setIssueForm({ itemId: '', quantity: 0 });
 									setShowIssueModal(true);
 								}}
 								className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-indigo-700 hover:via-indigo-800 hover:to-purple-700 transition-all duration-200 hover:scale-105"
@@ -919,31 +881,12 @@ export default function InventoryManagement() {
 									required
 								/>
 							</div>
-							<div>
-								<label htmlFor="issueTo" className="block text-sm font-medium text-slate-700 mb-2">
-									Issue To (Clinical Team) <span className="text-red-500">*</span>
-								</label>
-								<select
-									id="issueTo"
-									value={issueForm.issuedTo}
-									onChange={e => setIssueForm({ ...issueForm, issuedTo: e.target.value })}
-									className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-									required
-								>
-									<option value="">Select clinical team member...</option>
-									{staff.map(member => (
-										<option key={member.id} value={member.id}>
-											{member.userName}
-										</option>
-									))}
-								</select>
-							</div>
 							<div className="flex items-center gap-3 justify-end pt-4">
 								<button
 									type="button"
 									onClick={() => {
 										setShowIssueModal(false);
-										setIssueForm({ itemId: '', quantity: 0, issuedTo: '' });
+										setIssueForm({ itemId: '', quantity: 0 });
 									}}
 									className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900"
 								>
