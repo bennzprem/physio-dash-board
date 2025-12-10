@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, where, getDocs, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDocs, type QuerySnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import PageHeader from '@/components/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -349,7 +349,9 @@ export default function MyPerformance() {
 		const filteredTransfers = transfers.filter(transfer => {
 			if (transfer.fromTherapist !== staffName && transfer.toTherapist !== staffName) return false;
 			if (!transfer.transferredAt) return false;
-			const transferDate = new Date(transfer.transferredAt);
+			const transferDate = transfer.transferredAt instanceof Timestamp 
+				? transfer.transferredAt.toDate() 
+				: new Date(transfer.transferredAt);
 			return transferDate >= startDate && transferDate <= now;
 		});
 
@@ -357,7 +359,9 @@ export default function MyPerformance() {
 		const filteredSessionTransfers = sessionTransfers.filter(st => {
 			if (st.fromTherapist !== staffName && st.toTherapist !== staffName) return false;
 			if (!st.transferredAt) return false;
-			const stDate = new Date(st.transferredAt);
+			const stDate = st.transferredAt instanceof Timestamp 
+				? st.transferredAt.toDate() 
+				: new Date(st.transferredAt);
 			return stDate >= startDate && stDate <= now;
 		});
 
@@ -538,18 +542,18 @@ export default function MyPerformance() {
 		<div className="min-h-screen bg-slate-50 p-6">
 			<PageHeader
 				title="My Performance"
-				subtitle="Track your analytics and performance metrics"
-				statusCard={
-					<div className="flex items-center gap-2">
-						<div className="rounded-full bg-sky-100 p-2">
-							<i className="fas fa-chart-line text-sky-600" aria-hidden="true" />
-						</div>
-						<div>
-							<p className="text-xs font-medium text-slate-500">Period</p>
+				description="Track your analytics and performance metrics"
+				statusCard={{
+					label: 'Period',
+					value: (
+						<div className="flex items-center gap-2">
+							<div className="rounded-full bg-sky-100 p-2">
+								<i className="fas fa-chart-line text-sky-600" aria-hidden="true" />
+							</div>
 							<p className="text-sm font-semibold text-slate-900 capitalize">{selectedPeriod}</p>
 						</div>
-					</div>
-				}
+					),
+				}}
 			/>
 
 			{/* Time Period Selector */}
@@ -859,7 +863,7 @@ export default function MyPerformance() {
 							
 							// Create array with appointments and all activities
 							const hoursData = [
-								{ label: 'Appointments', hours: analytics.appointmentHours, color: 'from-amber-500 to-amber-400', hoverColor: 'from-amber-600 to-amber-500' },
+								{ label: 'Appointments', hours: analytics.appointmentHours, color: 'from-amber-500 to-amber-400', hoverColor: 'from-amber-600 to-amber-500', activityType: undefined },
 								...Object.entries(analytics.activitiesByType).map(([type, data]) => ({
 									label: type,
 									hours: data.hours,
@@ -890,9 +894,9 @@ export default function MyPerformance() {
 													</p>
 												</div>
 												<div
-													onClick={() => item.activityType && setSelectedActivityType(item.activityType)}
+													onClick={() => 'activityType' in item && item.activityType && setSelectedActivityType(item.activityType)}
 													className={`h-8 w-full overflow-hidden rounded-lg bg-gradient-to-r ${item.color} transition-all hover:${item.hoverColor} ${
-														item.activityType ? 'cursor-pointer' : ''
+														'activityType' in item && item.activityType ? 'cursor-pointer' : ''
 													}`}
 													style={{ width: `${percentage}%` }}
 													title={`${item.label}: ${Math.round(item.hours * 10) / 10} hours`}
@@ -1019,7 +1023,11 @@ export default function MyPerformance() {
 																year: 'numeric',
 																hour: 'numeric',
 																minute: '2-digit',
-															}).format(new Date(transfer.transferredAt))}
+															}).format(
+																transfer.transferredAt instanceof Timestamp 
+																	? transfer.transferredAt.toDate() 
+																	: new Date(transfer.transferredAt)
+															)}
 														</p>
 													</div>
 												)}

@@ -13,6 +13,11 @@ import {
 	Title,
 	Tooltip,
 	Legend,
+	type ChartEvent,
+	type ActiveElement,
+	type TooltipItem,
+	type Chart,
+	type ChartConfiguration,
 } from 'chart.js';
 
 ChartJS.register(
@@ -54,7 +59,7 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 		animation: {
 			duration: 2000,
 			easing: 'easeInOutQuart' as const,
-			onProgress: function(animation: any) {
+			onProgress: function(animation: { currentStep: number; numSteps: number }) {
 				// Add bounce effect during animation
 				if (animation.currentStep === animation.numSteps) {
 					// Animation complete
@@ -65,9 +70,9 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 			intersect: false,
 			mode: 'index' as const,
 		},
-		onHover: (event: any, activeElements: any[]) => {
-			if (event.native) {
-				event.native.target.style.cursor = activeElements.length > 0 ? 'pointer' : 'default';
+		onHover: (event: ChartEvent, activeElements: ActiveElement[]) => {
+			if (event.native && event.native.target && 'style' in event.native.target) {
+				(event.native.target as HTMLElement).style.cursor = activeElements.length > 0 ? 'pointer' : 'default';
 			}
 		},
 		plugins: {
@@ -78,7 +83,7 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 					padding: 15,
 					font: {
 						size: 12,
-						weight: '500' as const,
+						weight: 500,
 					},
 					color: '#1e293b',
 				},
@@ -89,11 +94,11 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 				padding: 14,
 				titleFont: {
 					size: 14,
-					weight: '600' as const,
+					weight: 600,
 				},
 				bodyFont: {
 					size: 13,
-					weight: '500' as const,
+					weight: 500,
 				},
 				titleColor: '#ffffff',
 				bodyColor: '#e2e8f0',
@@ -103,21 +108,23 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 				displayColors: true,
 				boxPadding: 8,
 				callbacks: {
-					label: function(context: any) {
+					label: function(context: TooltipItem<'line' | 'bar' | 'doughnut'>) {
 						let label = context.dataset.label || '';
 						if (label) {
 							label += ': ';
 						}
 						const value = context.parsed.y !== undefined ? context.parsed.y : context.parsed.x;
-						if (label.includes('Revenue')) {
-							label += `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-						} else {
-							label += value;
+						if (typeof value === 'number') {
+							if (label.includes('Revenue')) {
+								label += `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+							} else {
+								label += value;
+							}
 						}
 						return label;
 					},
-					title: function(context: any) {
-						return context[0].label || '';
+					title: function(context: TooltipItem<'line' | 'bar' | 'doughnut'>[]) {
+						return context[0]?.label || '';
 					},
 				},
 				animation: {
@@ -127,11 +134,11 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 			title: title
 				? {
 						display: true,
-						text: title,
-						font: {
-							size: 16,
-							weight: '600' as const,
-						},
+					text: title,
+					font: {
+						size: 16,
+						weight: 600,
+					},
 						padding: {
 							bottom: 15,
 						},
@@ -152,8 +159,11 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 					},
 					color: '#64748b',
 					beginAtZero: indexAxis === 'y' ? true : undefined,
-					callback: indexAxis === 'y' ? function(value: any) {
-						return `₹${value.toLocaleString('en-IN')}`;
+					callback: indexAxis === 'y' ? function(value: string | number) {
+						if (typeof value === 'number') {
+							return `₹${value.toLocaleString('en-IN')}`;
+						}
+						return value;
 					} : undefined,
 				},
 			},
@@ -169,7 +179,7 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 					},
 					color: '#64748b',
 					beginAtZero: indexAxis === 'x' ? true : undefined,
-					callback: indexAxis === 'x' ? function(value: any) {
+					callback: indexAxis === 'x' ? function(value: string | number) {
 						return value;
 					} : undefined,
 				},
@@ -198,14 +208,15 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 	// Use plugins to create gradients and add profile images
 	const gradientPlugin = {
 		id: 'gradientPlugin',
-		beforeDraw: (chart: any) => {
+		beforeDraw: (chart: Chart) => {
 			if (type === 'bar' && chart.ctx) {
 				const datasets = chart.data.datasets;
-				datasets.forEach((dataset: any, datasetIndex: number) => {
-					if (Array.isArray(dataset.backgroundColor) && dataset.backgroundColor.some((c: any) => typeof c === 'string' && c.startsWith('hsl'))) {
+				datasets.forEach((dataset, datasetIndex: number) => {
+					if (Array.isArray(dataset.backgroundColor) && dataset.backgroundColor.some((c: unknown) => typeof c === 'string' && c.startsWith('hsl'))) {
 						const meta = chart.getDatasetMeta(datasetIndex);
-						meta.data.forEach((bar: any, index: number) => {
-							const originalColor = dataset.backgroundColor[index];
+						meta.data.forEach((bar, index: number) => {
+							const backgroundColorArray = dataset.backgroundColor as string[];
+							const originalColor = backgroundColorArray[index];
 							if (typeof originalColor === 'string' && originalColor.startsWith('hsl')) {
 								const ctx = chart.ctx;
 								const hslMatch = originalColor.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
@@ -215,9 +226,10 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 									const l = parseInt(hslMatch[3]);
 									
 									const isHorizontal = indexAxis === 'y';
+									const barElement = bar as unknown as { x: number; y: number; base: number };
 									const gradient = isHorizontal 
-										? ctx.createLinearGradient(bar.x, 0, bar.base, 0)
-										: ctx.createLinearGradient(0, bar.y, 0, bar.base);
+										? ctx.createLinearGradient(barElement.x, 0, barElement.base, 0)
+										: ctx.createLinearGradient(0, barElement.y, 0, barElement.base);
 									const lighterL = Math.min(l + 20, 90);
 									const darkerL = Math.max(l - 15, 20);
 									
@@ -231,7 +243,7 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 										gradient.addColorStop(1, `hsl(${h}, ${s}%, ${darkerL}%)`);
 									}
 									
-									bar.backgroundColor = gradient;
+									(bar as unknown as { backgroundColor: CanvasGradient }).backgroundColor = gradient;
 								}
 							}
 						});
@@ -243,14 +255,15 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 
 	const profileImagePlugin = {
 		id: 'profileImagePlugin',
-		afterDraw: (chart: any) => {
+		afterDraw: (chart: Chart) => {
 			if (type === 'bar' && data.profileImages && chart.ctx) {
 				const ctx = chart.ctx;
 				const datasets = chart.data.datasets;
-				datasets.forEach((dataset: any, datasetIndex: number) => {
+				datasets.forEach((dataset, datasetIndex: number) => {
 					const meta = chart.getDatasetMeta(datasetIndex);
-					meta.data.forEach((bar: any, index: number) => {
+					meta.data.forEach((bar, index: number) => {
 						const profileImage = data.profileImages?.[index];
+						const barElement = bar as unknown as { x: number; y: number; base: number; width?: number; height?: number };
 						if (profileImage) {
 							const img = new Image();
 							img.crossOrigin = 'anonymous';
@@ -261,12 +274,12 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 								
 								if (isHorizontal) {
 									// For horizontal bars, place image on the left side of the bar
-									x = bar.base - imgSize - 8;
-									y = bar.y - imgSize / 2;
+									x = barElement.base - imgSize - 8;
+									y = barElement.y - imgSize / 2;
 								} else {
 									// For vertical bars, place image on top of the bar
-									x = bar.x - imgSize / 2;
-									y = bar.y - imgSize - 8;
+									x = barElement.x - imgSize / 2;
+									y = barElement.y - imgSize - 8;
 								}
 								
 								// Draw circular background with shadow
@@ -310,9 +323,18 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 			style={{ height: `${height}px` }}
 			className="group relative rounded-lg bg-gradient-to-br from-white via-blue-50/20 to-white p-3 shadow-sm border border-blue-100/50 hover:border-blue-300/70 hover:shadow-md transition-all duration-300"
 		>
-			{type === 'line' && <Line ref={chartRef} data={data} options={options} plugins={[gradientPlugin]} />}
-			{type === 'bar' && <Bar ref={chartRef} data={data} options={options} plugins={[gradientPlugin, profileImagePlugin]} />}
-			{type === 'doughnut' && <Doughnut ref={chartRef} data={data} options={options} plugins={[gradientPlugin]} />}
+			{type === 'line' && (
+				// @ts-expect-error - Chart.js type system limitations with generic chart component
+				<Line ref={chartRef} data={data} options={options} plugins={[gradientPlugin]} />
+			)}
+			{type === 'bar' && (
+				// @ts-expect-error - Chart.js type system limitations with generic chart component
+				<Bar ref={chartRef} data={data} options={options} plugins={[gradientPlugin, profileImagePlugin]} />
+			)}
+			{type === 'doughnut' && (
+				// @ts-expect-error - Chart.js type system limitations with generic chart component
+				<Doughnut ref={chartRef} data={data} options={options} plugins={[gradientPlugin]} />
+			)}
 		</div>
 	);
 }

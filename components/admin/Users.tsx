@@ -475,6 +475,7 @@ export default function Users() {
 
 			// Notify all other admins
 			const currentAdminName = user?.displayName || user?.email || 'An admin';
+			const currentUserId = user?.uid || '';
 			await notifyAllAdmins(
 				'👤 Employee Removed',
 				`${currentAdminName} has removed employee "${employee.userName}" (${employee.userEmail}) from the system.`,
@@ -484,7 +485,7 @@ export default function Users() {
 					employeeName: employee.userName,
 					employeeEmail: employee.userEmail,
 					employeeRole: employee.role,
-					deletedBy: user.uid,
+					deletedBy: currentUserId,
 					deletedByName: currentAdminName,
 				}
 			);
@@ -499,7 +500,7 @@ export default function Users() {
 				metadata: {
 					employeeId: employee.id,
 					employeeName: employee.userName,
-					deletedBy: user.uid,
+					deletedBy: currentUserId,
 					deletedByName: currentAdminName,
 				},
 			});

@@ -55,6 +55,14 @@ export interface AdminPatientRecord {
 	totalSessionsRequired?: number;
 	remainingSessions?: number;
 	patientType?: string;
+	// Additional fields from Firestore
+	id?: string;
+	deleted?: boolean;
+	deletedAt?: string | null;
+	assignedDoctor?: string;
+	transferredFromDoctor?: string;
+	transferReason?: string;
+	feedback?: string;
 }
 
 export const DEFAULT_ADMIN_PATIENTS: AdminPatientRecord[] = [

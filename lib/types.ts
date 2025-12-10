@@ -205,6 +205,12 @@ export interface PatientRecordFull {
 	// Session tracking fields
 	totalSessionsRequired?: number;
 	remainingSessions?: number;
+	// Package fields
+	packageName?: string;
+	packageAmount?: number;
+	concessionPercent?: number;
+	paymentType?: string;
+	packageDescription?: string;
 }
 
 export interface Appointment {

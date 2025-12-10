@@ -1178,7 +1178,7 @@ export default function Appointments() {
 											totalSessionsRequired: newTotalSessions,
 											remainingSessions: newRemainingSessions,
 											packageAmount: packageAmountValue,
-											concessionPercent: consultationDiscountValue,
+											concessionPercent: consultationDiscountValue ?? undefined,
 										}
 									: p
 							)
@@ -1314,7 +1314,7 @@ export default function Appointments() {
 								totalSessionsRequired: newTotalSessions,
 								remainingSessions: newRemainingSessions,
 								packageAmount: packageAmountValue,
-								concessionPercent: consultationDiscountValue,
+								concessionPercent: consultationDiscountValue ?? undefined,
 							}
 						: p
 				)

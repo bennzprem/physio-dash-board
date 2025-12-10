@@ -65,14 +65,14 @@ function mapNotification(snapshot: QueryDocumentSnapshot<DocumentData>): Notific
 		: undefined;
 
 	const messages: NotificationMessage[] = data.messages
-		? (Array.isArray(data.messages) ? data.messages : []).map((msg: any) => ({
+		? (Array.isArray(data.messages) ? data.messages : []).map((msg: { id?: string; senderId?: string; senderName?: string; message?: string; createdAt?: string }) => ({
 				id: msg.id ?? '',
 				senderId: msg.senderId ?? '',
 				senderName: msg.senderName ?? '',
 				message: msg.message ?? '',
 				createdAt: msg.createdAt ?? new Date().toISOString(),
 			}))
-		: undefined;
+		: [];
 
 	return {
 		id: snapshot.id,
@@ -179,8 +179,9 @@ export function useNotifications(userId?: string | null) {
 				},
 				error => {
 					// Check if it's an index error and we haven't tried fallback yet
-					const errorCode = (error as any)?.code;
-					const errorMessage = (error as any)?.message || '';
+					const firebaseError = error as { code?: string; message?: string };
+					const errorCode = firebaseError?.code;
+					const errorMessage = firebaseError?.message || '';
 					const isIndexError = 
 						errorCode === 'failed-precondition' ||
 						errorCode === 'unimplemented' ||

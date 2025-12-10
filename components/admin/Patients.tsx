@@ -229,7 +229,7 @@ export default function Patients() {
 						totalSessionsRequired: typeof data.totalSessionsRequired === 'number' ? data.totalSessionsRequired : (data.totalSessionsRequired ? Number(data.totalSessionsRequired) : undefined),
 						remainingSessions: typeof data.remainingSessions === 'number' ? data.remainingSessions : (data.remainingSessions ? Number(data.remainingSessions) : undefined),
 						feedback: data.feedback ? String(data.feedback) : undefined,
-					} as AdminPatientRecord & { id: string; deleted?: boolean; deletedAt?: string | null; patientType?: string; assignedDoctor?: string; totalSessionsRequired?: number; remainingSessions?: number; feedback?: string };
+					} as AdminPatientRecord;
 				});
 				setPatients(mapped);
 				setLoading(false);
@@ -259,7 +259,7 @@ export default function Patients() {
 			.map((patient, index) => ({ patient, index, id: (patient as AdminPatientRecord & { id?: string }).id || '' }))
 			.filter(({ patient }) => {
 				// Filter by deleted status
-				const isDeleted = (patient as any).deleted === true;
+				const isDeleted = patient.deleted === true;
 				if (showDeletedPatients && !isDeleted) return false;
 				if (!showDeletedPatients && isDeleted) return false;
 
@@ -1484,24 +1484,24 @@ export default function Patients() {
 													<div className="truncate" title={patient.name || 'Unnamed patient'}>
 														{patient.name || 'Unnamed patient'}
 													</div>
-													{(patient as any).deleted && (
+													{patient.deleted && (
 														<span className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
 															Past
 														</span>
 													)}
 												</td>
 												<td className="px-2 py-4 text-xs text-slate-600 truncate">
-													{((patient as any).patientType || '').toUpperCase() || '—'}
+													{(patient.patientType || '').toUpperCase() || '—'}
 												</td>
 												<td className="px-2 py-4 text-xs text-slate-600">{patient.gender || '—'}</td>
 												<td className="px-2 py-4 text-xs text-slate-600 truncate" title={patient.phone || '—'}>
 													{patient.phone || '—'}
 												</td>
-												<td className="px-2 py-4 text-xs text-slate-600 truncate" title={(patient as any).assignedDoctor || '—'}>
+												<td className="px-2 py-4 text-xs text-slate-600 truncate" title={patient.assignedDoctor || '—'}>
 													{(() => {
-														const assignedDoctor = (patient as any).assignedDoctor;
-														const transferredFrom = (patient as any).transferredFromDoctor;
-														const transferReason = (patient as any).transferReason;
+														const assignedDoctor = patient.assignedDoctor;
+														const transferredFrom = patient.transferredFromDoctor;
+														const transferReason = patient.transferReason;
 														
 														// Show "original --> current" format only for leave handovers
 														if (transferredFrom && transferReason === 'Leave approval' && assignedDoctor) {
@@ -1526,11 +1526,11 @@ export default function Patients() {
 														{patient.status.charAt(0).toUpperCase() + patient.status.slice(1)}
 													</span>
 												</td>
-												<td className="px-2 py-4 text-[10px] text-slate-500 truncate" title={showDeletedPatients && (patient as any).deletedAt 
-													? `Removed: ${formatDateTime((patient as any).deletedAt)}`
+												<td className="px-2 py-4 text-[10px] text-slate-500 truncate" title={showDeletedPatients && patient.deletedAt 
+													? `Removed: ${formatDateTime(patient.deletedAt)}`
 													: formatDateTime(patient.registeredAt)}>
-													{showDeletedPatients && (patient as any).deletedAt 
-														? `Removed: ${formatDateTime((patient as any).deletedAt)}`
+													{showDeletedPatients && patient.deletedAt 
+														? `Removed: ${formatDateTime(patient.deletedAt)}`
 														: formatDateTime(patient.registeredAt)}
 												</td>
 												<td className="px-2 py-4 text-center">
@@ -1543,7 +1543,7 @@ export default function Patients() {
 														>
 															<i className="fas fa-user text-[10px]" aria-hidden="true" />
 														</button>
-														{!showDeletedPatients && !(patient as any).deleted && (
+														{!showDeletedPatients && !patient.deleted && (
 															<button
 																type="button"
 																onClick={() => handleDeleteClick(id)}
@@ -1579,7 +1579,7 @@ export default function Patients() {
 							<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sticky top-0 bg-white z-10">
 								<div>
 									<h2 className="text-lg font-semibold text-slate-900">Patient profile</h2>
-									<p className="text-xs text-slate-500">ID: {(selectedPatient as any).patientId || '—'}</p>
+									<p className="text-xs text-slate-500">ID: {selectedPatient.patientId || '—'}</p>
 								</div>
 							</header>
 
@@ -1649,15 +1649,15 @@ export default function Patients() {
 											<div className="flex justify-between">
 												<dt className="font-semibold text-slate-500">Total Sessions</dt>
 												<dd className="font-semibold text-slate-900">
-													{(selectedPatient as any)?.totalSessionsRequired || 0}
+													{selectedPatient?.totalSessionsRequired || 0}
 												</dd>
 											</div>
 											<div className="flex justify-between">
 												<dt className="font-semibold text-slate-500">Completed</dt>
 												<dd className="font-semibold text-emerald-700">
 													{(() => {
-														const total = (selectedPatient as any)?.totalSessionsRequired || 0;
-														const remaining = (selectedPatient as any)?.remainingSessions || 0;
+														const total = selectedPatient?.totalSessionsRequired || 0;
+														const remaining = selectedPatient?.remainingSessions || 0;
 														return Math.max(0, total - remaining);
 													})()}
 												</dd>
@@ -1665,7 +1665,7 @@ export default function Patients() {
 											<div className="flex justify-between">
 												<dt className="font-semibold text-slate-500">Remaining</dt>
 												<dd className="font-semibold text-amber-700">
-													{(selectedPatient as any)?.remainingSessions || 0}
+													{selectedPatient?.remainingSessions || 0}
 												</dd>
 											</div>
 											<div className="pt-2 border-t border-slate-200">
@@ -1688,7 +1688,7 @@ export default function Patients() {
 									<div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
 										<h3 className="text-sm font-semibold text-slate-800">Patient Feedback</h3>
 										<p className="mt-3 text-xs text-slate-500">
-											{(selectedPatient as any)?.feedback || 'No feedback available'}
+											{selectedPatient?.feedback || 'No feedback available'}
 										</p>
 									</div>
 
@@ -1928,7 +1928,7 @@ export default function Patients() {
 													<tbody className="divide-y divide-slate-100">
 														{importPreview.slice(0, 10).map((row, idx) => (
 															<tr key={idx}>
-																{Object.values(row).map((val: any, i) => (
+																{Object.values(row).map((val: unknown, i) => (
 																	<td key={i} className="px-3 py-2 text-slate-600">
 																		{String(val || '—')}
 																	</td>
