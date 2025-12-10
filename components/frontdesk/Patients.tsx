@@ -1944,6 +1944,9 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 		if (!deleteConfirmation.patient || !deleteConfirmation.patient.id) return;
 
 		const patient = deleteConfirmation.patient;
+		const patientId = patient.id; // Extract id to ensure it's defined
+		if (!patientId) return; // Additional type guard
+		
 		const enteredName = deleteConfirmation.nameInput.trim();
 		const correctName = patient.name.trim();
 
@@ -1952,7 +1955,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 			return;
 		}
 
-		setDeletingId(patient.id);
+		setDeletingId(patientId);
 		setDeleteConfirmation({ patient: null, nameInput: '' });
 
 		try {
@@ -1973,7 +1976,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 			}
 
 			// Soft delete the patient (set deleted flag instead of actually deleting)
-			await updateDoc(doc(db, 'patients', patient.id), {
+			await updateDoc(doc(db, 'patients', patientId), {
 				deleted: true,
 				deletedAt: serverTimestamp(),
 				status: 'cancelled',
