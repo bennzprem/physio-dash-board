@@ -47,6 +47,10 @@ interface Employee {
 	experience?: string;
 	professionalAim?: string;
 	profileImage?: string;
+	// Custom email fields (for password reset)
+	personalEmail?: string;
+	customEmail?: string;
+	alternateEmail?: string;
 }
 
 type LimitedRoles = Extract<EmployeeRole, 'Admin' | 'SuperAdmin' | 'FrontDesk' | 'ClinicalTeam'>;

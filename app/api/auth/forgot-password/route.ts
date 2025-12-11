@@ -34,12 +34,58 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		// Check if user exists in Firebase Auth
-		let userRecord;
+		// First, check if email exists in staff collection (custom email or userEmail)
+		let staffDoc = null;
+		let userRecord = null;
+		let authEmail = email; // Default to the email provided
+		let customEmail = null;
+
 		try {
-			userRecord = await authAdmin.getUserByEmail(email);
+			// Query staff collection for matching email (check both userEmail and custom email fields)
+			const staffQuery = await dbAdmin.collection('staff')
+				.where('userEmail', '==', email)
+				.limit(1)
+				.get();
+
+			if (staffQuery.empty) {
+				// Try checking custom email fields (personalEmail, customEmail, alternateEmail)
+				const customEmailQuery = await dbAdmin.collection('staff')
+					.where('personalEmail', '==', email)
+					.limit(1)
+					.get();
+				
+				if (!customEmailQuery.empty) {
+					staffDoc = customEmailQuery.docs[0];
+					customEmail = email;
+					authEmail = staffDoc.data()?.userEmail || email;
+				} else {
+					// Try customEmail field
+					const customEmailQuery2 = await dbAdmin.collection('staff')
+						.where('customEmail', '==', email)
+						.limit(1)
+						.get();
+					
+					if (!customEmailQuery2.empty) {
+						staffDoc = customEmailQuery2.docs[0];
+						customEmail = email;
+						authEmail = staffDoc.data()?.userEmail || email;
+					}
+				}
+			} else {
+				staffDoc = staffQuery.docs[0];
+				// Check if staff has a custom email field
+				const staffData = staffDoc.data();
+				customEmail = staffData?.personalEmail || staffData?.customEmail || staffData?.alternateEmail || null;
+			}
+		} catch (error) {
+			console.warn('Could not query staff collection:', error);
+		}
+
+		// Now find the Firebase Auth user by the auth email (userEmail from staff)
+		try {
+			userRecord = await authAdmin.getUserByEmail(authEmail);
 		} catch (error: any) {
-			// User doesn't exist - don't reveal this for security
+			// User doesn't exist in Firebase Auth - don't reveal this for security
 			// Return success anyway to prevent email enumeration
 			return NextResponse.json({
 				success: true,
@@ -50,15 +96,26 @@ export async function POST(request: NextRequest) {
 		// Get user profile from Firestore for display name
 		let userName = 'User';
 		try {
-			const userDoc = await dbAdmin.collection('users').doc(userRecord.uid).get();
-			if (userDoc.exists) {
-				const userData = userDoc.data();
-				userName = userData?.displayName || userData?.userName || 'User';
+			// First try staff collection
+			if (staffDoc) {
+				const staffData = staffDoc.data();
+				userName = staffData?.userName || userName;
+			} else {
+				// Fallback to users collection
+				const userDoc = await dbAdmin.collection('users').doc(userRecord.uid).get();
+				if (userDoc.exists) {
+					const userData = userDoc.data();
+					userName = userData?.displayName || userData?.userName || 'User';
+				}
 			}
 		} catch (error) {
 			// Continue with default name if Firestore lookup fails
 			console.warn('Could not fetch user profile:', error);
 		}
+
+		// Determine which email to send the reset link to
+		// Priority: custom email > auth email
+		const emailToSend = customEmail || authEmail;
 
 		// Generate secure reset token
 		const resetToken = randomBytes(32).toString('hex');
@@ -68,7 +125,9 @@ export async function POST(request: NextRequest) {
 		// Store token in Firestore
 		await dbAdmin.collection('passwordResets').doc(resetToken).set({
 			uid: userRecord.uid,
-			email: email,
+			email: authEmail, // Store the auth email (for password reset)
+			customEmail: customEmail, // Store custom email if used
+			requestedEmail: email, // Store the email that was requested (for tracking)
 			expiresAt: expiresAt,
 			createdAt: new Date(),
 			used: false,
@@ -81,14 +140,14 @@ export async function POST(request: NextRequest) {
 				: 'http://localhost:3000');
 		const resetLink = `${baseUrl}/reset-password?token=${resetToken}`;
 
-		// Send email via Resend
+		// Send email via Resend to the custom email (if available) or auth email
 		const emailResult = await sendEmailNotification({
-			to: email,
+			to: emailToSend,
 			template: 'password-reset',
 			subject: 'Reset Your Password - Centre For Sports Science',
 			data: {
 				userName,
-				userEmail: email,
+				userEmail: emailToSend,
 				resetLink,
 			},
 		});

@@ -101,19 +101,28 @@ export default function LeaveManagement() {
 					} as StaffMember;
 				});
 
-				// Filter admins
+				// Filter admins and super admins
 				const adminList = mapped.filter(
-					s => s.status === 'Active' && (s.role === 'Admin' || s.role === 'admin')
+					s => s.status === 'Active' && (
+						s.role === 'Admin' || 
+						s.role === 'admin' || 
+						s.role === 'SuperAdmin' || 
+						s.role === 'Super Admin' ||
+						s.role === 'superadmin'
+					)
 				);
 				setAdmins(adminList);
 
-				// Show all active staff members for handover (excluding current user and admins)
+				// Show all active staff members for handover (excluding current user, admins, and super admins)
 				const allStaff = mapped.filter(
 					s =>
 						s.status === 'Active' &&
 						s.userEmail !== user.email &&
 						s.role !== 'Admin' &&
-						s.role !== 'admin'
+						s.role !== 'admin' &&
+						s.role !== 'SuperAdmin' &&
+						s.role !== 'Super Admin' &&
+						s.role !== 'superadmin'
 				);
 				setStaff(allStaff);
 

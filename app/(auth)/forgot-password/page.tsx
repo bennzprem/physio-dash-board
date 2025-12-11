@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
 
 export default function ForgotPasswordPage() {
 	const [email, setEmail] = useState('');
@@ -29,26 +27,26 @@ export default function ForgotPasswordPage() {
 
 		setSubmitting(true);
 		try {
-			// Configure action URL to redirect to our reset-password page
-			const actionCodeSettings = {
-				url: `${window.location.origin}/reset-password`,
-				handleCodeInApp: false,
-			};
+			// Use our custom API route that supports custom emails
+			const response = await fetch('/api/auth/forgot-password', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ email: trimmed }),
+			});
 
-			await sendPasswordResetEmail(auth, trimmed, actionCodeSettings);
-			setSuccess('If an account exists for that email, a reset link has been sent.');
-		} catch (err: any) {
-			const code = err?.code || '';
-			if (code === 'auth/invalid-email') {
-				setError('Please enter a valid email address.');
-			} else if (code === 'auth/user-disabled') {
-				setError('This account has been disabled. Contact an administrator.');
-			} else if (code === 'auth/network-request-failed') {
-				setError('Network error. Please try again.');
+			const data = await response.json();
+
+			if (!response.ok) {
+				setError(data.error || 'Something went wrong. Please try again.');
 			} else {
-				// Avoid leaking whether user exists
-				setSuccess('If an account exists for that email, a reset link has been sent.');
+				setSuccess(data.message || 'If an account exists for that email, a reset link has been sent.');
 			}
+		} catch (err: any) {
+			console.error('Password reset error:', err);
+			// Avoid leaking whether user exists
+			setSuccess('If an account exists for that email, a reset link has been sent.');
 		} finally {
 			setSubmitting(false);
 		}
