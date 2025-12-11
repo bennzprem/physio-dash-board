@@ -32,6 +32,8 @@ import { sendEmailNotification } from '@/lib/email';
 import { useAuth } from '@/contexts/AuthContext';
 import { notifyAdmins } from '@/lib/notificationUtils';
 import ReportModal from '@/components/frontdesk/ReportModal';
+import { createInitialSessionAllowance } from '@/lib/sessionAllowance';
+import type { SessionAllowance } from '@/lib/types';
 
 const genderOptions: Array<{ value: AdminGenderOption; label: string }> = [
 	{ value: '', label: 'Select' },
@@ -85,6 +87,39 @@ const formatDateTime = (iso: string) => {
 		return '—';
 	}
 };
+
+async function generatePatientId(): Promise<string> {
+	const prefix = 'CSS';
+	const year = new Date().getFullYear();
+	const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+	
+	// Check existing patient IDs in Firestore
+	const patientsSnapshot = await getDocs(collection(db, 'patients'));
+	const existingIds = new Set(patientsSnapshot.docs.map(doc => doc.data().patientId).filter(Boolean));
+	
+	let candidate = '';
+	do {
+		let randomPart = '';
+		for (let index = 0; index < 7; index += 1) {
+			randomPart += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+		}
+		candidate = `${prefix}${year}${randomPart}`;
+	} while (existingIds.has(candidate));
+
+	return candidate;
+}
+
+const PHONE_REGEX = /^[0-9]{10,15}$/;
+const PATIENT_TYPE_OPTIONS: Array<{ value: 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | ''; label: string }> = [
+	{ value: 'DYES', label: 'DYES' },
+	{ value: 'VIP', label: 'VIP' },
+	{ value: 'GETHNA', label: 'GETHNA' },
+	{ value: 'PAID', label: 'PAID' },
+];
+const PAYMENT_OPTIONS: Array<{ value: 'with' | 'without'; label: string }> = [
+	{ value: 'with', label: 'With Concession' },
+	{ value: 'without', label: 'Without Concession' },
+];
 
 function normalizeDateInput(raw?: string) {
 	if (!raw) return '';
@@ -197,6 +232,20 @@ export default function Patients() {
 	const [restoreFile, setRestoreFile] = useState<File | null>(null);
 	const [isBackingUp, setIsBackingUp] = useState(false);
 	const [isRestoring, setIsRestoring] = useState(false);
+	const [showRegisterModal, setShowRegisterModal] = useState(false);
+	const [registerForm, setRegisterForm] = useState({
+		fullName: '',
+		dob: '',
+		gender: '' as AdminGenderOption,
+		phone: '',
+		email: '',
+		address: '',
+		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | '',
+		paymentType: '' as 'with' | 'without' | '',
+		paymentDescription: '',
+	});
+	const [registerFormErrors, setRegisterFormErrors] = useState<Partial<Record<keyof typeof registerForm, string>>>({});
+	const [isRegistering, setIsRegistering] = useState(false);
 	const restoreFileInputRef = useRef<HTMLInputElement>(null);
 
 	// Load patients from Firestore
@@ -1004,6 +1053,148 @@ export default function Patients() {
 		}
 	};
 
+	const validateRegisterForm = () => {
+		const errors: Partial<Record<keyof typeof registerForm, string>> = {};
+		if (!registerForm.fullName.trim()) {
+			errors.fullName = 'Please enter the patient\'s full name.';
+		}
+		if (!registerForm.dob) {
+			errors.dob = 'Please provide the date of birth.';
+		}
+		if (!registerForm.gender) {
+			errors.gender = 'Please select gender.';
+		}
+		if (!registerForm.phone.trim()) {
+			errors.phone = 'Please enter a valid phone number (10-15 digits).';
+		} else if (!PHONE_REGEX.test(registerForm.phone.trim())) {
+			errors.phone = 'Please enter a valid phone number (10-15 digits).';
+		}
+		if (registerForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(registerForm.email)) {
+			errors.email = 'Please enter a valid email address.';
+		}
+		if (!registerForm.patientType) {
+			errors.patientType = 'Please select Type of Organization.';
+		}
+		if (registerForm.patientType === 'PAID' && !registerForm.paymentType) {
+			errors.paymentType = 'Please select payment type.';
+		}
+
+		setRegisterFormErrors(errors);
+		return Object.keys(errors).length === 0;
+	};
+
+	const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		if (!validateRegisterForm() || isRegistering) return;
+
+		setIsRegistering(true);
+		try {
+			const patientId = await generatePatientId();
+			
+			const patientData = {
+				patientId,
+				name: registerForm.fullName.trim(),
+				dob: registerForm.dob,
+				gender: registerForm.gender,
+				phone: registerForm.phone.trim(),
+				email: registerForm.email.trim() || null,
+				address: registerForm.address.trim() || null,
+				complaint: '',
+				status: 'pending' as AdminPatientStatus,
+				registeredAt: serverTimestamp(),
+				patientType: registerForm.patientType as 'DYES' | 'VIP' | 'GETHNA' | 'PAID',
+				paymentType: registerForm.patientType === 'PAID' ? (registerForm.paymentType as 'with' | 'without') : 'without' as 'with' | 'without',
+				paymentDescription: registerForm.patientType === 'PAID' ? (registerForm.paymentDescription.trim() || null) : null,
+				sessionAllowance: registerForm.patientType === 'DYES' ? createInitialSessionAllowance() : null,
+			};
+
+			await addDoc(collection(db, 'patients'), patientData);
+
+			// Send registration email if email is provided
+			let emailSent = false;
+			if (registerForm.email.trim()) {
+				try {
+					const emailResult = await sendEmailNotification({
+						to: registerForm.email.trim(),
+						subject: `Welcome to Centre For Sports Science - Patient ID: ${patientId}`,
+						template: 'patient-registered',
+						data: {
+							patientName: registerForm.fullName.trim(),
+							patientEmail: registerForm.email.trim(),
+							patientId,
+						},
+					});
+					emailSent = emailResult.success;
+				} catch (emailError) {
+					console.error('Failed to send registration email:', emailError);
+				}
+			}
+
+			// Send registration SMS if phone is provided
+			let smsSent = false;
+			if (registerForm.phone.trim() && isValidPhoneNumber(registerForm.phone.trim())) {
+				try {
+					const smsResult = await sendSMSNotification({
+						to: registerForm.phone.trim(),
+						template: 'patient-registered',
+						data: {
+							patientName: registerForm.fullName.trim(),
+							patientPhone: registerForm.phone.trim(),
+							patientId,
+						},
+					});
+					smsSent = smsResult.success;
+				} catch (smsError) {
+					console.error('Failed to send registration SMS:', smsError);
+				}
+			}
+
+			// Notify other admins
+			await notifyAdmins(
+				'New Patient Registered',
+				`${user?.displayName || user?.email || 'Super Admin'} registered a new patient: ${registerForm.fullName.trim()} (ID: ${patientId})`,
+				'patient_created',
+				{
+					patientId,
+					patientName: registerForm.fullName.trim(),
+					createdBy: user?.uid || '',
+					createdByName: user?.displayName || user?.email || 'Unknown',
+				},
+				user?.uid
+			);
+
+			// Build confirmation message
+			const confirmations = [];
+			if (emailSent) confirmations.push('email');
+			if (smsSent) confirmations.push('SMS');
+			const confirmationText = confirmations.length > 0 
+				? ` Confirmation sent via ${confirmations.join(' and ')}.`
+				: '';
+
+			alert(`Patient "${registerForm.fullName.trim()}" has been assigned ID ${patientId}.${confirmationText}`);
+
+			// Reset form and close modal
+			setRegisterForm({
+				fullName: '',
+				dob: '',
+				gender: '',
+				phone: '',
+				email: '',
+				address: '',
+				patientType: '',
+				paymentType: '',
+				paymentDescription: '',
+			});
+			setRegisterFormErrors({});
+			setShowRegisterModal(false);
+		} catch (error) {
+			console.error('Failed to register patient', error);
+			alert(`Failed to register patient: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		} finally {
+			setIsRegistering(false);
+		}
+	};
+
 	const handleExportCsv = () => {
 		if (!patients.length) {
 			alert('No patients found to export.');
@@ -1375,6 +1566,18 @@ export default function Patients() {
 										/>
 										<div className="absolute right-0 z-20 mt-2 w-56 origin-top-right rounded-xl bg-white shadow-xl ring-1 ring-black ring-opacity-5 border border-blue-200">
 											<div className="py-1" role="menu" aria-orientation="vertical">
+												<button
+													type="button"
+													onClick={() => {
+														setShowRegisterModal(true);
+														setShowActionsDropdown(false);
+													}}
+													className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+													role="menuitem"
+												>
+													<i className="fas fa-user-plus text-emerald-600" aria-hidden="true" />
+													<span className="font-medium">Register Patient</span>
+												</button>
 												{!showDeletedPatients && (
 													<button
 														type="button"
@@ -1862,6 +2065,250 @@ export default function Patients() {
 					</div>
 				)}
 
+				{/* Register Patient Modal */}
+				{showRegisterModal && (
+					<div
+						role="dialog"
+						aria-modal="true"
+						className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6"
+						onClick={() => setShowRegisterModal(false)}
+					>
+						<div
+							className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl"
+							onClick={e => e.stopPropagation()}
+						>
+							<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sticky top-0 bg-white z-10">
+								<h2 className="text-lg font-semibold text-slate-900">Register Patient</h2>
+								<button
+									type="button"
+									onClick={() => setShowRegisterModal(false)}
+									className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+									aria-label="Close dialog"
+								>
+									<i className="fas fa-times" aria-hidden="true" />
+								</button>
+							</header>
+
+							<form onSubmit={handleRegisterPatient} className="space-y-4 px-6 py-6">
+								{/* Row 1: Full Name (6 cols), DOB (3 cols), Gender (3 cols) */}
+								<div className="grid gap-4 md:grid-cols-12">
+									<div className="md:col-span-6">
+										<label className="block text-sm font-medium text-slate-700">
+											Full Name <span className="text-rose-600">*</span>
+										</label>
+										<input
+											type="text"
+											value={registerForm.fullName}
+											onChange={e => {
+												setRegisterForm(prev => ({ ...prev, fullName: e.target.value }));
+												setRegisterFormErrors(prev => ({ ...prev, fullName: undefined }));
+											}}
+											className="input-base"
+											placeholder="Patient name"
+											required
+										/>
+										{registerFormErrors.fullName && <p className="mt-1 text-xs text-rose-500">{registerFormErrors.fullName}</p>}
+									</div>
+									<div className="md:col-span-3">
+										<label className="block text-sm font-medium text-slate-700">
+											Date of Birth <span className="text-rose-600">*</span>
+										</label>
+										<input
+											type="date"
+											value={registerForm.dob}
+											onChange={e => {
+												setRegisterForm(prev => ({ ...prev, dob: e.target.value }));
+												setRegisterFormErrors(prev => ({ ...prev, dob: undefined }));
+											}}
+											className="input-base"
+											required
+										/>
+										{registerFormErrors.dob && <p className="mt-1 text-xs text-rose-500">{registerFormErrors.dob}</p>}
+									</div>
+									<div className="md:col-span-3">
+										<label className="block text-sm font-medium text-slate-700">
+											Gender <span className="text-rose-600">*</span>
+										</label>
+										<select
+											value={registerForm.gender}
+											onChange={e => {
+												setRegisterForm(prev => ({ ...prev, gender: e.target.value as AdminGenderOption }));
+												setRegisterFormErrors(prev => ({ ...prev, gender: undefined }));
+											}}
+											className="input-base"
+											required
+										>
+											{genderOptions.map(option => (
+												<option key={option.value} value={option.value}>
+													{option.label}
+												</option>
+											))}
+										</select>
+										{registerFormErrors.gender && <p className="mt-1 text-xs text-rose-500">{registerFormErrors.gender}</p>}
+									</div>
+								</div>
+
+								{/* Row 2: Phone (3 cols), Email (6 cols) */}
+								<div className="grid gap-4 md:grid-cols-12">
+									<div className="md:col-span-3">
+										<label className="block text-sm font-medium text-slate-700">
+											Phone Number <span className="text-rose-600">*</span>
+										</label>
+										<input
+											type="tel"
+											value={registerForm.phone}
+											onChange={e => {
+												setRegisterForm(prev => ({ ...prev, phone: e.target.value }));
+												setRegisterFormErrors(prev => ({ ...prev, phone: undefined }));
+											}}
+											className="input-base"
+											placeholder="10-15 digits"
+											required
+										/>
+										{registerFormErrors.phone && <p className="mt-1 text-xs text-rose-500">{registerFormErrors.phone}</p>}
+									</div>
+									<div className="md:col-span-6">
+										<label className="block text-sm font-medium text-slate-700">Email</label>
+										<input
+											type="email"
+											value={registerForm.email}
+											onChange={e => {
+												setRegisterForm(prev => ({ ...prev, email: e.target.value }));
+												setRegisterFormErrors(prev => ({ ...prev, email: undefined }));
+											}}
+											className="input-base"
+											placeholder="name@example.com"
+										/>
+										{registerFormErrors.email && <p className="mt-1 text-xs text-rose-500">{registerFormErrors.email}</p>}
+									</div>
+								</div>
+
+								{/* Row 3: Address */}
+								<div className="grid gap-4 md:grid-cols-12">
+									<div className="md:col-span-9">
+										<label className="block text-sm font-medium text-slate-700">Address</label>
+										<textarea
+											value={registerForm.address}
+											onChange={e => {
+												setRegisterForm(prev => ({ ...prev, address: e.target.value }));
+											}}
+											className="input-base"
+											placeholder="Street, city, postal code"
+											rows={2}
+										/>
+									</div>
+								</div>
+
+								{/* Row 4: Type of Organization */}
+								<div className="grid gap-4 md:grid-cols-12">
+									<div className="md:col-span-12">
+										<label className="block text-sm font-medium text-slate-700">
+											Type of Organization <span className="text-rose-600">*</span>
+										</label>
+										<div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+											{(['DYES', 'VIP', 'GETHNA', 'PAID'] as const).map(type => (
+												<label key={type} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50 cursor-pointer">
+													<input
+														type="radio"
+														name="patientType"
+														value={type}
+														checked={registerForm.patientType === type}
+														onChange={() => {
+															setRegisterForm(prev => ({
+																...prev,
+																patientType: type,
+																paymentType: type === 'PAID' ? prev.paymentType : '',
+															}));
+															setRegisterFormErrors(prev => ({
+																...prev,
+																patientType: undefined,
+																paymentType: undefined,
+															}));
+														}}
+														className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-200"
+													/>
+													<span className="text-sm font-medium text-slate-700">{type}</span>
+												</label>
+											))}
+										</div>
+										{registerFormErrors.patientType && <p className="mt-1 text-xs text-rose-500">{registerFormErrors.patientType}</p>}
+									</div>
+								</div>
+
+								{/* Row 5: Payment Type and Description - Only visible when patientType is 'PAID' */}
+								{registerForm.patientType === 'PAID' && (
+									<div className="grid gap-4 md:grid-cols-12">
+										<div className="md:col-span-6">
+											<label className="block text-sm font-medium text-slate-700">
+												Type of Payment <span className="text-rose-600">*</span>
+											</label>
+											<select
+												value={registerForm.paymentType}
+												onChange={e => {
+													setRegisterForm(prev => ({ ...prev, paymentType: e.target.value as 'with' | 'without' }));
+													setRegisterFormErrors(prev => ({ ...prev, paymentType: undefined }));
+												}}
+												className="input-base"
+												required
+											>
+												<option value="" disabled>Select</option>
+												{PAYMENT_OPTIONS.map(option => (
+													<option key={option.value} value={option.value}>
+														{option.label}
+													</option>
+												))}
+											</select>
+											{registerFormErrors.paymentType && <p className="mt-1 text-xs text-rose-500">{registerFormErrors.paymentType}</p>}
+										</div>
+										<div className="md:col-span-6">
+											<label className="block text-sm font-medium text-slate-700">
+												Payment Description / Concession Reason
+											</label>
+											<input
+												type="text"
+												value={registerForm.paymentDescription}
+												onChange={e => {
+													setRegisterForm(prev => ({ ...prev, paymentDescription: e.target.value }));
+												}}
+												className="input-base"
+												placeholder="Enter details (if any)"
+											/>
+										</div>
+									</div>
+								)}
+
+								<footer className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+									<button
+										type="button"
+										onClick={() => {
+											setShowRegisterModal(false);
+											setRegisterForm({
+												fullName: '',
+												dob: '',
+												gender: '',
+												phone: '',
+												email: '',
+												address: '',
+												patientType: '',
+												paymentType: '',
+												paymentDescription: '',
+											});
+											setRegisterFormErrors({});
+										}}
+										className="btn-secondary"
+									>
+										Cancel
+									</button>
+									<button type="submit" className="btn-primary" disabled={isRegistering}>
+										<i className="fas fa-user-plus text-xs mr-2" aria-hidden="true" />
+										{isRegistering ? 'Registering...' : 'Register Patient'}
+									</button>
+								</footer>
+							</form>
+						</div>
+					</div>
+				)}
+
 				{/* Import modal */}
 				{isImportOpen && (
 					<div
@@ -1970,7 +2417,7 @@ export default function Patients() {
 									type="button"
 									onClick={handleImportConfirm}
 									disabled={!importFile}
-									className="btn-primary"
+										className="btn-primary"
 								>
 									Import {importPreview.length > 0 ? `${importPreview.length} patients` : 'CSV'}
 								</button>
@@ -2033,7 +2480,7 @@ export default function Patients() {
 									type="button"
 									onClick={handleBackup}
 									disabled={isBackingUp || patients.length === 0}
-									className="btn-primary"
+										className="btn-primary"
 								>
 									{isBackingUp ? (
 										<>
@@ -2135,7 +2582,7 @@ export default function Patients() {
 									type="button"
 									onClick={handleRestore}
 									disabled={isRestoring || !restoreFile}
-									className="btn-primary"
+										className="btn-primary"
 								>
 									{isRestoring ? (
 										<>

@@ -268,6 +268,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
 	// Load recent audit logs (all employees, latest first)
 	useEffect(() => {
+		if (!user) return;
+
 		const q = query(
 			collection(db, 'auditLogs'),
 			orderBy('createdAt', 'desc'),
@@ -296,7 +298,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		);
 
 		return () => unsubscribe();
-	}, []);
+	}, [user]);
 
 	// Calculate statistics
 	const stats = useMemo(() => {

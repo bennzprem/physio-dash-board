@@ -24,12 +24,12 @@ service cloud.firestore {
     // Role Checks (Case insensitive just to be safe if you want)
     function isAdmin() {
       let role = getRole();
-      return role == "admin" || role == "Admin" || role == "SuperAdmin" || role == "superadmin";
+      return role == "admin" || role == "Admin" || role == "SuperAdmin" || role == "superadmin" || role == "Super Admin";
     }
     
     function isSuperAdmin() {
       let role = getRole();
-      return role == "SuperAdmin" || role == "superadmin";
+      return role == "SuperAdmin" || role == "superadmin" || role == "Super Admin";
     }
 
     function isFrontdesk() {
@@ -137,14 +137,14 @@ service cloud.firestore {
     // AUDIT LOGS COLLECTION
     // -------------------------------
     match /auditLogs/{id} {
-      // Admins can see all audit logs in the UI
-      allow read: if isAdmin();
+      // Admins and SuperAdmins can see all audit logs in the UI
+      allow read: if isAdmin() || isSuperAdmin();
 
       // Any logged-in user or system component can write audit entries
       allow create: if isLoggedIn();
 
-      // Only admins can modify or delete existing logs
-      allow update, delete: if isAdmin();
+      // Only admins and super admins can modify or delete existing logs
+      allow update, delete: if isAdmin() || isSuperAdmin();
     }
 
     // -------------------------------
@@ -158,6 +158,29 @@ service cloud.firestore {
       allow write: if isLoggedIn() && (
         isAdmin() || 
         isOwnStaffDoc()
+      );
+    }
+
+    // -------------------------------
+    // LEAVE REQUESTS COLLECTION
+    // -------------------------------
+    match /leaveRequests/{id} {
+      // All logged-in users can read leave requests
+      allow read: if isLoggedIn();
+      
+      // Any logged-in user can create leave requests
+      allow create: if isLoggedIn();
+      
+      // Users can update their own requests, or admins can update any request
+      allow update: if isLoggedIn() && (
+        isAdmin() || 
+        (resource != null && resource.data.userId == request.auth.uid)
+      );
+      
+      // Only admins can delete leave requests, or users can delete their own
+      allow delete: if isLoggedIn() && (
+        isAdmin() || 
+        (resource != null && resource.data.userId == request.auth.uid)
       );
     }
 
