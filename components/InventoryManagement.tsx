@@ -84,7 +84,13 @@ export default function InventoryManagement() {
 					} as InventoryItem;
 				});
 
-				setItems(mapped);
+				// Calculate initial remainingQuantity for each item
+				const itemsWithRemaining = mapped.map(item => ({
+					...item,
+					remainingQuantity: Math.max(0, item.totalQuantity - item.issuedQuantity),
+				}));
+
+				setItems(itemsWithRemaining);
 				setLoading(false);
 			},
 			error => {
@@ -99,12 +105,16 @@ export default function InventoryManagement() {
 
 	// Calculate issued and remaining quantities from issue records
 	useEffect(() => {
-		if (items.length === 0 || issueRecords.length === 0) {
-			// If no issue records, just set remaining = total - issued
+		if (items.length === 0) {
+			return;
+		}
+
+		// If no issue records, just set remaining = total - issued
+		if (issueRecords.length === 0) {
 			setItems(prevItems => 
 				prevItems.map(item => ({
 					...item,
-					remainingQuantity: Math.max(0, item.totalQuantity - item.issuedQuantity),
+					remainingQuantity: Math.max(0, item.totalQuantity - (item.issuedQuantity || 0)),
 				}))
 			);
 			return;
@@ -115,6 +125,14 @@ export default function InventoryManagement() {
 			prevItems.map(item => {
 				// Find all issue records for this item
 				const itemIssues = issueRecords.filter(record => record.itemId === item.id);
+				
+				// If no issue records for this item, use stored values
+				if (itemIssues.length === 0) {
+					return {
+						...item,
+						remainingQuantity: Math.max(0, item.totalQuantity - (item.issuedQuantity || 0)),
+					};
+				}
 				
 				// Calculate total issued (sum of all issued quantities, regardless of status)
 				const totalIssued = itemIssues.reduce((sum, record) => sum + record.quantity, 0);
@@ -136,7 +154,7 @@ export default function InventoryManagement() {
 				};
 			})
 		);
-	}, [issueRecords]);
+	}, [items.length, issueRecords]);
 
 	// Load issue records
 	useEffect(() => {
@@ -515,6 +533,7 @@ export default function InventoryManagement() {
 	const isFrontDesk = user?.role === 'FrontDesk' || user?.role === 'frontdesk';
 	const isAdmin = user?.role === 'Admin';
 	const isClinicalTeam = user?.role === 'ClinicalTeam' || user?.role === 'clinic' || user?.role === 'Clinic';
+	const canManageInventory = isFrontDesk || isAdmin || isClinicalTeam;
 
 
 	return (
@@ -547,7 +566,7 @@ export default function InventoryManagement() {
 
 				<div className="flex items-center justify-between">
 					<PageHeader title="Inventory Management" />
-					{(isFrontDesk || isAdmin) && (
+					{canManageInventory && (
 						<button
 							type="button"
 							onClick={() => {
@@ -568,7 +587,7 @@ export default function InventoryManagement() {
 				<section className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200">
 					<div className="flex items-center justify-between mb-4">
 						<h2 className="text-lg font-semibold text-slate-900">Inventory Items</h2>
-						{(isFrontDesk || isAdmin) && (
+						{canManageInventory && (
 							<button
 								type="button"
 								onClick={() => {
@@ -598,7 +617,7 @@ export default function InventoryManagement() {
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Issued</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Returned</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Remaining</th>
-										{(isFrontDesk || isAdmin) && (
+										{canManageInventory && (
 											<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Actions</th>
 										)}
 									</tr>
@@ -612,7 +631,7 @@ export default function InventoryManagement() {
 											<td className="px-4 py-3 text-sm text-slate-600">{item.issuedQuantity}</td>
 											<td className="px-4 py-3 text-sm text-slate-600">{item.returnedQuantity}</td>
 											<td className="px-4 py-3 text-sm font-semibold text-slate-900">{item.remainingQuantity}</td>
-											{(isFrontDesk || isAdmin) && (
+											{canManageInventory && (
 												<td className="px-4 py-3 text-sm">
 													<div className="flex items-center gap-2">
 														<button
@@ -658,7 +677,7 @@ export default function InventoryManagement() {
 				<section className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200">
 					<div className="flex items-center justify-between mb-4">
 						<h2 className="text-lg font-semibold text-slate-900">Items Issued</h2>
-						{isFrontDesk && (
+						{canManageInventory && (
 							<button
 								type="button"
 								onClick={() => setShowReturnModal(true)}
