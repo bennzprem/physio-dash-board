@@ -22,6 +22,7 @@
     "@fullcalendar/timegrid": "^6.1.19",
     "@sentry/nextjs": "^10.25.0",
     "@vercel/analytics": "^1.6.1",
+    "axios": "^1.13.2",
     "chart.js": "^4.5.1",
     "core-js": "^3.40.0",
     "dayjs": "^1.11.19",
