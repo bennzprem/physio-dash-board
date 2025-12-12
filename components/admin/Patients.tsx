@@ -34,6 +34,8 @@ import { notifyAdmins } from '@/lib/notificationUtils';
 import ReportModal from '@/components/frontdesk/ReportModal';
 import { createInitialSessionAllowance } from '@/lib/sessionAllowance';
 import type { SessionAllowance } from '@/lib/types';
+import { checkAppointmentConflict, checkAvailabilityConflict } from '@/lib/appointmentUtils';
+import type { AdminAppointmentRecord } from '@/lib/adminMockData';
 
 const genderOptions: Array<{ value: AdminGenderOption; label: string }> = [
 	{ value: '', label: 'Select' },
@@ -233,6 +235,29 @@ export default function Patients() {
 	const [isBackingUp, setIsBackingUp] = useState(false);
 	const [isRestoring, setIsRestoring] = useState(false);
 	const [showRegisterModal, setShowRegisterModal] = useState(false);
+	const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+	const [bookingLoading, setBookingLoading] = useState(false);
+	const [bookingForm, setBookingForm] = useState({
+		patientId: '',
+		doctor: '',
+		date: '',
+		time: '',
+		notes: '',
+	});
+	const [staff, setStaff] = useState<Array<{
+		id: string;
+		userName: string;
+		role: string;
+		status: string;
+		userEmail?: string;
+		dateSpecificAvailability?: {
+			[date: string]: {
+				enabled: boolean;
+				slots: Array<{ start: string; end: string }>;
+			};
+		};
+	}>>([]);
+	const [appointments, setAppointments] = useState<Array<AdminAppointmentRecord & { id?: string }>>([]);
 	const [registerForm, setRegisterForm] = useState({
 		fullName: '',
 		dob: '',
@@ -293,7 +318,112 @@ export default function Patients() {
 		return () => unsubscribe();
 	}, []);
 
+	// Load staff from Firestore for booking appointments
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'staff'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						id: docSnap.id,
+						userName: data.userName ? String(data.userName) : '',
+						role: data.role ? String(data.role) : '',
+						status: data.status ? String(data.status) : '',
+						userEmail: data.userEmail ? String(data.userEmail) : undefined,
+						dateSpecificAvailability: data.dateSpecificAvailability as {
+							[date: string]: {
+								enabled: boolean;
+								slots: Array<{ start: string; end: string }>;
+							};
+						} | undefined,
+					};
+				});
+				setStaff(mapped);
+			},
+			error => {
+				console.error('Failed to load staff', error);
+				setStaff([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, []);
+
+	// Load appointments from Firestore for conflict checking
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'appointments'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					const created = (data.createdAt as Timestamp | undefined)?.toDate?.();
+					return {
+						id: docSnap.id,
+						appointmentId: data.appointmentId ? String(data.appointmentId) : '',
+						patientId: data.patientId ? String(data.patientId) : '',
+						patient: data.patient ? String(data.patient) : '',
+						doctor: data.doctor ? String(data.doctor) : '',
+						date: data.date ? String(data.date) : '',
+						time: data.time ? String(data.time) : '',
+						status: (data.status as 'pending' | 'ongoing' | 'completed' | 'cancelled') ?? 'pending',
+						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
+					} as AdminAppointmentRecord & { id?: string };
+				});
+				setAppointments(mapped);
+			},
+			error => {
+				console.error('Failed to load appointments', error);
+				setAppointments([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, []);
+
+	const doctorOptionsForBooking = useMemo(() => {
+		const base = staff
+			.filter(member => member.role === 'ClinicalTeam' && member.status !== 'Inactive')
+			.map(member => member.userName)
+			.filter(Boolean)
+			.sort((a, b) => a.localeCompare(b));
+
+		if (!bookingForm.date || !bookingForm.time) {
+			return base;
+		}
+
+		return base.filter(name => {
+			const member = staff.find(staffMember => staffMember.userName === name);
+			if (!member) return false;
+			const availability = checkAvailabilityConflict(
+				member.dateSpecificAvailability,
+				bookingForm.date,
+				bookingForm.time
+			);
+			return availability.isAvailable;
+		});
+	}, [staff, bookingForm.date, bookingForm.time]);
+
 	const doctorOptions = useMemo(() => {
+		const doctors = new Set<string>();
+		patients.forEach(patient => {
+			const candidate = (patient as AdminPatientRecord & { assignedDoctor?: string }).assignedDoctor;
+			if (candidate) doctors.add(candidate);
+		});
+		return Array.from(doctors);
+	}, [patients]);
+
+	const patientSelectOptions = useMemo(() => {
+		return [...patients]
+			.filter(p => !p.deleted)
+			.sort((a, b) => a.name.localeCompare(b.name))
+			.map(patient => ({
+				label: `${patient.name} (${patient.patientId})`,
+				value: patient.patientId,
+			}));
+	}, [patients]);
+
+	const filteredDoctorOptions = useMemo(() => {
 		const doctors = new Set<string>();
 		patients.forEach(patient => {
 			const candidate = (patient as AdminPatientRecord & { assignedDoctor?: string }).assignedDoctor;
@@ -385,6 +515,181 @@ export default function Patients() {
 	}, [selectedPatient]);
 
 	const closeProfile = () => setSelectedPatientId(null);
+
+	// Booking modal handlers
+	useEffect(() => {
+		if (!bookingForm.doctor) return;
+		if (!doctorOptionsForBooking.includes(bookingForm.doctor)) {
+			setBookingForm(prev => ({ ...prev, doctor: '' }));
+		}
+	}, [bookingForm.doctor, doctorOptionsForBooking]);
+
+	const closeBookingModal = () => {
+		setBookingForm({
+			patientId: '',
+			doctor: '',
+			date: '',
+			time: '',
+			notes: '',
+		});
+		setIsBookingModalOpen(false);
+	};
+
+	const handleCreateAppointment = async () => {
+		if (!bookingForm.patientId || !bookingForm.doctor || !bookingForm.date || !bookingForm.time) {
+			alert('Please select patient, clinician, date, and time.');
+			return;
+		}
+
+		const patientRecord = patients.find(p => p.patientId === bookingForm.patientId);
+		const staffMember = staff.find(member => member.userName === bookingForm.doctor);
+
+		if (!patientRecord) {
+			alert('Unable to find the selected patient.');
+			return;
+		}
+
+		if (!staffMember) {
+			alert('Unable to find the selected clinician.');
+			return;
+		}
+
+		const conflict = checkAppointmentConflict(
+			appointments
+				.filter((appointment): appointment is AdminAppointmentRecord & { id: string } => !!appointment.id)
+				.map(appointment => ({
+					id: appointment.id,
+					appointmentId: appointment.appointmentId || '',
+					patient: appointment.patient || '',
+					doctor: appointment.doctor || '',
+					date: appointment.date || '',
+					time: appointment.time || '',
+					status: appointment.status || 'pending',
+				})),
+			{
+				doctor: bookingForm.doctor,
+				date: bookingForm.date,
+				time: bookingForm.time,
+			}
+		);
+
+		if (conflict.hasConflict) {
+			const proceed = window.confirm(
+				`Warning: ${bookingForm.doctor} already has an appointment at this time.\nProceed anyway?`
+			);
+			if (!proceed) {
+				return;
+			}
+		}
+
+		// Check if patient has any existing appointments - consultations can only be created from front desk
+		const patientAllAppointments = appointments.filter(
+			a => a.patientId === bookingForm.patientId
+		);
+		if (patientAllAppointments.length === 0) {
+			alert('Consultations can only be created from the Front Desk. Please ask the front desk to create the first appointment (consultation) for this patient.');
+			return;
+		}
+
+		setBookingLoading(true);
+		try {
+			const appointmentId = `APT${Date.now()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+			const patientWithId = patientRecord as AdminPatientRecord & { id?: string };
+			
+			await addDoc(collection(db, 'appointments'), {
+				appointmentId,
+				patientId: patientRecord.patientId,
+				patient: patientRecord.name,
+				doctor: bookingForm.doctor,
+				date: bookingForm.date,
+				time: bookingForm.time,
+				status: 'pending',
+				notes: bookingForm.notes.trim() || null,
+				isConsultation: false,
+				createdAt: serverTimestamp(),
+			});
+
+			if (patientWithId.id) {
+				const updates: Record<string, unknown> = {
+					assignedDoctor: bookingForm.doctor,
+				};
+				if (!patientRecord.status || patientRecord.status === 'pending') {
+					updates.status = 'ongoing';
+				}
+				await updateDoc(doc(db, 'patients', patientWithId.id), updates);
+			}
+
+			if (patientRecord.email) {
+				try {
+					await sendEmailNotification({
+						to: patientRecord.email,
+						subject: `Appointment Scheduled - ${bookingForm.date}`,
+						template: 'appointment-created',
+						data: {
+							patientName: patientRecord.name,
+							patientEmail: patientRecord.email,
+							patientId: patientRecord.patientId,
+							doctor: bookingForm.doctor,
+							date: bookingForm.date,
+							time: bookingForm.time,
+							appointmentId,
+						},
+					});
+				} catch (emailError) {
+					console.error('Failed to send confirmation email to patient:', emailError);
+				}
+			}
+
+			if (patientRecord.phone && isValidPhoneNumber(patientRecord.phone)) {
+				try {
+					await sendSMSNotification({
+						to: patientRecord.phone,
+						template: 'appointment-created',
+						data: {
+							patientName: patientRecord.name,
+							patientPhone: patientRecord.phone,
+							patientId: patientRecord.patientId,
+							doctor: bookingForm.doctor,
+							date: bookingForm.date,
+							time: bookingForm.time,
+							appointmentId,
+						},
+					});
+				} catch (smsError) {
+					console.error('Failed to send confirmation SMS:', smsError);
+				}
+			}
+
+			if (staffMember.userEmail) {
+				try {
+					await sendEmailNotification({
+						to: staffMember.userEmail,
+						subject: `New Appointment - ${patientRecord.name} on ${bookingForm.date}`,
+						template: 'appointment-created',
+						data: {
+							patientName: patientRecord.name,
+							patientEmail: patientRecord.email || staffMember.userEmail || '',
+							patientId: patientRecord.patientId,
+							doctor: bookingForm.doctor,
+							date: bookingForm.date,
+							time: bookingForm.time,
+							appointmentId,
+						},
+					});
+				} catch (emailError) {
+					console.error('Failed to send notification email to clinician:', emailError);
+				}
+			}
+
+			alert('Appointment booked successfully!');
+			closeBookingModal();
+		} catch (error) {
+			console.error('Failed to create appointment:', error);
+			alert('Failed to create appointment. Please try again.');
+		} finally {
+			setBookingLoading(false);
+		}
+	};
 
 	// Load patient billing and appointments
 	useEffect(() => {
@@ -1578,6 +1883,25 @@ export default function Patients() {
 													<i className="fas fa-user-plus text-emerald-600" aria-hidden="true" />
 													<span className="font-medium">Register Patient</span>
 												</button>
+												<button
+													type="button"
+													onClick={() => {
+														setBookingForm({
+															patientId: '',
+															doctor: '',
+															date: '',
+															time: '',
+															notes: '',
+														});
+														setIsBookingModalOpen(true);
+														setShowActionsDropdown(false);
+													}}
+													className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+													role="menuitem"
+												>
+													<i className="fas fa-calendar-plus text-blue-600" aria-hidden="true" />
+													<span className="font-medium">Book Appointment</span>
+												</button>
 												{!showDeletedPatients && (
 													<button
 														type="button"
@@ -2690,6 +3014,157 @@ export default function Patients() {
 								</span>
 							</button>
 						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Booking Modal */}
+			{isBookingModalOpen && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+					<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+							<div>
+								<h2 className="text-lg font-semibold text-slate-900">Book Appointment</h2>
+								<p className="text-xs text-slate-500">Create a new visit for any patient</p>
+							</div>
+							<button
+								type="button"
+								onClick={closeBookingModal}
+								className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:bg-slate-100 focus-visible:text-slate-600 focus-visible:outline-none"
+								aria-label="Close dialog"
+								disabled={bookingLoading}
+							>
+								<i className="fas fa-times" aria-hidden="true" />
+							</button>
+						</header>
+						<div className="max-h-[70vh] overflow-y-auto px-6 py-4">
+							<div className="space-y-4">
+								<div>
+									<label className="block text-sm font-medium text-slate-700">
+										Patient <span className="text-rose-500">*</span>
+									</label>
+									<select
+										value={bookingForm.patientId}
+										onChange={event => setBookingForm(prev => ({ ...prev, patientId: event.target.value }))}
+										className="select-base mt-2"
+										required
+										disabled={bookingLoading}
+									>
+										<option value="">{patientSelectOptions.length ? 'Select patient' : 'No patients available'}</option>
+										{patientSelectOptions.map(option => (
+											<option key={option.value} value={option.value}>
+												{option.label}
+											</option>
+										))}
+									</select>
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-slate-700">
+										Clinician <span className="text-rose-500">*</span>
+									</label>
+									<select
+										value={bookingForm.doctor}
+										onChange={event => setBookingForm(prev => ({ ...prev, doctor: event.target.value }))}
+										className="select-base mt-2"
+										disabled={!bookingForm.date || !bookingForm.time || bookingLoading}
+										required
+									>
+										<option value="">
+											{!bookingForm.date || !bookingForm.time
+												? 'Select date & time first'
+												: doctorOptionsForBooking.length
+													? 'Select clinician'
+													: 'No clinicians available'}
+										</option>
+										{doctorOptionsForBooking.map(option => (
+											<option key={option} value={option}>
+												{option}
+											</option>
+										))}
+									</select>
+									{(!bookingForm.date || !bookingForm.time) && (
+										<p className="mt-1 text-xs text-slate-500">Pick a date and time to view available clinicians.</p>
+									)}
+									{bookingForm.date && bookingForm.time && doctorOptionsForBooking.length === 0 && (
+										<p className="mt-1 text-xs text-amber-600">
+											No clinicians have availability for {bookingForm.date} at {bookingForm.time}.
+										</p>
+									)}
+								</div>
+
+								<div className="grid gap-4 sm:grid-cols-2">
+									<div>
+										<label className="block text-sm font-medium text-slate-700">
+											Date <span className="text-rose-500">*</span>
+										</label>
+										<input
+											type="date"
+											className="input-base mt-2"
+											value={bookingForm.date}
+											onChange={event => setBookingForm(prev => ({ ...prev, date: event.target.value }))}
+											min={new Date().toISOString().split('T')[0]}
+											required
+											disabled={bookingLoading}
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700">
+											Time <span className="text-rose-500">*</span>
+										</label>
+										<input
+											type="time"
+											className="input-base mt-2"
+											value={bookingForm.time}
+											onChange={event => setBookingForm(prev => ({ ...prev, time: event.target.value }))}
+											required
+											disabled={bookingLoading}
+										/>
+									</div>
+								</div>
+
+								<div>
+									<label className="block text-sm font-medium text-slate-700">Notes (optional)</label>
+									<textarea
+										className="input-base mt-2"
+										rows={3}
+										value={bookingForm.notes}
+										onChange={event => setBookingForm(prev => ({ ...prev, notes: event.target.value }))}
+										placeholder="Add any notes for the clinician..."
+										disabled={bookingLoading}
+									/>
+								</div>
+							</div>
+						</div>
+						<footer className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
+							<button type="button" onClick={closeBookingModal} className="btn-secondary" disabled={bookingLoading}>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleCreateAppointment}
+								className="btn-primary"
+								disabled={
+									bookingLoading ||
+									!bookingForm.patientId ||
+									!bookingForm.doctor ||
+									!bookingForm.date ||
+									!bookingForm.time
+								}
+							>
+								{bookingLoading ? (
+									<>
+										<div className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-white border-t-transparent animate-spin" />
+										Booking...
+									</>
+								) : (
+									<>
+										<i className="fas fa-check text-xs" aria-hidden="true" />
+										Create Appointment
+									</>
+								)}
+							</button>
+						</footer>
 					</div>
 				</div>
 			)}

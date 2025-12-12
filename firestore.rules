@@ -334,19 +334,19 @@ service cloud.firestore {
       // All logged-in users can read inventory items
       allow read: if isLoggedIn();
       
-      // FrontDesk, Admin, and Clinical Team can create/update/delete inventory items
-      allow create, update, delete: if isFrontdesk() || isAdmin() || isClinic();
+      // FrontDesk, Admin, SuperAdmin, and Clinical Team can create/update/delete inventory items
+      allow create, update, delete: if isFrontdesk() || isAdmin() || isSuperAdmin() || isClinic();
     }
 
     match /inventoryIssues/{id} {
       // All logged-in users can read inventory issue records
       allow read: if isLoggedIn();
       
-      // FrontDesk, Admin, and Clinical Team can create/update inventory issue records
-      allow create, update: if isFrontdesk() || isAdmin() || isClinic();
+      // FrontDesk, Admin, SuperAdmin, and Clinical Team can create/update inventory issue records
+      allow create, update: if isFrontdesk() || isAdmin() || isSuperAdmin() || isClinic();
       
-      // Only admins can delete inventory issue records
-      allow delete: if isAdmin();
+      // Only admins and super admins can delete inventory issue records
+      allow delete: if isAdmin() || isSuperAdmin();
     }
 
     // -------------------------------

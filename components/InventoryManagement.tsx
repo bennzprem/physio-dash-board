@@ -9,6 +9,7 @@ import PageHeader from '@/components/PageHeader';
 interface InventoryItem {
 	id: string;
 	name: string;
+	category: 'consumable' | 'non-consumable';
 	type: 'Physiotherapy' | 'Strength and Conditioning' | 'Psychological';
 	totalQuantity: number;
 	issuedQuantity: number;
@@ -23,6 +24,7 @@ interface IssueRecord {
 	itemId: string;
 	itemName: string;
 	itemType: string;
+	itemCategory?: 'consumable' | 'non-consumable';
 	quantity: number;
 	issuedBy: string;
 	issuedByName: string;
@@ -52,7 +54,12 @@ export default function InventoryManagement() {
 	const [showIssueModal, setShowIssueModal] = useState(false);
 	const [showReturnModal, setShowReturnModal] = useState(false);
 
-	const [newItem, setNewItem] = useState({ name: '', type: 'Physiotherapy' as ItemType, totalQuantity: 0 });
+	const [newItem, setNewItem] = useState({ 
+		name: '', 
+		category: '' as 'consumable' | 'non-consumable' | '', 
+		type: 'Physiotherapy' as ItemType, 
+		totalQuantity: 0 
+	});
 	const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
 	const [issueForm, setIssueForm] = useState({ itemId: '', quantity: 0 });
 	const [returnForm, setReturnForm] = useState({ issueRecordId: '', quantity: 0 });
@@ -74,6 +81,9 @@ export default function InventoryManagement() {
 					return {
 						id: docSnap.id,
 						name: data.name || '',
+						category: (data.category === 'consumable' || data.category === 'non-consumable') 
+							? data.category 
+							: 'non-consumable' as 'consumable' | 'non-consumable', // Default to non-consumable for existing items
 						type: data.type || 'Physiotherapy',
 						totalQuantity: data.totalQuantity || 0,
 						issuedQuantity: data.issuedQuantity || 0,
@@ -165,11 +175,26 @@ export default function InventoryManagement() {
 			(snapshot: QuerySnapshot) => {
 				const mapped = snapshot.docs.map(docSnap => {
 					const data = docSnap.data();
+					// Get category from issue record, or fallback to finding it from items
+					let itemCategory: 'consumable' | 'non-consumable' | undefined = 
+						(data.itemCategory === 'consumable' || data.itemCategory === 'non-consumable') 
+							? data.itemCategory 
+							: undefined;
+					
+					// If category not in issue record, try to get it from items array
+					if (!itemCategory && data.itemId) {
+						const relatedItem = items.find(item => item.id === data.itemId);
+						if (relatedItem) {
+							itemCategory = relatedItem.category;
+						}
+					}
+					
 					return {
 						id: docSnap.id,
 						itemId: data.itemId || '',
 						itemName: data.itemName || '',
 						itemType: data.itemType || '',
+						itemCategory: itemCategory,
 						quantity: data.quantity || 0,
 						issuedBy: data.issuedBy || '',
 						issuedByName: data.issuedByName || '',
@@ -196,7 +221,7 @@ export default function InventoryManagement() {
 		);
 
 		return () => unsubscribe();
-	}, [user]);
+	}, [user, items]);
 
 	const handleAddItem = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -216,10 +241,17 @@ export default function InventoryManagement() {
 			return;
 		}
 
+		if (!newItem.category) {
+			alert('Please select a category (Consumable or Non-Consumable)');
+			setSubmitting(false);
+			return;
+		}
+
 		setSubmitting(true);
 		try {
 			await addDoc(collection(db, 'inventoryItems'), {
 				name: newItem.name.trim(),
+				category: newItem.category,
 				type: newItem.type,
 				totalQuantity: newItem.totalQuantity,
 				issuedQuantity: 0,
@@ -230,7 +262,7 @@ export default function InventoryManagement() {
 				updatedAt: serverTimestamp(),
 			});
 
-			setNewItem({ name: '', type: 'Physiotherapy', totalQuantity: 0 });
+			setNewItem({ name: '', category: '', type: 'Physiotherapy', totalQuantity: 0 });
 			setShowAddItemModal(false);
 			alert('Item added successfully!');
 		} catch (error) {
@@ -265,10 +297,17 @@ export default function InventoryManagement() {
 			return;
 		}
 
+		if (!newItem.category) {
+			alert('Please select a category (Consumable or Non-Consumable)');
+			setSubmitting(false);
+			return;
+		}
+
 		setSubmitting(true);
 		try {
 			await updateDoc(doc(db, 'inventoryItems', editingItem.id), {
 				name: newItem.name.trim(),
+				category: newItem.category,
 				type: newItem.type,
 				totalQuantity: newItem.totalQuantity,
 				updatedAt: serverTimestamp(),
@@ -276,7 +315,7 @@ export default function InventoryManagement() {
 				updatedByName: user.displayName || user.email?.split('@')[0] || 'User',
 			});
 
-			setNewItem({ name: '', type: 'Physiotherapy', totalQuantity: 0 });
+			setNewItem({ name: '', category: '', type: 'Physiotherapy', totalQuantity: 0 });
 			setEditingItem(null);
 			setShowAddItemModal(false);
 			alert('Item updated successfully!');
@@ -292,6 +331,7 @@ export default function InventoryManagement() {
 		setEditingItem(item);
 		setNewItem({
 			name: item.name,
+			category: item.category,
 			type: item.type,
 			totalQuantity: item.totalQuantity,
 		});
@@ -392,6 +432,7 @@ export default function InventoryManagement() {
 				itemId: issueForm.itemId,
 				itemName: selectedItem.name,
 				itemType: selectedItem.type,
+				itemCategory: selectedItem.category,
 				quantity: issueForm.quantity,
 				issuedBy: user.uid,
 				issuedByName: user.displayName || user.email?.split('@')[0] || 'FrontDesk',
@@ -432,6 +473,12 @@ export default function InventoryManagement() {
 		const issueRecord = issueRecords.find(r => r.id === returnForm.issueRecordId);
 		if (!issueRecord) {
 			alert('Issue record not found');
+			return;
+		}
+
+		// Check if item is consumable - consumables cannot be returned
+		if (issueRecord.itemCategory === 'consumable') {
+			alert('Consumable items cannot be returned. They are used up when issued.');
 			return;
 		}
 
@@ -478,8 +525,14 @@ export default function InventoryManagement() {
 
 
 	const handleAdminReturnItem = async (record: IssueRecord) => {
-		if (!user || !isAdmin) {
+		if (!user || !isAdminOrSuperAdmin) {
 			alert('Only admins can manually return items');
+			return;
+		}
+
+		// Check if item is consumable - consumables cannot be returned
+		if (record.itemCategory === 'consumable') {
+			alert('Consumable items cannot be returned. They are used up when issued.');
 			return;
 		}
 
@@ -532,8 +585,10 @@ export default function InventoryManagement() {
 
 	const isFrontDesk = user?.role === 'FrontDesk' || user?.role === 'frontdesk';
 	const isAdmin = user?.role === 'Admin';
+	const isSuperAdmin = user?.role === 'SuperAdmin' || user?.role === 'Super Admin' || user?.role === 'superadmin';
+	const isAdminOrSuperAdmin = isAdmin || isSuperAdmin;
 	const isClinicalTeam = user?.role === 'ClinicalTeam' || user?.role === 'clinic' || user?.role === 'Clinic';
-	const canManageInventory = isFrontDesk || isAdmin || isClinicalTeam;
+	const canManageInventory = isFrontDesk || isAdmin || isSuperAdmin || isClinicalTeam;
 
 
 	return (
@@ -571,7 +626,7 @@ export default function InventoryManagement() {
 							type="button"
 							onClick={() => {
 								setEditingItem(null);
-								setNewItem({ name: '', type: 'Physiotherapy', totalQuantity: 0 });
+								setNewItem({ name: '', category: '', type: 'Physiotherapy', totalQuantity: 0 });
 								setShowAddItemModal(true);
 							}}
 							className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-blue-700 hover:via-blue-800 hover:to-indigo-700 transition-all duration-200 hover:scale-105"
@@ -612,6 +667,7 @@ export default function InventoryManagement() {
 								<thead className="bg-slate-50">
 									<tr>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Item Name</th>
+										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Category</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Type</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Total Quantity</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Issued</th>
@@ -626,6 +682,17 @@ export default function InventoryManagement() {
 									{items.map(item => (
 										<tr key={item.id} className="hover:bg-slate-50">
 											<td className="px-4 py-3 text-sm font-medium text-slate-900">{item.name}</td>
+											<td className="px-4 py-3 text-sm">
+												<span
+													className={`px-2 py-1 rounded-full text-xs font-semibold ${
+														item.category === 'consumable'
+															? 'bg-orange-100 text-orange-700'
+															: 'bg-blue-100 text-blue-700'
+													}`}
+												>
+													{item.category === 'consumable' ? 'Consumable' : 'Non-Consumable'}
+												</span>
+											</td>
 											<td className="px-4 py-3 text-sm text-slate-600">{item.type}</td>
 											<td className="px-4 py-3 text-sm text-slate-600">{item.totalQuantity}</td>
 											<td className="px-4 py-3 text-sm text-slate-600">{item.issuedQuantity}</td>
@@ -703,7 +770,7 @@ export default function InventoryManagement() {
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Issued To</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Status</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Returned</th>
-										{isAdmin && (
+										{isAdminOrSuperAdmin && (
 											<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Actions</th>
 										)}
 									</tr>
@@ -711,7 +778,8 @@ export default function InventoryManagement() {
 								<tbody className="divide-y divide-slate-100 bg-white">
 									{issueRecords.map(record => {
 										const remainingToReturn = record.quantity - (record.returnedQuantity || 0);
-										const canReturn = isAdmin && remainingToReturn > 0;
+										const isConsumable = record.itemCategory === 'consumable';
+										const canReturn = isAdminOrSuperAdmin && remainingToReturn > 0 && !isConsumable;
 										
 										return (
 											<tr key={record.id} className="hover:bg-slate-50">
@@ -738,7 +806,7 @@ export default function InventoryManagement() {
 													</span>
 												</td>
 												<td className="px-4 py-3 text-sm text-slate-600">{record.returnedQuantity || 0}</td>
-												{isAdmin && (
+												{isAdminOrSuperAdmin && (
 													<td className="px-4 py-3 text-sm">
 														{canReturn ? (
 															<button
@@ -750,6 +818,10 @@ export default function InventoryManagement() {
 																<i className="fas fa-undo text-xs" aria-hidden="true" />
 																Return
 															</button>
+														) : isConsumable ? (
+															<span className="text-xs text-slate-500 italic" title="Consumable items cannot be returned">
+																Consumable
+															</span>
 														) : (
 															<span className="text-xs text-slate-400">—</span>
 														)}
@@ -797,6 +869,37 @@ export default function InventoryManagement() {
 								/>
 							</div>
 							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-2">
+									Category <span className="text-red-500">*</span>
+								</label>
+								<div className="flex gap-4">
+									<label className="flex items-center gap-2 cursor-pointer">
+										<input
+											type="radio"
+											name="category"
+											value="non-consumable"
+											checked={newItem.category === 'non-consumable'}
+											onChange={e => setNewItem({ ...newItem, category: e.target.value as 'non-consumable', type: 'Physiotherapy' })}
+											className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+											required
+										/>
+										<span className="text-sm text-slate-700">Non Consumables</span>
+									</label>
+									<label className="flex items-center gap-2 cursor-pointer">
+										<input
+											type="radio"
+											name="category"
+											value="consumable"
+											checked={newItem.category === 'consumable'}
+											onChange={e => setNewItem({ ...newItem, category: e.target.value as 'consumable', type: 'Physiotherapy' })}
+											className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+											required
+										/>
+										<span className="text-sm text-slate-700">Consumables</span>
+									</label>
+								</div>
+							</div>
+							<div>
 								<label htmlFor="itemType" className="block text-sm font-medium text-slate-700 mb-2">
 									Type <span className="text-red-500">*</span>
 								</label>
@@ -806,10 +909,23 @@ export default function InventoryManagement() {
 									onChange={e => setNewItem({ ...newItem, type: e.target.value as ItemType })}
 									className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
 									required
+									disabled={!newItem.category}
 								>
-									<option value="Physiotherapy">Physiotherapy</option>
-									<option value="Strength and Conditioning">Strength and Conditioning</option>
-									<option value="Psychological">Psychological</option>
+									{newItem.category === 'non-consumable' ? (
+										<>
+											<option value="Physiotherapy">Physiotherapy</option>
+											<option value="Strength and Conditioning">Strength and Conditioning</option>
+											<option value="Psychological">Psychological</option>
+										</>
+									) : newItem.category === 'consumable' ? (
+										<>
+											<option value="Physiotherapy">Physiotherapy</option>
+											<option value="Strength and Conditioning">Strength and Conditioning</option>
+											<option value="Psychological">Psychological</option>
+										</>
+									) : (
+										<option value="">Select category first</option>
+									)}
 								</select>
 							</div>
 							<div>
@@ -831,7 +947,7 @@ export default function InventoryManagement() {
 									type="button"
 									onClick={() => {
 										setShowAddItemModal(false);
-										setNewItem({ name: '', type: 'Physiotherapy', totalQuantity: 0 });
+										setNewItem({ name: '', category: '', type: 'Physiotherapy', totalQuantity: 0 });
 										setEditingItem(null);
 									}}
 									className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900"
@@ -954,9 +1070,10 @@ export default function InventoryManagement() {
 									<option value="">Select an issue record...</option>
 									{issueRecords
 										.filter(r => {
-											// Show items that are acknowledged and not fully returned
+											// Show only non-consumable items that are acknowledged and not fully returned
 											const remainingToReturn = r.quantity - (r.returnedQuantity || 0);
-											return r.status === 'acknowledged' && remainingToReturn > 0;
+											const isConsumable = r.itemCategory === 'consumable';
+											return r.status === 'acknowledged' && remainingToReturn > 0 && !isConsumable;
 										})
 										.map(record => {
 											const remainingToReturn = record.quantity - (record.returnedQuantity || 0);
