@@ -823,6 +823,7 @@ export default function Transfer() {
 			const patientRef = doc(db, 'patients', patientId);
 			await updateDoc(patientRef, {
 				status: newStatus,
+				updatedAt: serverTimestamp(),
 			});
 			setSuccessMessage(`Patient status updated to ${newStatus.charAt(0).toUpperCase() + newStatus.slice(1)}`);
 			setTimeout(() => setSuccessMessage(null), 3000);

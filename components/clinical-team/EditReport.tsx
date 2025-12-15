@@ -450,6 +450,7 @@ async function refreshPatientSessionProgress(
 
 		const updates: Partial<PatientRecordFull> = {
 			remainingSessions,
+			updatedAt: serverTimestamp(),
 		};
 
 		if (remainingSessions === 0) {
@@ -1062,6 +1063,7 @@ export default function EditReport() {
 			const patientRef = doc(db, 'patients', patientId);
 			await updateDoc(patientRef, {
 				status: newStatus,
+				updatedAt: serverTimestamp(),
 			});
 			// Update local state
 			setPatients(prev => prev.map(p => p.id === patientId ? { ...p, status: newStatus } : p));

@@ -656,6 +656,7 @@ export default function Appointments() {
 				const patientRef = doc(db, 'patients', patientDetails.id);
 				await updateDoc(patientRef, {
 					remainingSessions: newRemaining,
+					updatedAt: serverTimestamp(),
 				});
 
 				setPatients(prev =>
@@ -1149,6 +1150,7 @@ export default function Appointments() {
 					const patientRef = doc(db, 'patients', selectedPatient.id);
 					await updateDoc(patientRef, {
 						remainingSessions: newRemaining,
+						updatedAt: serverTimestamp(),
 					});
 
 					setPatients(prev =>
@@ -1164,6 +1166,7 @@ export default function Appointments() {
 						const patientRef = doc(db, 'patients', selectedPatient.id);
 						const patientUpdate: Record<string, unknown> = {
 							assignedDoctor: selectedStaff.userName,
+							updatedAt: serverTimestamp(),
 						};
 						if (!selectedPatient.status || selectedPatient.status === 'pending') {
 							patientUpdate.status = 'ongoing';
@@ -1257,6 +1260,7 @@ export default function Appointments() {
 							packageAmount: packageAmountValue,
 							concessionPercent: consultationDiscountValue,
 							paymentType: bookingForm.withConsultation ? 'with' : 'without',
+							updatedAt: serverTimestamp(),
 						});
 
 						// Update local state
@@ -1393,6 +1397,7 @@ export default function Appointments() {
 				paymentType: packageForm.consultationType === 'with' ? 'with' : 'without',
 				packageName: packageForm.packageName.trim(),
 				packageDescription: packageForm.description.trim() || null,
+				updatedAt: serverTimestamp(),
 			});
 
 			// Update local state

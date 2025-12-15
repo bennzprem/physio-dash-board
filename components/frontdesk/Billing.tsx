@@ -737,6 +737,17 @@ export default function Billing() {
 	const [selectedBill, setSelectedBill] = useState<BillingRecord | null>(null);
 	const [showPayModal, setShowPayModal] = useState(false);
 	const [showPaymentSlipModal, setShowPaymentSlipModal] = useState(false);
+	const [isEditingReceipt, setIsEditingReceipt] = useState(false);
+	const [editableReceiptData, setEditableReceiptData] = useState<{
+		amount: number;
+		date: string;
+		paymentMode: string;
+		utr: string;
+		patient: string;
+		patientId: string;
+		doctor?: string;
+		appointmentId?: string;
+	} | null>(null);
 	const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI/Card'>('Cash');
 	const [utr, setUtr] = useState('');
 	const [paymentAmount, setPaymentAmount] = useState<number>(0);
@@ -1077,16 +1088,98 @@ export default function Billing() {
 		}
 	};
 
+	// Helper function to convert date string to YYYY-MM-DD format for date input
+	const formatDateForInput = (dateStr: string): string => {
+		if (!dateStr) return '';
+		// If already in YYYY-MM-DD format, return as is
+		if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+		// Try to parse and format
+		try {
+			const date = new Date(dateStr);
+			if (!isNaN(date.getTime())) {
+				const year = date.getFullYear();
+				const month = String(date.getMonth() + 1).padStart(2, '0');
+				const day = String(date.getDate()).padStart(2, '0');
+				return `${year}-${month}-${day}`;
+			}
+		} catch (e) {
+			// If parsing fails, return original
+		}
+		return dateStr;
+	};
+
 	const handleViewPaymentSlip = (bill: BillingRecord) => {
 		setSelectedBill(bill);
+		setIsEditingReceipt(false);
+		setEditableReceiptData({
+			amount: bill.amount,
+			date: formatDateForInput(bill.date),
+			paymentMode: bill.paymentMode || 'Cash',
+			utr: bill.utr || '',
+			patient: bill.patient,
+			patientId: bill.patientId,
+			doctor: bill.doctor,
+			appointmentId: bill.appointmentId,
+		});
 		setShowPaymentSlipModal(true);
+	};
+
+	const handleSaveReceipt = async () => {
+		if (!selectedBill || !editableReceiptData) return;
+
+		try {
+			const billingRef = doc(db, 'billing', selectedBill.id!);
+			await updateDoc(billingRef, {
+				amount: editableReceiptData.amount,
+				date: editableReceiptData.date,
+				paymentMode: editableReceiptData.paymentMode,
+				utr: editableReceiptData.utr || null,
+				patient: editableReceiptData.patient,
+				patientId: editableReceiptData.patientId,
+				doctor: editableReceiptData.doctor || null,
+				appointmentId: editableReceiptData.appointmentId || null,
+				updatedAt: serverTimestamp(),
+			});
+
+			// Update local state
+			setSelectedBill({
+				...selectedBill,
+				amount: editableReceiptData.amount,
+				date: editableReceiptData.date,
+				paymentMode: editableReceiptData.paymentMode,
+				utr: editableReceiptData.utr,
+				patient: editableReceiptData.patient,
+				patientId: editableReceiptData.patientId,
+				doctor: editableReceiptData.doctor,
+				appointmentId: editableReceiptData.appointmentId,
+			});
+
+			setIsEditingReceipt(false);
+			alert('Receipt updated successfully!');
+		} catch (error) {
+			console.error('Failed to update receipt:', error);
+			alert('Failed to update receipt. Please try again.');
+		}
 	};
 
 	const handlePrintPaymentSlip = async () => {
 		if (!selectedBill) return;
 		
-		const receiptNo = selectedBill.billingId || `BILL-${selectedBill.id?.slice(0, 8) || 'NA'}`;
-		const html = await generateReceiptHtml(selectedBill, receiptNo);
+		// Use editable data if available, otherwise use selectedBill
+		const billToPrint = editableReceiptData ? {
+			...selectedBill,
+			amount: editableReceiptData.amount,
+			date: editableReceiptData.date,
+			paymentMode: editableReceiptData.paymentMode,
+			utr: editableReceiptData.utr,
+			patient: editableReceiptData.patient,
+			patientId: editableReceiptData.patientId,
+			doctor: editableReceiptData.doctor,
+			appointmentId: editableReceiptData.appointmentId,
+		} : selectedBill;
+		
+		const receiptNo = billToPrint.billingId || `BILL-${billToPrint.id?.slice(0, 8) || 'NA'}`;
+		const html = await generateReceiptHtml(billToPrint, receiptNo);
 		const printWindow = window.open('', '_blank');
 
 		if (!printWindow) {
@@ -2090,14 +2183,53 @@ export default function Billing() {
 								<h2 className="text-lg font-semibold text-slate-900">
 									Payment Receipt / Acknowledgement
 								</h2>
-								<button
-									type="button"
-									onClick={() => setShowPaymentSlipModal(false)}
-									className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none"
-									aria-label="Close"
-								>
-									<i className="fas fa-times" aria-hidden="true" />
-								</button>
+								<div className="flex items-center gap-2">
+									{!isEditingReceipt ? (
+										<button
+											type="button"
+											onClick={() => setIsEditingReceipt(true)}
+											className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+										>
+											<i className="fas fa-edit text-xs" aria-hidden="true" />
+											Edit Receipt
+										</button>
+									) : (
+										<button
+											type="button"
+											onClick={() => {
+												setIsEditingReceipt(false);
+												// Reset to original values
+												if (selectedBill) {
+													setEditableReceiptData({
+														amount: selectedBill.amount,
+														date: selectedBill.date,
+														paymentMode: selectedBill.paymentMode || 'Cash',
+														utr: selectedBill.utr || '',
+														patient: selectedBill.patient,
+														patientId: selectedBill.patientId,
+														doctor: selectedBill.doctor,
+														appointmentId: selectedBill.appointmentId,
+													});
+												}
+											}}
+											className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
+										>
+											Cancel
+										</button>
+									)}
+									<button
+										type="button"
+										onClick={() => {
+											setShowPaymentSlipModal(false);
+											setIsEditingReceipt(false);
+											setEditableReceiptData(null);
+										}}
+										className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none"
+										aria-label="Close"
+									>
+										<i className="fas fa-times" aria-hidden="true" />
+									</button>
+								</div>
 							</header>
 							<div className="px-6 py-6">
 								<div
@@ -2129,29 +2261,69 @@ export default function Billing() {
 											<p className="text-xs font-bold text-black">
 												Receipt No: {selectedBill.billingId}
 											</p>
-											<p className="text-xs font-bold text-black">Date: {selectedBill.date}</p>
+											{isEditingReceipt && editableReceiptData ? (
+												<input
+													type="date"
+													value={editableReceiptData.date}
+													onChange={e => setEditableReceiptData({ ...editableReceiptData, date: e.target.value })}
+													className="text-xs font-bold text-black border border-gray-300 px-2 py-1 rounded mt-1"
+												/>
+											) : (
+												<p className="text-xs font-bold text-black">Date: {editableReceiptData?.date || selectedBill.date}</p>
+											)}
 										</div>
 									</div>
 									<hr className="border-t border-black my-4" />
 									<div className="flex justify-between mb-4">
 										<div>
 											<div className="text-sm text-black">Received from:</div>
-											<div className="text-lg font-bold mt-1 text-black">{selectedBill.patient}</div>
-											<div className="text-xs text-black mt-1">
-												ID: {selectedBill.patientId}
-											</div>
+											{isEditingReceipt && editableReceiptData ? (
+												<>
+													<input
+														type="text"
+														value={editableReceiptData.patient}
+														onChange={e => setEditableReceiptData({ ...editableReceiptData, patient: e.target.value })}
+														className="text-lg font-bold text-black border border-gray-300 px-2 py-1 rounded mt-1 w-full max-w-xs"
+													/>
+													<input
+														type="text"
+														value={editableReceiptData.patientId}
+														onChange={e => setEditableReceiptData({ ...editableReceiptData, patientId: e.target.value })}
+														placeholder="Patient ID"
+														className="text-xs text-black border border-gray-300 px-2 py-1 rounded mt-1 w-full max-w-xs"
+													/>
+												</>
+											) : (
+												<>
+													<div className="text-lg font-bold mt-1 text-black">{editableReceiptData?.patient || selectedBill.patient}</div>
+													<div className="text-xs text-black mt-1">
+														ID: {editableReceiptData?.patientId || selectedBill.patientId}
+													</div>
+												</>
+											)}
 										</div>
 										<div className="text-right">
 											<div className="text-xs text-black">Amount</div>
-											<div className="text-2xl font-bold mt-1 text-black">
-												Rs. {selectedBill.amount.toFixed(2)}
-											</div>
+											{isEditingReceipt && editableReceiptData ? (
+												<input
+													type="number"
+													step="0.01"
+													min="0"
+													value={editableReceiptData.amount}
+													onChange={e => setEditableReceiptData({ ...editableReceiptData, amount: parseFloat(e.target.value) || 0 })}
+													className="text-2xl font-bold text-black border border-gray-300 px-2 py-1 rounded mt-1 w-32 text-right"
+												/>
+											) : (
+												<div className="text-2xl font-bold mt-1 text-black">
+													Rs. {(editableReceiptData?.amount || selectedBill.amount).toFixed(2)}
+												</div>
+											)}
 										</div>
 									</div>
 									<div className="text-sm font-bold mb-5 text-black">
 										Amount in words:{' '}
 										<span className="font-normal text-black">
-											{numberToWords(selectedBill.amount)}
+											{numberToWords(editableReceiptData?.amount || selectedBill.amount)}
 										</span>
 									</div>
 									<div
@@ -2159,17 +2331,62 @@ export default function Billing() {
 										style={{ height: '120px' }}
 									>
 										<div className="font-bold mb-2 text-black">For</div>
-										<div className="text-sm text-black">
-											{selectedBill.appointmentId || ''}
-											{selectedBill.doctor && (
-												<>
-													<br />
-													Doctor: {selectedBill.doctor}
-												</>
-											)}
-											<br />
-											Payment Mode: {selectedBill.paymentMode || 'Cash'}
-										</div>
+										{isEditingReceipt && editableReceiptData ? (
+											<div className="text-sm text-black space-y-2">
+												<input
+													type="text"
+													value={editableReceiptData.appointmentId || ''}
+													onChange={e => setEditableReceiptData({ ...editableReceiptData, appointmentId: e.target.value })}
+													placeholder="Appointment ID"
+													className="w-full border border-gray-300 px-2 py-1 rounded"
+												/>
+												<input
+													type="text"
+													value={editableReceiptData.doctor || ''}
+													onChange={e => setEditableReceiptData({ ...editableReceiptData, doctor: e.target.value })}
+													placeholder="Doctor Name"
+													className="w-full border border-gray-300 px-2 py-1 rounded"
+												/>
+												<div className="flex items-center gap-2">
+													<label className="text-sm">Payment Mode:</label>
+													<select
+														value={editableReceiptData.paymentMode}
+														onChange={e => setEditableReceiptData({ ...editableReceiptData, paymentMode: e.target.value })}
+														className="border border-gray-300 px-2 py-1 rounded text-sm"
+													>
+														<option value="Cash">Cash</option>
+														<option value="UPI/Card">UPI/Card</option>
+													</select>
+												</div>
+												{editableReceiptData.paymentMode === 'UPI/Card' && (
+													<input
+														type="text"
+														value={editableReceiptData.utr}
+														onChange={e => setEditableReceiptData({ ...editableReceiptData, utr: e.target.value })}
+														placeholder="Txn ID / UTR Number"
+														className="w-full border border-gray-300 px-2 py-1 rounded"
+													/>
+												)}
+											</div>
+										) : (
+											<div className="text-sm text-black">
+												{editableReceiptData?.appointmentId || selectedBill.appointmentId || ''}
+												{(editableReceiptData?.doctor || selectedBill.doctor) && (
+													<>
+														<br />
+														Doctor: {editableReceiptData?.doctor || selectedBill.doctor}
+													</>
+												)}
+												<br />
+												Payment Mode: {editableReceiptData?.paymentMode || selectedBill.paymentMode || 'Cash'}
+												{(editableReceiptData?.utr || selectedBill.utr) && (
+													<>
+														<br />
+														UTR: {editableReceiptData?.utr || selectedBill.utr}
+													</>
+												)}
+											</div>
+										)}
 										<div className="absolute bottom-3 left-0 right-0 text-center text-xs font-bold text-black">
 											Digitally Signed
 										</div>
@@ -2181,20 +2398,60 @@ export default function Billing() {
 								</div>
 							</div>
 							<footer className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-								<button
-									type="button"
-									onClick={handlePrintPaymentSlip}
-									className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500 focus-visible:outline-none"
-								>
-									Download / Print
-								</button>
-								<button
-									type="button"
-									onClick={() => setShowPaymentSlipModal(false)}
-									className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-800 focus-visible:outline-none"
-								>
-									Close
-								</button>
+								{isEditingReceipt ? (
+									<>
+										<button
+											type="button"
+											onClick={handleSaveReceipt}
+											className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+										>
+											<i className="fas fa-save text-xs" aria-hidden="true" />
+											Save Changes
+										</button>
+										<button
+											type="button"
+											onClick={() => {
+												setIsEditingReceipt(false);
+												if (selectedBill) {
+													setEditableReceiptData({
+														amount: selectedBill.amount,
+														date: selectedBill.date,
+														paymentMode: selectedBill.paymentMode || 'Cash',
+														utr: selectedBill.utr || '',
+														patient: selectedBill.patient,
+														patientId: selectedBill.patientId,
+														doctor: selectedBill.doctor,
+														appointmentId: selectedBill.appointmentId,
+													});
+												}
+											}}
+											className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-800 focus-visible:outline-none"
+										>
+											Cancel
+										</button>
+									</>
+								) : (
+									<>
+										<button
+											type="button"
+											onClick={handlePrintPaymentSlip}
+											className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500 focus-visible:outline-none"
+										>
+											Download / Print
+										</button>
+										<button
+											type="button"
+											onClick={() => {
+												setShowPaymentSlipModal(false);
+												setIsEditingReceipt(false);
+												setEditableReceiptData(null);
+											}}
+											className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-800 focus-visible:outline-none"
+										>
+											Close
+										</button>
+									</>
+								)}
 							</footer>
 						</div>
 					</div>

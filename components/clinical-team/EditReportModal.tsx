@@ -236,6 +236,7 @@ async function refreshPatientSessionProgress(
 
 		const updates: Partial<PatientRecordFull> = {
 			remainingSessions,
+			updatedAt: serverTimestamp(),
 		};
 
 		if (remainingSessions === 0) {
