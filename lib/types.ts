@@ -211,6 +211,8 @@ export interface PatientRecordFull {
 	concessionPercent?: number;
 	paymentType?: string;
 	packageDescription?: string;
+	// Timestamp fields
+	updatedAt?: any; // Firestore serverTimestamp
 }
 
 export interface Appointment {
