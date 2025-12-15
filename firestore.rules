@@ -365,13 +365,16 @@ service cloud.firestore {
                     request.resource.data.endTime != null;
       
       // Clinical team members can update their own activities, admins can update any
+      // Allow update if: admin, OR (clinical team AND activity has no staffEmail OR staffEmail matches user)
       allow update: if isLoggedIn() && (
         isAdmin() ||
         (isClinic() && 
          resource != null && 
-         resource.data.staffEmail != null &&
          request.auth.token.email != null &&
-         resource.data.staffEmail.toLowerCase() == request.auth.token.email.toLowerCase())
+         (resource.data.staffEmail == null ||
+          resource.data.staffEmail == '' ||
+          resource.data.staffEmail.toLowerCase() == request.auth.token.email.toLowerCase() ||
+          resource.data.staffEmail == request.auth.token.email))
       );
       
       // Clinical team members can delete their own activities, admins can delete any

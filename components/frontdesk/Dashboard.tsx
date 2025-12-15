@@ -299,9 +299,37 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			const status = (p.status ?? '').toLowerCase();
 			return status === 'ongoing';
 		});
+		// Completed appointments in the last 7 days
+		const now = new Date();
+		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const sevenDaysAgo = new Date(todayStart);
+		sevenDaysAgo.setDate(todayStart.getDate() - 7);
+		
+		const completedAppointmentsThisWeek = appointments.filter(appointment => {
+			if ((appointment.status ?? '').toLowerCase() !== 'completed') return false;
+			const parsed = parseDate(appointment.date, appointment.time);
+			if (!parsed) return false;
+			
+			// Normalize parsed date to start of day for comparison
+			const appointmentDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+			
+			// Include appointments from 7 days ago up to and including today
+			return appointmentDate >= sevenDaysAgo && appointmentDate <= todayStart;
+		});
+
+		// Get unique patient IDs from completed appointments in the last 7 days
+		const patientIdsWithCompletedAppointments = new Set(
+			completedAppointmentsThisWeek
+				.map(apt => apt.patientId)
+				.filter((id): id is string => Boolean(id))
+		);
+
+		// Completed patients: those with status 'completed' OR those with completed appointments in last 7 days
 		const completed = patients.filter(p => {
 			const status = (p.status ?? '').toLowerCase();
-			return status === 'completed';
+			const hasCompletedStatus = status === 'completed';
+			const hasCompletedAppointments = p.patientId && patientIdsWithCompletedAppointments.has(p.patientId);
+			return hasCompletedStatus || hasCompletedAppointments;
 		});
 
 		// Appointment statistics
@@ -319,24 +347,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			const weekAgo = new Date();
 			weekAgo.setDate(weekAgo.getDate() - 7);
 			return aptDate >= weekAgo;
-		});
-
-		// Completed appointments in the last 7 days
-		const now = new Date();
-		const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const sevenDaysAgo = new Date(todayStart);
-		sevenDaysAgo.setDate(todayStart.getDate() - 7);
-		
-		const completedAppointmentsThisWeek = appointments.filter(appointment => {
-			if ((appointment.status ?? '').toLowerCase() !== 'completed') return false;
-			const parsed = parseDate(appointment.date, appointment.time);
-			if (!parsed) return false;
-			
-			// Normalize parsed date to start of day for comparison
-			const appointmentDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
-			
-			// Include appointments from 7 days ago up to and including today
-			return appointmentDate >= sevenDaysAgo && appointmentDate <= todayStart;
 		});
 
 		// Appointments by staff

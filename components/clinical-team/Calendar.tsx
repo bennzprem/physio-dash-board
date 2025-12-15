@@ -1872,11 +1872,22 @@ export default function Calendar() {
 
 										setSavingActivity(true);
 										try {
-											await updateDoc(doc(db, 'activities', editingActivity.id), {
+											// Get the current activity document to check staffEmail
+											const activityRef = doc(db, 'activities', editingActivity.id);
+											
+											// Ensure staffEmail is preserved or added if missing
+											const updateData: Record<string, unknown> = {
 												activityType: activityType,
 												description: activityDescription.trim() || null,
 												updatedAt: serverTimestamp(),
-											});
+											};
+											
+											// If user email is available, ensure staffEmail is set (for activities that might not have it)
+											if (user?.email) {
+												updateData.staffEmail = user.email.toLowerCase();
+											}
+											
+											await updateDoc(activityRef, updateData);
 
 											// Close modal and reset
 											setEditingActivity(null);
@@ -1885,7 +1896,13 @@ export default function Calendar() {
 										} catch (error) {
 											console.error('Failed to update activity:', error);
 											const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-											alert(`Failed to update activity: ${errorMessage}. Please try again.`);
+											
+											// Provide more helpful error message
+											if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
+												alert(`Permission denied: You can only edit activities that belong to you. If this is your activity, please contact an administrator.`);
+											} else {
+												alert(`Failed to update activity: ${errorMessage}. Please try again.`);
+											}
 										} finally {
 											setSavingActivity(false);
 										}
