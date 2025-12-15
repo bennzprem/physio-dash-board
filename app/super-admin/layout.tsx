@@ -19,9 +19,11 @@ import LeaveManagement from '@/components/LeaveManagement';
 import AdminLeaveManagement from '@/components/admin/LeaveManagement';
 import LeaveRequestNotification from '@/components/admin/LeaveRequestNotification';
 import ClinicalTeamActivities from '@/components/admin/ClinicalTeamActivities';
+import RatingApprovals from '@/components/admin/RatingApprovals';
+import PerformanceRating from '@/components/clinical-team/PerformanceRating';
 import { useAuth } from '@/contexts/AuthContext';
 
-type SuperAdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'clinical-activities';
+type SuperAdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'clinical-activities' | 'rating-approvals' | 'performance-rating';
 
 // Get sidebar links based on user permissions
 const getSuperAdminLinks = (isExclusiveSuperAdmin: boolean): SidebarLink[] => {
@@ -38,6 +40,8 @@ const getSuperAdminLinks = (isExclusiveSuperAdmin: boolean): SidebarLink[] => {
 		{ href: '#headers', label: 'Header Management', icon: 'fas fa-heading' },
 		{ href: '#audit', label: 'Audit Logs', icon: 'fas fa-clipboard-list' },
 		{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
+		{ href: '#rating-approvals', label: 'Rating Approvals', icon: 'fas fa-check-circle' },
+		{ href: '#performance-rating', label: 'Performance Rating', icon: 'fas fa-star' },
 	];
 
 	// Only add Clinical Team Activities for exclusive Super Admin
@@ -57,6 +61,10 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 
 	// Check if user is the exclusive Super Admin
 	const isExclusiveSuperAdmin = user?.email?.toLowerCase() === 'antonychacko@css.com';
+
+	// Check if user is an authorized rater
+	const AUTHORIZED_RATERS = ['dharanjaydubey@css.com', 'shajisp@css.com'];
+	const isAuthorizedRater = user?.email && AUTHORIZED_RATERS.includes(user.email.toLowerCase());
 
 	// Simple client-side role guard: only SuperAdmin can access /super-admin
 	useEffect(() => {
@@ -142,6 +150,10 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 			return <Profile />;
 		case 'clinical-activities':
 			return <ClinicalTeamActivities />;
+		case 'rating-approvals':
+			return <RatingApprovals />;
+		case 'performance-rating':
+			return <PerformanceRating />;
 		default:
 			return <Dashboard onNavigate={handleLinkClick} />;
 		}
@@ -156,12 +168,22 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 		);
 	}
 
+	// Get links and filter based on permissions
+	const allLinks = getSuperAdminLinks(isExclusiveSuperAdmin);
+	const filteredLinks = allLinks.filter(link => {
+		// Only show Performance Rating to authorized raters
+		if (link.href === '#performance-rating' && !isAuthorizedRater) {
+			return false;
+		}
+		return true;
+	});
+
 	return (
 		<div className="min-h-svh bg-purple-50">
 			<LeaveRequestNotification onNavigateToLeave={handleNavigateToLeave} />
 			<Sidebar 
 				title="Super Admin" 
-				links={getSuperAdminLinks(isExclusiveSuperAdmin)} 
+				links={filteredLinks} 
 				onLinkClick={handleLinkClick}
 				activeHref={`#${activePage}`}
 				onProfileClick={handleProfileClick}

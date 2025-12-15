@@ -18,9 +18,11 @@ import InventoryManagement from '@/components/InventoryManagement';
 import LeaveManagement from '@/components/LeaveManagement';
 import AdminLeaveManagement from '@/components/admin/LeaveManagement';
 import LeaveRequestNotification from '@/components/admin/LeaveRequestNotification';
+import RatingApprovals from '@/components/admin/RatingApprovals';
+import PerformanceRating from '@/components/clinical-team/PerformanceRating';
 import { useAuth } from '@/contexts/AuthContext';
 
-type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile';
+type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'rating-approvals' | 'performance-rating';
 
 const adminLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-columns' },
@@ -35,12 +37,18 @@ const adminLinks: SidebarLink[] = [
 	{ href: '#headers', label: 'Header Management', icon: 'fas fa-heading' },
 	{ href: '#audit', label: 'Audit Logs', icon: 'fas fa-clipboard-list' },
 	{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
+	{ href: '#rating-approvals', label: 'Rating Approvals', icon: 'fas fa-check-circle' },
+	{ href: '#performance-rating', label: 'Performance Rating', icon: 'fas fa-star' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
 	const router = useRouter();
 	const { user, loading } = useAuth();
 	const [activePage, setActivePage] = useState<AdminPage>('dashboard');
+
+	// Check if user is an authorized rater
+	const AUTHORIZED_RATERS = ['dharanjaydubey@css.com', 'shajisp@css.com'];
+	const isAuthorizedRater = user?.email && AUTHORIZED_RATERS.includes(user.email.toLowerCase());
 
 	// Simple client-side role guard: only Admin can access /admin
 	useEffect(() => {
@@ -107,6 +115,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 			return <AdminLeaveManagement />;
 		case 'profile':
 			return <Profile />;
+		case 'rating-approvals':
+			return <RatingApprovals />;
+		case 'performance-rating':
+			return <PerformanceRating />;
 		default:
 			return <Dashboard onNavigate={handleLinkClick} />;
 		}
@@ -121,12 +133,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 		);
 	}
 
+	// Filter links based on user permissions
+	const filteredAdminLinks = adminLinks.filter(link => {
+		// Only show Performance Rating to authorized raters
+		if (link.href === '#performance-rating' && !isAuthorizedRater) {
+			return false;
+		}
+		return true;
+	});
+
 	return (
 		<div className="min-h-svh bg-purple-50">
 			<LeaveRequestNotification onNavigateToLeave={handleNavigateToLeave} />
 			<Sidebar 
 				title="Admin" 
-				links={adminLinks} 
+				links={filteredAdminLinks} 
 				onLinkClick={handleLinkClick}
 				activeHref={`#${activePage}`}
 				onProfileClick={handleProfileClick}

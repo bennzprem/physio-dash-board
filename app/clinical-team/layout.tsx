@@ -12,11 +12,12 @@ import Notifications from '@/components/admin/Notifications';
 import Profile from '@/components/Profile';
 import TransferManagement from '@/components/clinical-team/TransferManagement';
 import MyPerformance from '@/components/clinical-team/MyPerformance';
+import PerformanceRating from '@/components/clinical-team/PerformanceRating';
 import InventoryManagement from '@/components/InventoryManagement';
 import LeaveManagement from '@/components/LeaveManagement';
 import { useAuth } from '@/contexts/AuthContext';
 
-type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'availability' | 'transfer' | 'appointments' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'my-performance';
+type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'availability' | 'transfer' | 'appointments' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'my-performance' | 'performance-rating';
 
 const clinicalTeamLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-dumbbell' },
@@ -29,6 +30,7 @@ const clinicalTeamLinks: SidebarLink[] = [
 	{ href: '#availability', label: 'My Availability', icon: 'fas fa-calendar-check' },
 	{ href: '#transfer', label: 'Transfer Management', icon: 'fas fa-exchange-alt' },
 	{ href: '#my-performance', label: 'My Performance', icon: 'fas fa-chart-line' },
+	{ href: '#performance-rating', label: 'Performance Rating', icon: 'fas fa-star' },
 ];
 
 export default function ClinicalTeamLayout({ children }: { children: React.ReactNode }) {
@@ -38,7 +40,11 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 	const [activePage, setActivePage] = useState<ClinicalTeamPage>('dashboard');
 	const isNavigatingRef = useRef(false);
 
-	// Role guard: only Clinical team can access /clinical-team
+	// Authorized raters who can access Performance Rating
+	const AUTHORIZED_RATERS = ['dharanjaydubey@css.com', 'shajisp@css.com'];
+	const isAuthorizedRater = user?.email && AUTHORIZED_RATERS.includes(user.email.toLowerCase());
+
+	// Role guard: only Clinical team can access /clinical-team (except authorized raters)
 	useEffect(() => {
 		if (loading) return;
 
@@ -51,7 +57,8 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 		const isClinical =
 			role === 'ClinicalTeam' || role === 'clinic' || role === 'Clinic';
 
-		if (!isClinical) {
+		// Allow authorized raters to access the clinical team dashboard
+		if (!isClinical && !isAuthorizedRater) {
 			if (role === 'Admin' || role === 'admin') {
 				router.replace('/admin');
 			} else if (role === 'FrontDesk' || role === 'frontdesk') {
@@ -60,7 +67,7 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 				router.replace('/login');
 			}
 		}
-	}, [user, loading, router]);
+	}, [user, loading, router, isAuthorizedRater]);
 
 	// Detect route from pathname
 	useEffect(() => {
@@ -90,6 +97,8 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 			setActivePage('profile');
 		} else if (pathname?.includes('/my-performance')) {
 			setActivePage('my-performance');
+		} else if (pathname?.includes('/performance-rating')) {
+			setActivePage('performance-rating');
 		}
 		// Don't set to dashboard when on base route - let hash navigation handle it
 	}, [pathname]);
@@ -148,13 +157,23 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 				return <Profile />;
 			case 'my-performance':
 				return <MyPerformance />;
+			case 'performance-rating':
+				return <PerformanceRating />;
 			default:
 				return <Dashboard onNavigate={handleLinkClick} />;
 		}
 	};
 
 	// Avoid flashing clinical UI while checking auth / redirecting
-	if (loading || !user || !(user.role === 'ClinicalTeam' || user.role === 'clinic' || user.role === 'Clinic')) {
+	// Allow authorized raters even if they don't have ClinicalTeam role
+	const hasAccess = user && (
+		user.role === 'ClinicalTeam' || 
+		user.role === 'clinic' || 
+		user.role === 'Clinic' ||
+		isAuthorizedRater
+	);
+
+	if (loading || !user || !hasAccess) {
 		return (
 			<div className="min-h-svh flex items-center justify-center bg-purple-50">
 				<div className="text-slate-600 text-sm">Checking access…</div>

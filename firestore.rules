@@ -386,6 +386,61 @@ service cloud.firestore {
     }
 
     // -------------------------------
+    // STAFF RATINGS COLLECTION
+    // -------------------------------
+    // Stores performance ratings for clinical team members
+    match /staffRatings/{ratingId} {
+      // Helper function to check if user is an authorized rater
+      function isAuthorizedRater() {
+        return isLoggedIn() && 
+               request.auth.token.email != null &&
+               (request.auth.token.email.toLowerCase() == 'dharanjaydubey@css.com' ||
+                request.auth.token.email.toLowerCase() == 'shajisp@css.com');
+      }
+      
+      // Helper function to check if user is Super Admin
+      function isSuperAdminEmail() {
+        return isLoggedIn() && 
+               request.auth.token.email != null &&
+               request.auth.token.email.toLowerCase() == 'antonychacko@css.com';
+      }
+      
+      // Raters can read their own submitted ratings
+      // Super Admin can read all ratings (especially pending ones)
+      allow read: if isLoggedIn() && (
+        (isAuthorizedRater() && 
+         resource != null && 
+         resource.data.raterEmail != null &&
+         request.auth.token.email != null &&
+         resource.data.raterEmail.toLowerCase() == request.auth.token.email.toLowerCase()) ||
+        isSuperAdminEmail()
+      );
+      
+      // Authorized raters can create ratings with Pending status
+      allow create: if isLoggedIn() && 
+                    isAuthorizedRater() &&
+                    request.resource.data.ratedStaffId != null &&
+                    request.resource.data.ratedStaffName != null &&
+                    request.resource.data.raterId != null &&
+                    request.resource.data.raterName != null &&
+                    request.resource.data.raterEmail != null &&
+                    request.resource.data.rating != null &&
+                    request.resource.data.criteria != null &&
+                    request.resource.data.status == 'Pending';
+      
+      // Super Admin can update ratings (approve/reject)
+      allow update: if isLoggedIn() && 
+                    isSuperAdminEmail() &&
+                    resource != null &&
+                    resource.data.status == 'Pending' &&
+                    (request.resource.data.status == 'Approved' || 
+                     request.resource.data.status == 'Rejected');
+      
+      // Only Super Admin can delete ratings
+      allow delete: if isLoggedIn() && isSuperAdminEmail();
+    }
+
+    // -------------------------------
     // DENY EVERYTHING ELSE
     // -------------------------------
     match /{document=**} {
