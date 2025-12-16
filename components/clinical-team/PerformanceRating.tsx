@@ -59,6 +59,7 @@ export default function PerformanceRating() {
 	const [comments, setComments] = useState('');
 	const [submitting, setSubmitting] = useState(false);
 	const [submittedRatings, setSubmittedRatings] = useState<StaffRating[]>([]);
+	const [myRatings, setMyRatings] = useState<StaffRating[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
@@ -118,9 +119,9 @@ export default function PerformanceRating() {
 		return () => unsubscribe();
 	}, []);
 
-	// Load submitted ratings by current user
+	// Load submitted ratings by current user (for raters)
 	useEffect(() => {
-		if (!user?.email) return;
+		if (!user?.email || !canRate) return;
 
 		const unsubscribe = onSnapshot(
 			query(collection(db, 'staffRatings'), where('raterEmail', '==', user.email.toLowerCase())),
@@ -137,12 +138,56 @@ export default function PerformanceRating() {
 		);
 
 		return () => unsubscribe();
-	}, [user?.email]);
+	}, [user?.email, canRate]);
+
+	// Load ratings received by current user (for clinical team members to view their own ratings)
+	useEffect(() => {
+		if (!user?.email || canRate) return;
+
+		const unsubscribe = onSnapshot(
+			query(collection(db, 'staffRatings'), where('ratedStaffEmail', '==', user.email.toLowerCase())),
+			(snapshot) => {
+				const mapped = snapshot.docs.map((docSnap) => ({
+					id: docSnap.id,
+					...docSnap.data(),
+				})) as StaffRating[];
+				// Only show approved ratings
+				const approvedRatings = mapped.filter(r => r.status === 'Approved');
+				setMyRatings(approvedRatings.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis()));
+			},
+			(error) => {
+				console.error('Failed to load my ratings', error);
+			}
+		);
+
+		return () => unsubscribe();
+	}, [user?.email, canRate]);
 
 	// Filter staff that can be rated by current user
 	const rateableStaff = useMemo(() => {
 		return staff.filter((s) => canRateStaff(s));
 	}, [staff, canRate]);
+
+	// Calculate statistics for viewing own ratings
+	const ratingStats = useMemo(() => {
+		if (myRatings.length === 0) return null;
+		
+		const totalRatings = myRatings.length;
+		const averageRating = myRatings.reduce((sum, r) => sum + r.rating, 0) / totalRatings;
+		const ratingDistribution = {
+			5: myRatings.filter(r => r.rating === 5).length,
+			4: myRatings.filter(r => r.rating === 4).length,
+			3: myRatings.filter(r => r.rating === 3).length,
+			2: myRatings.filter(r => r.rating === 2).length,
+			1: myRatings.filter(r => r.rating === 1).length,
+		};
+		
+		return {
+			totalRatings,
+			averageRating: Math.round(averageRating * 10) / 10,
+			ratingDistribution,
+		};
+	}, [myRatings]);
 
 	const handleSubmit = async () => {
 		if (!selectedStaff || !rating || !user?.email || !user?.displayName) {
@@ -198,18 +243,203 @@ export default function PerformanceRating() {
 		);
 	}
 
+	// View mode for clinical team members to see their own ratings
 	if (!canRate) {
 		return (
 			<div className="min-h-svh bg-purple-50 px-6 py-10">
-				<div className="mx-auto max-w-6xl">
-					<PageHeader title="Performance Rating" />
-					<div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-6 text-center">
-						<i className="fas fa-lock mb-4 text-4xl text-amber-600"></i>
-						<h3 className="mb-2 text-lg font-semibold text-amber-900">Access Restricted</h3>
-						<p className="text-sm text-amber-700">
-							You do not have permission to submit performance ratings. Only authorized raters can access this feature.
-						</p>
-					</div>
+				<div className="mx-auto max-w-6xl space-y-8">
+					<PageHeader title="My Performance Ratings" />
+
+					{loading ? (
+						<div className="flex items-center justify-center py-20">
+							<div className="text-center">
+								<div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-purple-600 border-r-transparent"></div>
+								<p className="text-sm text-slate-600">Loading your ratings...</p>
+							</div>
+						</div>
+					) : myRatings.length === 0 ? (
+						<div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+							<div className="mb-4 inline-block rounded-full bg-slate-100 p-6">
+								<i className="fas fa-star text-4xl text-slate-400"></i>
+							</div>
+							<h3 className="mb-2 text-xl font-semibold text-slate-900">No Ratings Yet</h3>
+							<p className="text-sm text-slate-600">
+								You haven't received any approved performance ratings yet. Keep up the great work!
+							</p>
+						</div>
+					) : (
+						<>
+							{/* Statistics Card with Animation */}
+							<div className="relative overflow-hidden rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50 p-8 shadow-lg">
+								{/* Animated background stars */}
+								<div className="absolute inset-0 overflow-hidden">
+									{[...Array(20)].map((_, i) => (
+										<div
+											key={i}
+											className="absolute animate-pulse"
+											style={{
+												left: `${Math.random() * 100}%`,
+												top: `${Math.random() * 100}%`,
+												animationDelay: `${Math.random() * 2}s`,
+												animationDuration: `${2 + Math.random() * 2}s`,
+											}}
+										>
+											<i className="fas fa-star text-yellow-300 opacity-30"></i>
+										</div>
+									))}
+								</div>
+								
+								<div className="relative z-10">
+									<div className="mb-6 text-center">
+										<h2 className="mb-2 text-2xl font-bold text-slate-900">Your Performance Summary</h2>
+										<p className="text-sm text-slate-600">Based on {ratingStats?.totalRatings} approved rating{ratingStats?.totalRatings !== 1 ? 's' : ''}</p>
+									</div>
+
+									<div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+										{/* Average Rating Card */}
+										<div className="rounded-xl border border-purple-200 bg-white p-6 shadow-md">
+											<div className="mb-4 text-center">
+												<div className="mb-3 inline-block animate-bounce">
+													<div className="text-5xl font-bold text-purple-600">
+														{ratingStats?.averageRating.toFixed(1)}
+													</div>
+												</div>
+												<p className="text-sm font-medium text-slate-700">Average Rating</p>
+											</div>
+											<div className="flex justify-center">
+												{[1, 2, 3, 4, 5].map((star) => (
+													<div
+														key={star}
+														className="transform transition-all duration-500 hover:scale-125"
+														style={{
+															animationDelay: `${star * 0.1}s`,
+														}}
+													>
+														<i
+															className={`fas fa-star text-2xl ${
+																star <= Math.round(ratingStats?.averageRating || 0)
+																	? 'text-yellow-400 animate-pulse'
+																	: 'text-slate-300'
+															}`}
+															style={{
+																animationDelay: `${star * 0.1}s`,
+															}}
+														></i>
+													</div>
+												))}
+											</div>
+										</div>
+
+										{/* Total Ratings Card */}
+										<div className="rounded-xl border border-indigo-200 bg-white p-6 shadow-md">
+											<div className="mb-4 text-center">
+												<div className="mb-3 inline-block animate-pulse">
+													<i className="fas fa-trophy text-5xl text-indigo-500"></i>
+												</div>
+												<div className="text-4xl font-bold text-indigo-600">
+													{ratingStats?.totalRatings}
+												</div>
+												<p className="text-sm font-medium text-slate-700">Total Ratings</p>
+											</div>
+										</div>
+									</div>
+
+									{/* Rating Distribution */}
+									<div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-md">
+										<h3 className="mb-4 text-lg font-semibold text-slate-900">Rating Distribution</h3>
+										<div className="space-y-3">
+											{[5, 4, 3, 2, 1].map((star) => {
+												const count = ratingStats?.ratingDistribution[star as keyof typeof ratingStats.ratingDistribution] || 0;
+												const percentage = ratingStats ? (count / ratingStats.totalRatings) * 100 : 0;
+												return (
+													<div key={star} className="flex items-center gap-4">
+														<div className="flex w-24 items-center gap-2">
+															<span className="text-sm font-medium text-slate-700">{star} Star{star > 1 ? 's' : ''}</span>
+															<div className="flex">
+																{[...Array(star)].map((_, i) => (
+																	<i key={i} className="fas fa-star text-yellow-400 text-xs"></i>
+																))}
+															</div>
+														</div>
+														<div className="flex-1">
+															<div className="h-4 overflow-hidden rounded-full bg-slate-200">
+																<div
+																	className="h-full rounded-full bg-gradient-to-r from-yellow-400 to-yellow-500 transition-all duration-1000 ease-out"
+																	style={{ width: `${percentage}%` }}
+																></div>
+															</div>
+														</div>
+														<div className="w-12 text-right text-sm font-semibold text-slate-700">
+															{count}
+														</div>
+													</div>
+												);
+											})}
+										</div>
+									</div>
+								</div>
+							</div>
+
+							{/* Recent Ratings List */}
+							<div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+								<h2 className="mb-6 text-xl font-semibold text-slate-900">Recent Ratings</h2>
+								<div className="space-y-4">
+									{myRatings.map((ratingRecord, index) => (
+										<div
+											key={ratingRecord.id}
+											className="transform rounded-lg border-2 border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 p-6 shadow-md transition-all duration-500 hover:scale-[1.02] hover:shadow-lg"
+											style={{
+												animation: `fadeInUp 0.6s ease-out ${index * 0.1}s both`,
+											}}
+										>
+											<div className="flex items-start justify-between">
+												<div className="flex-1">
+													<div className="mb-3 flex items-center gap-3">
+														<div className="flex items-center gap-2">
+															{[...Array(ratingRecord.rating)].map((_, i) => (
+																<i
+																	key={i}
+																	className="fas fa-star text-yellow-400 animate-pulse"
+																	style={{
+																		animationDelay: `${i * 0.1}s`,
+																	}}
+																></i>
+															))}
+															{[...Array(5 - ratingRecord.rating)].map((_, i) => (
+																<i key={i} className="far fa-star text-slate-300"></i>
+															))}
+														</div>
+														<span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
+															Approved
+														</span>
+													</div>
+													<h3 className="mb-2 text-lg font-semibold text-slate-900">
+														{ratingRecord.criteria}
+													</h3>
+													{ratingRecord.comments && (
+														<p className="mb-3 text-sm text-slate-700 italic">
+															"{ratingRecord.comments}"
+														</p>
+													)}
+													<div className="flex items-center gap-4 text-xs text-slate-500">
+														<span>
+															<i className="fas fa-user mr-1"></i>
+															Rated by: {ratingRecord.raterName}
+														</span>
+														<span>
+															<i className="fas fa-calendar mr-1"></i>
+															{ratingRecord.createdAt?.toDate?.().toLocaleDateString() ||
+																new Date(ratingRecord.createdAt as any).toLocaleDateString()}
+														</span>
+													</div>
+												</div>
+											</div>
+										</div>
+									))}
+								</div>
+							</div>
+						</>
+					)}
 				</div>
 			</div>
 		);

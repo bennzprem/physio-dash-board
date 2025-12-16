@@ -166,3 +166,15 @@ body {
     opacity: 1;
   }
 }
+
+/* Animation for fade in up effect */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
