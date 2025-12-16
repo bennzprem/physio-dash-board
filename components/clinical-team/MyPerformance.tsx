@@ -436,6 +436,7 @@ export default function MyPerformance() {
 			.reduce((total, bill) => total + (bill.amount || 0), 0);
 
 		// Revenue by DYES vs non-DYES
+		// Use full patients array (not filtered) to find patient type for billing records
 		const revenueByType = {
 			DYES: 0,
 			nonDYES: 0,
@@ -444,7 +445,8 @@ export default function MyPerformance() {
 		bills
 			.filter(bill => bill.status === 'Completed')
 			.forEach(bill => {
-				const patient = pats.find(p => p.patientId === bill.patientId);
+				// Use full patients array instead of filtered pats to ensure we can find the patient
+				const patient = patients.find(p => p.patientId === bill.patientId);
 				const isDYES = patient && (patient.patientType || '').toUpperCase() === 'DYES';
 				if (isDYES) {
 					revenueByType.DYES += bill.amount || 0;
@@ -525,7 +527,7 @@ export default function MyPerformance() {
 			appointmentsByDepartment,
 			appointmentHoursByDepartment,
 		};
-	}, [filteredData, staffName]);
+	}, [filteredData, staffName, patients]);
 
 	if (loading) {
 		return (

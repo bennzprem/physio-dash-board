@@ -24,6 +24,7 @@ interface FrontdeskAppointment {
 	patientId: string;
 	patient: string;
 	doctor: string;
+	staffId?: string;
 	date: string;
 	time: string;
 	duration?: number;
@@ -168,6 +169,8 @@ export default function Appointments() {
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [notesDraft, setNotesDraft] = useState('');
 	const [updating, setUpdating] = useState<Record<string, boolean>>({});
+	const [editingDateTimeId, setEditingDateTimeId] = useState<string | null>(null);
+	const [dateTimeDraft, setDateTimeDraft] = useState<{ date: string; time: string }>({ date: '', time: '' });
 	const [showBookingModal, setShowBookingModal] = useState(false);
 	const [bookingForm, setBookingForm] = useState<BookingForm>({
 		patientIds: [],
@@ -230,6 +233,7 @@ export default function Appointments() {
 						patientId: data.patientId ? String(data.patientId) : '',
 						patient: data.patient ? String(data.patient) : '',
 						doctor: data.doctor ? String(data.doctor) : '',
+						staffId: data.staffId ? String(data.staffId) : undefined,
 						date: data.date ? String(data.date) : '',
 						time: data.time ? String(data.time) : '',
 						duration: typeof data.duration === 'number' ? data.duration : undefined,
@@ -1026,6 +1030,50 @@ export default function Appointments() {
 	const handleCancelEditing = () => {
 		setEditingId(null);
 		setNotesDraft('');
+		setEditingDateTimeId(null);
+		setDateTimeDraft({ date: '', time: '' });
+	};
+
+	const handleEditDateTime = (appointment: FrontdeskAppointment) => {
+		setEditingDateTimeId(appointment.appointmentId);
+		setDateTimeDraft({
+			date: appointment.date || '',
+			time: appointment.time || '',
+		});
+	};
+
+	const handleSaveDateTime = async () => {
+		if (!editingDateTimeId) return;
+
+		const appointment = appointments.find(a => a.appointmentId === editingDateTimeId);
+		if (!appointment) return;
+
+		// Validate date and time
+		if (!dateTimeDraft.date || !dateTimeDraft.date.trim()) {
+			alert('Please select a date.');
+			return;
+		}
+		if (!dateTimeDraft.time || !dateTimeDraft.time.trim()) {
+			alert('Please enter a time.');
+			return;
+		}
+
+		setUpdating(prev => ({ ...prev, [appointment.id]: true }));
+		try {
+			const appointmentRef = doc(db, 'appointments', appointment.id);
+			await updateDoc(appointmentRef, {
+				date: dateTimeDraft.date.trim(),
+				time: dateTimeDraft.time.trim(),
+				updatedAt: serverTimestamp(),
+			});
+			setEditingDateTimeId(null);
+			setDateTimeDraft({ date: '', time: '' });
+		} catch (error) {
+			console.error('Failed to update appointment date/time', error);
+			alert(`Failed to update date/time: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		} finally {
+			setUpdating(prev => ({ ...prev, [appointment.id]: false }));
+		}
 	};
 
 	// Save current day's selections to the appointments map
@@ -1576,13 +1624,29 @@ export default function Appointments() {
 
 		setPackageSubmitting(true);
 		try {
+			// Find current user's staff record to get their userName and staffId
+			const currentUserStaff = staff.find(s => s.userEmail?.toLowerCase() === user?.email?.toLowerCase());
+			// Fallback: try to match by displayName if email doesn't match
+			const currentUserStaffByName = !currentUserStaff && user?.displayName
+				? staff.find(s => normalize(s.userName) === normalize(user.displayName))
+				: null;
+			const assignedStaff = currentUserStaff || currentUserStaffByName;
+			
+			// Determine doctor name: use staff userName if found, otherwise use patient's assignedDoctor, otherwise use current user's displayName
+			const doctorName = assignedStaff?.userName 
+				|| selectedPatient.assignedDoctor 
+				|| user?.displayName 
+				|| user?.email?.split('@')[0] 
+				|| 'Clinical Team';
+			const staffIdForAppointments = assignedStaff?.id || '';
+
 			// Create billing entry
 			const billingId = `PKG-${selectedPatient.patientId}-${Date.now()}`;
 			await addDoc(collection(db, 'billing'), {
 				billingId,
 				patient: selectedPatient.name,
 				patientId: selectedPatient.patientId,
-				doctor: user?.displayName || user?.email?.split('@')[0] || 'Clinical Team',
+				doctor: doctorName,
 				amount: totalAmount,
 				packageAmount: packageAmountValue,
 				concessionPercent: consultationDiscountValue,
@@ -1606,9 +1670,10 @@ export default function Appointments() {
 					appointmentId,
 					patientId: selectedPatient.patientId,
 					patient: selectedPatient.name,
-					doctor: '', // Will be assigned when appointment is scheduled
-					date: '', // Will be scheduled later
-					time: '', // Will be scheduled later
+					doctor: doctorName, // Auto-assign to current user or patient's assigned doctor
+					staffId: staffIdForAppointments, // Auto-assign staffId if found
+					date: '', // Will be scheduled later via editable fields
+					time: '', // Will be scheduled later via editable fields
 					status: 'pending' as AdminAppointmentStatus,
 					notes: null,
 					isConsultation: false,
@@ -2531,6 +2596,21 @@ export default function Appointments() {
 												const patientDetails = patients.find(p => p.patientId === appointment.patientId);
 												const isEditing = editingId === appointment.appointmentId;
 												const isUpdating = updating[appointment.id] || false;
+												
+												// Resolve doctor name: use appointment.doctor if available, otherwise try to get from staffId
+												let doctorName = appointment.doctor && appointment.doctor.trim() 
+													? appointment.doctor 
+													: null;
+												if (!doctorName && appointment.staffId) {
+													const staffMember = staff.find(s => s.id === appointment.staffId);
+													if (staffMember) {
+														doctorName = staffMember.userName;
+													}
+												}
+												if (!doctorName && patientDetails?.assignedDoctor) {
+													doctorName = patientDetails.assignedDoctor;
+												}
+												const displayDoctorName = doctorName || 'Not assigned';
 
 												return (
 													<tr key={appointment.appointmentId}>
@@ -2540,9 +2620,67 @@ export default function Appointments() {
 																Booked {formatDateLabel(appointment.createdAt)}
 															</p>
 														</td>
-														<td className="px-4 py-4 text-sm text-slate-600">{appointment.doctor || 'Not assigned'}</td>
 														<td className="px-4 py-4 text-sm text-slate-600">
-															{formatDateLabel(appointment.date)} at {appointment.time || '—'}
+															{displayDoctorName}
+														</td>
+														<td className="px-4 py-4 text-sm text-slate-600">
+															{editingDateTimeId === appointment.appointmentId ? (
+																<div className="space-y-2">
+																	<div className="flex gap-2">
+																		<input
+																			type="date"
+																			value={dateTimeDraft.date}
+																			onChange={e => setDateTimeDraft(prev => ({ ...prev, date: e.target.value }))}
+																			min={new Date().toISOString().split('T')[0]}
+																			className="input-base text-xs"
+																			required
+																		/>
+																		<input
+																			type="time"
+																			value={dateTimeDraft.time}
+																			onChange={e => setDateTimeDraft(prev => ({ ...prev, time: e.target.value }))}
+																			className="input-base text-xs"
+																			required
+																		/>
+																	</div>
+																	<div className="flex items-center gap-2">
+																		<button
+																			type="button"
+																			onClick={handleSaveDateTime}
+																			disabled={isUpdating}
+																			className="btn-primary text-xs py-1 px-2"
+																		>
+																			{isUpdating ? 'Saving...' : 'Save'}
+																		</button>
+																		<button
+																			type="button"
+																			onClick={handleCancelEditing}
+																			disabled={isUpdating}
+																			className="btn-secondary text-xs py-1 px-2"
+																		>
+																			Cancel
+																		</button>
+																	</div>
+																</div>
+															) : (
+																<div className="space-y-1">
+																	{appointment.date && appointment.date.trim() 
+																		? (appointment.time && appointment.time.trim() 
+																			? `${formatDateLabel(appointment.date)} at ${appointment.time}`
+																			: `${formatDateLabel(appointment.date)} at —`)
+																		: '— at —'
+																	}
+																	{appointment.packageBillingId && (
+																		<button
+																			type="button"
+																			onClick={() => handleEditDateTime(appointment)}
+																			className="text-xs font-semibold text-sky-600 hover:text-sky-500"
+																		>
+																			Edit date/time
+																		</button>
+																	)}
+																</div>
+															)}
 														</td>
 														<td className="px-4 py-4">
 															<select
@@ -2635,6 +2773,10 @@ export default function Appointments() {
 								onClick={() => {
 									setShowPatientAppointmentsModal(false);
 									setSelectedPatientId(null);
+									setEditingId(null);
+									setNotesDraft('');
+									setEditingDateTimeId(null);
+									setDateTimeDraft({ date: '', time: '' });
 								}}
 								className="btn-secondary"
 							>
