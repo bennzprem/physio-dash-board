@@ -151,11 +151,12 @@ const GENDER_OPTIONS: Array<{ value: AdminGenderOption; label: string }> = [
 	{ value: 'Female', label: 'Female' },
 	{ value: 'Other', label: 'Other' },
 ];
-const PATIENT_TYPE_OPTIONS: Array<{ value: 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | ''; label: string }> = [
+const PATIENT_TYPE_OPTIONS: Array<{ value: 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | ''; label: string }> = [
 	{ value: 'DYES', label: 'DYES' },
 	{ value: 'VIP', label: 'VIP' },
 	{ value: 'PAID', label: 'PAID' },
 	{ value: 'GETHNA', label: 'GETHNA' },
+	{ value: 'OTHERS', label: 'Others' },
 ];
 
 export default function Appointments() {
@@ -212,7 +213,7 @@ export default function Appointments() {
 		phone: '',
 		email: '',
 		address: '',
-		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | '',
+		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
 	});
 	const [registerFormErrors, setRegisterFormErrors] = useState<Partial<Record<keyof typeof registerForm, string>>>({});
 	const [registerSubmitting, setRegisterSubmitting] = useState(false);
@@ -1505,7 +1506,7 @@ export default function Appointments() {
 				complaint: '',
 				status: 'pending' as AdminPatientStatus,
 				registeredAt: serverTimestamp(),
-				patientType: registerForm.patientType as 'DYES' | 'VIP' | 'GETHNA' | 'PAID',
+				patientType: registerForm.patientType as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS',
 				paymentType: 'without' as 'with' | 'without',
 				paymentDescription: null,
 				packageAmount: null,
@@ -1573,7 +1574,7 @@ export default function Appointments() {
 				phone: '',
 				email: '',
 				address: '',
-				patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | '',
+				patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
 			});
 			setRegisterFormErrors({});
 			setShowRegisterModal(false);
@@ -3029,7 +3030,7 @@ export default function Appointments() {
 										phone: '',
 										email: '',
 										address: '',
-										patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | '',
+										patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
 									});
 									setRegisterFormErrors({});
 									setRegisterNotice(null);
@@ -3223,7 +3224,7 @@ export default function Appointments() {
 											phone: '',
 											email: '',
 											address: '',
-											patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | '',
+											patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
 										});
 										setRegisterFormErrors({});
 										setRegisterNotice(null);

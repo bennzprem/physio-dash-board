@@ -112,11 +112,12 @@ async function generatePatientId(): Promise<string> {
 }
 
 const PHONE_REGEX = /^[0-9]{10,15}$/;
-const PATIENT_TYPE_OPTIONS: Array<{ value: 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | ''; label: string }> = [
+const PATIENT_TYPE_OPTIONS: Array<{ value: 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | ''; label: string }> = [
 	{ value: 'DYES', label: 'DYES' },
 	{ value: 'VIP', label: 'VIP' },
 	{ value: 'GETHNA', label: 'GETHNA' },
 	{ value: 'PAID', label: 'PAID' },
+	{ value: 'OTHERS', label: 'Others' },
 ];
 const PAYMENT_OPTIONS: Array<{ value: 'with' | 'without'; label: string }> = [
 	{ value: 'with', label: 'With Concession' },
@@ -265,7 +266,7 @@ export default function Patients() {
 		phone: '',
 		email: '',
 		address: '',
-		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | '',
+		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
 		paymentType: '' as 'with' | 'without' | '',
 		paymentDescription: '',
 	});
@@ -1417,7 +1418,7 @@ export default function Patients() {
 				complaint: '',
 				status: 'pending' as AdminPatientStatus,
 				registeredAt: serverTimestamp(),
-				patientType: registerForm.patientType as 'DYES' | 'VIP' | 'GETHNA' | 'PAID',
+				patientType: registerForm.patientType as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS',
 				paymentType: registerForm.patientType === 'PAID' ? (registerForm.paymentType as 'with' | 'without') : 'without' as 'with' | 'without',
 				paymentDescription: registerForm.patientType === 'PAID' ? (registerForm.paymentDescription.trim() || null) : null,
 				sessionAllowance: registerForm.patientType === 'DYES' ? createInitialSessionAllowance() : null,
@@ -2641,7 +2642,7 @@ export default function Patients() {
 											Type of Organization <span className="text-rose-600">*</span>
 										</label>
 										<div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-											{(['DYES', 'VIP', 'GETHNA', 'PAID'] as const).map(type => (
+											{(['DYES', 'VIP', 'GETHNA', 'PAID', 'OTHERS'] as const).map(type => (
 												<label key={type} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50 cursor-pointer">
 													<input
 														type="radio"
