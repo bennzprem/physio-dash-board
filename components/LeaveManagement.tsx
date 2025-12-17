@@ -458,7 +458,7 @@ export default function LeaveManagement() {
 				}
 			}
 
-			// Reset form
+			// Reset formmm
 			setLeaveType('earned leave');
 			setStartDate('');
 			setEndDate('');
