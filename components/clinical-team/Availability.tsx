@@ -803,7 +803,9 @@ const loadAppointmentsForDate = async (
 											: isToday
 											? 'border-sky-400 bg-sky-50'
 											: hasSchedule
-											? 'border-emerald-300 bg-emerald-50'
+											? dateSpecific[date]?.unavailableSlots && dateSpecific[date].unavailableSlots.length > 0
+												? 'border-amber-300 bg-amber-50'
+												: 'border-emerald-300 bg-emerald-50'
 											: 'border-slate-200 bg-white'
 									} ${
 										isInactivePastDay ? 'opacity-60 bg-slate-100 cursor-not-allowed' : ''
@@ -836,6 +838,8 @@ const loadAppointmentsForDate = async (
 												const dayName = getDayName(date);
 												const isSunday = dayName === 'Sunday';
 												const isUnavailable = !!dateSpecific[date] && !dateSpecific[date].enabled;
+												const unavailableSlots = dateSpecific[date]?.unavailableSlots || [];
+												const hasUnavailableSlots = unavailableSlots.length > 0;
 												
 												if (isSunday) {
 													return <p className="text-xs italic text-slate-400 mb-2">Not available</p>;
@@ -851,6 +855,24 @@ const loadAppointmentsForDate = async (
 															{DEFAULT_START_TIME} - {DEFAULT_END_TIME}
 														</div>
 														<div className="text-xs text-slate-500">Available</div>
+														{hasUnavailableSlots && (
+															<div className="mt-2 space-y-1">
+																<div className="text-xs font-semibold text-rose-600">
+																	<i className="fas fa-clock mr-1" aria-hidden="true" />
+																	Unavailable:
+																</div>
+																{unavailableSlots
+																	.filter(slot => slot.start && slot.end)
+																	.map((slot, idx) => (
+																		<div
+																			key={idx}
+																			className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1 font-medium"
+																		>
+																			{slot.start} - {slot.end}
+																		</div>
+																	))}
+															</div>
+														)}
 													</div>
 												);
 											})()}
