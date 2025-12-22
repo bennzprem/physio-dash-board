@@ -18,7 +18,7 @@ import type { SessionAllowance } from '@/lib/types';
 
 type PaymentTypeOption = 'with' | 'without';
 // MODIFIED: Changed Gethhma to GETHNA
-type PatientTypeOption = 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | '';
+type PatientTypeOption = 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '';
 
 interface FrontdeskPatient {
 	id?: string;
@@ -86,6 +86,7 @@ const PATIENT_TYPE_OPTIONS: Array<{ value: PatientTypeOption; label: string }> =
 	{ value: 'VIP', label: 'VIP' },
 	{ value: 'PAID', label: 'PAID' },
 	{ value: 'GETHNA', label: 'GETHNA' },
+	{ value: 'OTHERS', label: 'Others' },
 ];
 
 const PAYMENT_OPTIONS: Array<{ value: PaymentTypeOption; label: string }> = [
@@ -744,7 +745,7 @@ export default function Register() {
 								</label>
 								{/* MODIFIED: Changed "Gethhma" to "GETHNA" in the radio button list */}
 								<div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-									{(['DYES', 'VIP', 'GETHNA', 'PAID'] as const).map(type => (
+									{(['DYES', 'VIP', 'GETHNA', 'PAID', 'OTHERS'] as const).map(type => (
 										<label key={type} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50 cursor-pointer">
 											<input
 												type="radio"
