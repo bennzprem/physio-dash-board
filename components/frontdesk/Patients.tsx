@@ -202,6 +202,7 @@ interface FrontdeskPatient {
 interface DayAvailability {
 	enabled: boolean;
 	slots: Array<{ start: string; end: string }>;
+	unavailableSlots?: Array<{ start: string; end: string }>;
 }
 
 interface DateSpecificAvailability {

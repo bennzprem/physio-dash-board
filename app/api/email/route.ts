@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { getEmailSubject, generateEmailBody, type EmailData } from '@/lib/email';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(request: NextRequest) {
 	try {
 		const emailData: EmailData = await request.json();
@@ -42,6 +40,9 @@ export async function POST(request: NextRequest) {
 				{ status: 500 }
 			);
 		}
+
+		// Initialize Resend only when API key is available
+		const resend = new Resend(process.env.RESEND_API_KEY);
 
 		// Generate subject and body
 		const subject = emailData.subject || getEmailSubject(emailData.template, emailData.data);
