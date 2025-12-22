@@ -390,35 +390,42 @@ export default function Appointments() {
 		return `${year}-${month}-${day}`;
 	};
 
-	// Get availability for a specific date (ONLY checks date-specific, no fallback to day-of-week)
+	// Default availability: 9 AM to 6 PM for all days except Sunday
+	const DEFAULT_START_TIME = '09:00';
+	const DEFAULT_END_TIME = '18:00';
+	const DEFAULT_DAY_AVAILABILITY: DayAvailability = {
+		enabled: true,
+		slots: [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }],
+	};
+
+	// Get availability for a specific date (checks date-specific, falls back to default availability)
 	const getDateAvailability = (staffMember: StaffMember, dateString: string): DayAvailability | null => {
-		// Only check date-specific availability - if no schedule exists for this specific date, return null
 		const dateKey = formatDateKey(dateString);
+		const dateObj = new Date(dateString + 'T00:00:00');
+		const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+		const isSunday = dayName === 'Sunday';
 		
-		// Debug logging
-		if (process.env.NODE_ENV === 'development') {
-			console.log('🔍 Checking availability for:', {
-				dateString,
-				dateKey,
-				hasDateSpecific: !!staffMember.dateSpecificAvailability,
-				dateSpecificKeys: staffMember.dateSpecificAvailability ? Object.keys(staffMember.dateSpecificAvailability) : [],
-			});
+		// Sunday is always unavailable
+		if (isSunday) {
+			return { enabled: false, slots: [] };
 		}
 		
-		// Only return availability if there's a date-specific schedule for this exact date
+		// Check for date-specific availability
 		if (staffMember.dateSpecificAvailability?.[dateKey]) {
 			const dateSpecific = staffMember.dateSpecificAvailability[dateKey];
-			if (process.env.NODE_ENV === 'development') {
-				console.log('✅ Using date-specific availability for', dateKey, dateSpecific);
+			// If marked as unavailable (enabled: false), return it
+			if (!dateSpecific.enabled) {
+				return dateSpecific;
 			}
+			// If enabled, use the date-specific schedule
 			return dateSpecific;
 		}
 
-		// No schedule exists for this specific date - return null (don't show any slots)
+		// No date-specific schedule exists - use default availability (9 AM - 6 PM)
 		if (process.env.NODE_ENV === 'development') {
-			console.log('❌ No date-specific schedule found for', dateKey, '- not showing any slots');
+			console.log('✅ Using default availability (9 AM - 6 PM) for', dateKey);
 		}
-		return null;
+		return DEFAULT_DAY_AVAILABILITY;
 	};
 
 	// Generate available time slots based on staff availability and existing appointments
