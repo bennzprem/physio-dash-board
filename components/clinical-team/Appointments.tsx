@@ -219,6 +219,7 @@ export default function Appointments() {
 	const [registerSubmitting, setRegisterSubmitting] = useState(false);
 	const [registerNotice, setRegisterNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 	const [newlyRegisteredPatientId, setNewlyRegisteredPatientId] = useState<string | null>(null);
+	const [patientSearchTerm, setPatientSearchTerm] = useState('');
 
 	// Load appointments from Firestore
 	useEffect(() => {
@@ -691,26 +692,22 @@ export default function Appointments() {
 		return groupedByPatient.reduce((sum, group) => sum + group.appointments.length, 0);
 	}, [groupedByPatient]);
 
-	// Filter patients to show only those registered by current user OR assigned to current user
+	// Show all patients to all users (no filtering by registeredBy or assignedDoctor)
 	const availablePatients = useMemo(() => {
-		if (!user) return [];
-		
-		const currentUserId = user.uid || '';
-		const currentUserDisplayName = normalize(user.displayName || user.email?.split('@')[0] || '');
-		
-		// Filter patients based on:
-		// 1. Registered by current user (registeredBy matches user UID), OR
-		// 2. Assigned to current user (assignedDoctor matches user display name, normalized)
-		return patients.filter(patient => {
-			// Check if patient was registered by current user
-			const isRegisteredByUser = patient.registeredBy === currentUserId;
-			
-			// Check if patient is assigned to current user
-			const isAssignedToUser = patient.assignedDoctor && normalize(patient.assignedDoctor) === currentUserDisplayName;
-			
-			return isRegisteredByUser || isAssignedToUser;
-		});
-	}, [patients, user]);
+		return patients;
+	}, [patients]);
+
+	// Filter patients based on search term for booking modal
+	const filteredAvailablePatients = useMemo(() => {
+		if (!patientSearchTerm.trim()) {
+			return availablePatients;
+		}
+		const query = patientSearchTerm.trim().toLowerCase();
+		return availablePatients.filter(patient => 
+			patient.name.toLowerCase().includes(query) ||
+			patient.patientId.toLowerCase().includes(query)
+		);
+	}, [availablePatients, patientSearchTerm]);
 
 	// Filter appointments based on showAllAppointments
 	const filteredAppointmentsForCounts = useMemo(() => {
@@ -1145,6 +1142,7 @@ export default function Appointments() {
 	const handleCloseBookingModal = () => {
 		setShowBookingModal(false);
 		setNewlyRegisteredPatientId(null); // Clear newly registered patient ID when closing modal
+		setPatientSearchTerm(''); // Reset patient search term
 		setBookingForm({
 			patientIds: [],
 			staffId: '',
@@ -2061,14 +2059,33 @@ export default function Appointments() {
 											</span>
 										)}
 									</label>
+									{/* Patient Search Bar */}
+									{availablePatients.length > 0 && (
+										<div className="mt-2 mb-2 relative">
+											<div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+												<i className="fas fa-search text-slate-400 text-sm" aria-hidden="true" />
+											</div>
+											<input
+												type="text"
+												placeholder="Search patients by name or ID..."
+												value={patientSearchTerm}
+												onChange={(e) => setPatientSearchTerm(e.target.value)}
+												className="w-full rounded-lg border border-slate-300 pl-10 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+											/>
+										</div>
+									)}
 									{availablePatients.length === 0 ? (
 										<div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-											<p>No patients available. You can only book appointments for patients you have registered or patients assigned to you.</p>
+											<p>No patients available.</p>
+										</div>
+									) : filteredAvailablePatients.length === 0 ? (
+										<div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+											<p>No patients found matching "{patientSearchTerm}".</p>
 										</div>
 									) : (
 										<div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3">
 											<div className="space-y-2">
-												{availablePatients.map(patient => {
+												{filteredAvailablePatients.map(patient => {
 													const isSelected = bookingForm.patientIds.includes(patient.patientId);
 													return (
 														<label
