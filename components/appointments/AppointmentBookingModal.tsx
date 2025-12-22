@@ -260,22 +260,39 @@ export default function AppointmentBookingModal({
 		return () => unsubscribe();
 	}, [isOpen, form.doctor, hideClinicianSelection, defaultClinician]);
 
-	// Get availability for a specific date (checks date-specific first, then falls back to weekly)
+	// Default availability: 9 AM to 6 PM for all days except Sunday
+	const DEFAULT_START_TIME = '09:00';
+	const DEFAULT_END_TIME = '18:00';
+	const DEFAULT_DAY_AVAILABILITY: DayAvailability = {
+		enabled: true,
+		slots: [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }],
+	};
+
+	// Get availability for a specific date (checks date-specific, falls back to default availability)
 	const getDateAvailability = (staffMember: StaffMember, dateString: string): DayAvailability | null => {
 		const dateKey = formatDateKey(dateString);
+		const dateObj = new Date(dateString + 'T00:00:00');
+		const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+		const isSunday = dayName === 'Sunday';
+		
+		// Sunday is always unavailable
+		if (isSunday) {
+			return { enabled: false, slots: [] };
+		}
 		
 		// First, check for date-specific availability
 		if (staffMember.dateSpecificAvailability?.[dateKey]) {
-			return staffMember.dateSpecificAvailability[dateKey];
+			const dateSpecific = staffMember.dateSpecificAvailability[dateKey];
+			// If marked as unavailable (enabled: false), return it
+			if (!dateSpecific.enabled) {
+				return dateSpecific;
+			}
+			// If enabled, use the date-specific schedule
+			return dateSpecific;
 		}
 		
-		// Fall back to weekly availability based on day of week
-		const dayOfWeek = getDayOfWeek(dateString);
-		if (dayOfWeek && staffMember.availability?.[dayOfWeek]) {
-			return staffMember.availability[dayOfWeek];
-		}
-		
-		return null;
+		// No date-specific schedule exists - use default availability (9 AM - 6 PM)
+		return DEFAULT_DAY_AVAILABILITY;
 	};
 
 	// Generate available time slots based on staff availability and existing appointments

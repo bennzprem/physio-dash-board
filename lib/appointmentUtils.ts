@@ -115,7 +115,7 @@ export function checkAppointmentConflict(
 
 /**
  * Check if appointment time is within staff availability
- * Uses date-specific availability schedule
+ * Uses date-specific availability schedule, with default availability (9 AM - 6 PM) for all days except Sunday
  */
 export function checkAvailabilityConflict(
 	dateSpecificAvailability: {
@@ -130,17 +130,36 @@ export function checkAvailabilityConflict(
 ): { isAvailable: boolean; reason?: string } {
 	const appointmentDate = new Date(date);
 	const dateKey = date; // YYYY-MM-DD format
+	const dayName = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' });
+	const isSunday = dayName === 'Sunday';
+	
+	// Sunday is always unavailable
+	if (isSunday) {
+		return {
+			isAvailable: false,
+			reason: 'Sunday is not available for scheduling',
+		};
+	}
+	
+	// Default availability: 9 AM to 6 PM for all days except Sunday
+	const DEFAULT_START_TIME = '09:00';
+	const DEFAULT_END_TIME = '18:00';
 	
 	// Check for date-specific schedule
 	const daySchedule = dateSpecificAvailability?.[dateKey];
 
-	if (!daySchedule || !daySchedule.enabled) {
-		const dayName = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' });
+	// If date-specific schedule exists and is marked as unavailable (enabled: false)
+	if (daySchedule && !daySchedule.enabled) {
 		return {
 			isAvailable: false,
-			reason: `No availability scheduled for ${dayName}`,
+			reason: `Date is marked as unavailable`,
 		};
 	}
+
+	// Use default availability if no date-specific schedule exists, or if date-specific schedule is enabled
+	const slots = daySchedule?.enabled && daySchedule.slots?.length > 0 
+		? daySchedule.slots 
+		: [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }];
 
 	// Parse appointment time
 	const [hours, minutes] = time.split(':').map(Number);
@@ -149,7 +168,7 @@ export function checkAvailabilityConflict(
 	const appointmentEnd = new Date(appointmentStart.getTime() + duration * 60000);
 
 	// Check if appointment fits within any available slot
-	for (const slot of daySchedule.slots) {
+	for (const slot of slots) {
 		const [slotStartHours, slotStartMinutes] = slot.start.split(':').map(Number);
 		const [slotEndHours, slotEndMinutes] = slot.end.split(':').map(Number);
 
@@ -170,10 +189,9 @@ export function checkAvailabilityConflict(
 		}
 	}
 
-	const dayName = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' });
 	return {
 		isAvailable: false,
-		reason: `Time slot ${time} is not within available hours on ${dayName}`,
+		reason: `Time slot ${time} is not within available hours (${DEFAULT_START_TIME} - ${DEFAULT_END_TIME}) on ${dayName}`,
 	};
 }
 

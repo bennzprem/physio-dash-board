@@ -1269,9 +1269,32 @@ export default function Patients() {
 			return [];
 		}
 
-		const dayAvailability = staffMember.dateSpecificAvailability?.[bookingForm.date];
-		if (!dayAvailability || !dayAvailability.enabled || !dayAvailability.slots || dayAvailability.slots.length === 0) {
+		// Default availability: 9 AM to 6 PM for all days except Sunday
+		const DEFAULT_START_TIME = '09:00';
+		const DEFAULT_END_TIME = '18:00';
+		const dateObj = new Date(bookingForm.date + 'T00:00:00');
+		const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+		const isSunday = dayName === 'Sunday';
+		
+		// Sunday is always unavailable
+		if (isSunday) {
 			return [];
+		}
+
+		// Check for date-specific availability
+		let dayAvailability = staffMember.dateSpecificAvailability?.[bookingForm.date];
+		
+		// If date-specific availability exists and is marked as unavailable, return empty
+		if (dayAvailability && !dayAvailability.enabled) {
+			return [];
+		}
+		
+		// If no date-specific availability or it's enabled, use default
+		if (!dayAvailability || !dayAvailability.slots || dayAvailability.slots.length === 0) {
+			dayAvailability = {
+				enabled: true,
+				slots: [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }],
+			};
 		}
 
 		const relevantAppointments = appointments.filter(
@@ -1355,9 +1378,32 @@ export default function Patients() {
 			return [];
 		}
 
-		const dayAvailability = staffMember.dateSpecificAvailability?.[registerAppointmentForm.date];
-		if (!dayAvailability || !dayAvailability.enabled || !dayAvailability.slots || dayAvailability.slots.length === 0) {
+		// Default availability: 9 AM to 6 PM for all days except Sunday
+		const DEFAULT_START_TIME = '09:00';
+		const DEFAULT_END_TIME = '18:00';
+		const dateObj = new Date(registerAppointmentForm.date + 'T00:00:00');
+		const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+		const isSunday = dayName === 'Sunday';
+		
+		// Sunday is always unavailable
+		if (isSunday) {
 			return [];
+		}
+
+		// Check for date-specific availability
+		let dayAvailability = staffMember.dateSpecificAvailability?.[registerAppointmentForm.date];
+		
+		// If date-specific availability exists and is marked as unavailable, return empty
+		if (dayAvailability && !dayAvailability.enabled) {
+			return [];
+		}
+		
+		// If no date-specific availability or it's enabled, use default
+		if (!dayAvailability || !dayAvailability.slots || dayAvailability.slots.length === 0) {
+			dayAvailability = {
+				enabled: true,
+				slots: [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }],
+			};
 		}
 
 		const relevantAppointments = appointments.filter(
