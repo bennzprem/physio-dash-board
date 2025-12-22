@@ -1134,7 +1134,78 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	};
 
 	// Handle field change for strength conditioning
-	const handleFieldChangeStrengthConditioning = (field: keyof StrengthConditioningData, value: string) => {
+	// Helper function to calculate duration in hours from time range string
+	const calculateDurationHours = (timeRange: string): number => {
+		if (!timeRange) return 0;
+		// Try to parse format like "10:00 am to 11:00 am" or "10:00 to 11:00"
+		const timePattern = /(\d{1,2}):(\d{2})\s*(am|pm)?/gi;
+		const matches = [...timeRange.matchAll(timePattern)];
+		if (matches.length >= 2) {
+			const startMatch = matches[0];
+			const endMatch = matches[1];
+			
+			const startHour = parseInt(startMatch[1]);
+			const startMin = parseInt(startMatch[2]);
+			const startPeriod = startMatch[3]?.toLowerCase();
+			const endHour = parseInt(endMatch[1]);
+			const endMin = parseInt(endMatch[2]);
+			const endPeriod = endMatch[3]?.toLowerCase();
+			
+			// Convert to 24-hour format
+			let start24 = startHour;
+			if (startPeriod === 'pm' && startHour !== 12) start24 += 12;
+			if (startPeriod === 'am' && startHour === 12) start24 = 0;
+			
+			let end24 = endHour;
+			if (endPeriod === 'pm' && endHour !== 12) end24 += 12;
+			if (endPeriod === 'am' && endHour === 12) end24 = 0;
+			
+			// Calculate difference in hours
+			const startMinutes = start24 * 60 + startMin;
+			const endMinutes = end24 * 60 + endMin;
+			let diffMinutes = endMinutes - startMinutes;
+			if (diffMinutes < 0) diffMinutes += 24 * 60; // Handle next day
+			
+			return diffMinutes / 60;
+		}
+		return 0;
+	};
+
+	// Auto-calculate daily workload from RPE and Duration
+	const calculatedDailyWorkload = useMemo(() => {
+		if (strengthConditioningFormData.scRPEPlanned && strengthConditioningFormData.scDuration) {
+			const hours = typeof strengthConditioningFormData.scDuration === 'number' 
+				? strengthConditioningFormData.scDuration 
+				: Number(strengthConditioningFormData.scDuration) || 0;
+			if (hours > 0 && typeof strengthConditioningFormData.scRPEPlanned === 'number') {
+				return strengthConditioningFormData.scRPEPlanned * hours;
+			}
+		}
+		return undefined;
+	}, [strengthConditioningFormData.scRPEPlanned, strengthConditioningFormData.scDuration]);
+
+	// Auto-calculate ACWR ratio
+	const calculatedACWR = useMemo(() => {
+		if (strengthConditioningFormData.acuteWorkload && strengthConditioningFormData.chronicWorkload && strengthConditioningFormData.chronicWorkload > 0) {
+			return strengthConditioningFormData.acuteWorkload / strengthConditioningFormData.chronicWorkload;
+		}
+		return undefined;
+	}, [strengthConditioningFormData.acuteWorkload, strengthConditioningFormData.chronicWorkload]);
+
+	// Update form data when calculated values change
+	useEffect(() => {
+		if (calculatedDailyWorkload !== undefined) {
+			setStrengthConditioningFormData(prev => ({ ...prev, dailyWorkload: calculatedDailyWorkload }));
+		}
+	}, [calculatedDailyWorkload]);
+
+	useEffect(() => {
+		if (calculatedACWR !== undefined) {
+			setStrengthConditioningFormData(prev => ({ ...prev, acwrRatio: calculatedACWR }));
+		}
+	}, [calculatedACWR]);
+
+	const handleFieldChangeStrengthConditioning = (field: keyof StrengthConditioningData, value: any) => {
 		setStrengthConditioningFormData(prev => ({ ...prev, [field]: value }));
 	};
 
@@ -3155,6 +3226,704 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</select>
 									</div>
 
+									{/* Athlete Profile */}
+									<div className="mb-8 border-t border-slate-200 pt-6">
+										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
+											Athlete Profile
+										</h2>
+										<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Sports</label>
+												<input
+													type="text"
+													value={strengthConditioningFormData.sports || ''}
+													onChange={e => handleFieldChangeStrengthConditioning('sports', e.target.value)}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="Enter sport"
+												/>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Training Age (years)</label>
+												<input
+													type="number"
+													value={strengthConditioningFormData.trainingAge || ''}
+													onChange={e => handleFieldChangeStrengthConditioning('trainingAge', e.target.value)}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="Enter years"
+												/>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Competition Level</label>
+												<input
+													type="text"
+													value={strengthConditioningFormData.competitionLevel || ''}
+													onChange={e => handleFieldChangeStrengthConditioning('competitionLevel', e.target.value)}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="Enter competition level"
+												/>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Injury History</label>
+												<textarea
+													value={strengthConditioningFormData.injuryHistory || ''}
+													onChange={e => handleFieldChangeStrengthConditioning('injuryHistory', e.target.value)}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													rows={2}
+													placeholder="Enter injury history"
+												/>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Dominant Side</label>
+												<select
+													value={strengthConditioningFormData.dominantSide || ''}
+													onChange={e => handleFieldChangeStrengthConditioning('dominantSide', e.target.value as 'Right' | 'Left')}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												>
+													<option value="">-- Select --</option>
+													<option value="Right">Right</option>
+													<option value="Left">Left</option>
+												</select>
+											</div>
+										</div>
+									</div>
+
+									{/* Periodization */}
+									<div className="mb-8 border-t border-slate-200 pt-6">
+										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
+											Season Periodization
+										</h2>
+										<div>
+											<label className="block text-sm font-medium text-slate-700 mb-2">Season Phase</label>
+											<div className="flex gap-4">
+												<label className="flex items-center">
+													<input
+														type="radio"
+														name="seasonPhase"
+														value="Off-Season"
+														checked={strengthConditioningFormData.seasonPhase === 'Off-Season'}
+														onChange={e => handleFieldChangeStrengthConditioning('seasonPhase', e.target.value as 'Off-Season' | 'On-Season' | 'Competition')}
+														className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500"
+													/>
+													<span className="text-sm text-slate-700">Off-Season</span>
+												</label>
+												<label className="flex items-center">
+													<input
+														type="radio"
+														name="seasonPhase"
+														value="On-Season"
+														checked={strengthConditioningFormData.seasonPhase === 'On-Season'}
+														onChange={e => handleFieldChangeStrengthConditioning('seasonPhase', e.target.value as 'Off-Season' | 'On-Season' | 'Competition')}
+														className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500"
+													/>
+													<span className="text-sm text-slate-700">On-Season</span>
+												</label>
+												<label className="flex items-center">
+													<input
+														type="radio"
+														name="seasonPhase"
+														value="Competition"
+														checked={strengthConditioningFormData.seasonPhase === 'Competition'}
+														onChange={e => handleFieldChangeStrengthConditioning('seasonPhase', e.target.value as 'Off-Season' | 'On-Season' | 'Competition')}
+														className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500"
+													/>
+													<span className="text-sm text-slate-700">Competition</span>
+												</label>
+											</div>
+										</div>
+									</div>
+
+									{/* Skill Training */}
+									<div className="mb-8 border-t border-slate-200 pt-6">
+										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
+											1. Skill Training
+										</h2>
+										<div className="space-y-4">
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-2">Type</label>
+												<div className="flex gap-4">
+													<label className="flex items-center">
+														<input
+															type="radio"
+															name="skillType"
+															value="Sports specific"
+															checked={strengthConditioningFormData.skillType === 'Sports specific'}
+															onChange={e => handleFieldChangeStrengthConditioning('skillType', e.target.value as 'Sports specific' | 'Fitness specific')}
+															className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500"
+														/>
+														<span className="text-sm text-slate-700">Sports specific</span>
+													</label>
+													<label className="flex items-center">
+														<input
+															type="radio"
+															name="skillType"
+															value="Fitness specific"
+															checked={strengthConditioningFormData.skillType === 'Fitness specific'}
+															onChange={e => handleFieldChangeStrengthConditioning('skillType', e.target.value as 'Sports specific' | 'Fitness specific')}
+															className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500"
+														/>
+														<span className="text-sm text-slate-700">Fitness specific</span>
+													</label>
+												</div>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Duration (Hours)</label>
+												<input
+													type="number"
+													step="0.5"
+													min="0"
+													value={strengthConditioningFormData.skillDuration || ''}
+													onChange={e => handleFieldChangeStrengthConditioning('skillDuration', e.target.value ? Number(e.target.value) : undefined)}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="e.g., 2, 2.5, 1.5"
+												/>
+											</div>
+											<div className="grid gap-4 sm:grid-cols-2">
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">RPE - Planned (/10)</label>
+													<input
+														type="number"
+														min="1"
+														max="10"
+														value={strengthConditioningFormData.skillRPEPlanned || ''}
+														onChange={e => handleFieldChangeStrengthConditioning('skillRPEPlanned', e.target.value ? Number(e.target.value) : undefined)}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="1-10"
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">PRPE - Perceived (/10)</label>
+													<input
+														type="number"
+														min="1"
+														max="10"
+														value={strengthConditioningFormData.skillPRPEPerceived || ''}
+														onChange={e => handleFieldChangeStrengthConditioning('skillPRPEPerceived', e.target.value ? Number(e.target.value) : undefined)}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="1-10"
+													/>
+												</div>
+											</div>
+										</div>
+									</div>
+
+									{/* Strength & Conditioning */}
+									<div className="mb-8 border-t border-slate-200 pt-6">
+										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
+											2. S & C (Strength & Conditioning)
+										</h2>
+										<div className="space-y-4">
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+												<select
+													value={strengthConditioningFormData.scType || ''}
+													onChange={e => handleFieldChangeStrengthConditioning('scType', e.target.value as any)}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												>
+													<option value="">-- Select Type --</option>
+													<option value="Strength">Strength</option>
+													<option value="Endurance">Endurance</option>
+													<option value="Speed & Power">Speed & Power</option>
+													<option value="Agility">Agility</option>
+													<option value="Mobility">Mobility</option>
+													<option value="Prehab">Prehab</option>
+													<option value="Recovery">Recovery</option>
+												</select>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Duration (Hours)</label>
+												<input
+													type="number"
+													step="0.5"
+													min="0"
+													value={strengthConditioningFormData.scDuration || ''}
+													onChange={e => handleFieldChangeStrengthConditioning('scDuration', e.target.value ? Number(e.target.value) : undefined)}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="e.g., 2, 2.5, 1.5"
+												/>
+											</div>
+											<div className="grid gap-4 sm:grid-cols-2">
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">RPE - Planned (/10)</label>
+													<input
+														type="number"
+														min="1"
+														max="10"
+														value={strengthConditioningFormData.scRPEPlanned || ''}
+														onChange={e => handleFieldChangeStrengthConditioning('scRPEPlanned', e.target.value ? Number(e.target.value) : undefined)}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="1-10"
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">PRPE - Perceived (/10)</label>
+													<input
+														type="number"
+														min="1"
+														max="10"
+														value={strengthConditioningFormData.scPRPEPerceived || ''}
+														onChange={e => handleFieldChangeStrengthConditioning('scPRPEPerceived', e.target.value ? Number(e.target.value) : undefined)}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="1-10"
+													/>
+												</div>
+											</div>
+											{/* Exercise Log Table */}
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-2">Exercise Log</label>
+												<div className="overflow-x-auto">
+													<table className="min-w-full divide-y divide-slate-200 border border-slate-300 text-left text-sm">
+														<thead className="bg-slate-100">
+															<tr>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Exercise Name</th>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Sets</th>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Reps</th>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Load (kg/lb)</th>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Rest (sec)</th>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Distance</th>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Avg HR</th>
+															</tr>
+														</thead>
+														<tbody className="divide-y divide-slate-200 bg-white">
+															{((strengthConditioningFormData.exercises && strengthConditioningFormData.exercises.length > 0) ? strengthConditioningFormData.exercises : [{}, {}, {}]).map((exercise, idx) => (
+																<tr key={idx}>
+																	<td className="px-3 py-2 border border-slate-300 bg-white">
+																		<input
+																			type="text"
+																			value={exercise.exerciseName || ''}
+																			onChange={e => {
+																				const exercises = [...(strengthConditioningFormData.exercises || [])];
+																				if (!exercises[idx]) exercises[idx] = {};
+																				exercises[idx].exerciseName = e.target.value;
+																				handleFieldChangeStrengthConditioning('exercises', exercises);
+																			}}
+																			className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																			placeholder="Exercise name"
+																		/>
+																	</td>
+																	<td className="px-3 py-2 border border-slate-300 bg-white">
+																		<input
+																			type="number"
+																			value={exercise.sets || ''}
+																			onChange={e => {
+																				const exercises = [...(strengthConditioningFormData.exercises || [])];
+																				if (!exercises[idx]) exercises[idx] = {};
+																				exercises[idx].sets = e.target.value ? Number(e.target.value) : undefined;
+																				handleFieldChangeStrengthConditioning('exercises', exercises);
+																			}}
+																			className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																			placeholder="Sets"
+																		/>
+																	</td>
+																	<td className="px-3 py-2 border border-slate-300 bg-white">
+																		<input
+																			type="number"
+																			value={exercise.reps || ''}
+																			onChange={e => {
+																				const exercises = [...(strengthConditioningFormData.exercises || [])];
+																				if (!exercises[idx]) exercises[idx] = {};
+																				exercises[idx].reps = e.target.value ? Number(e.target.value) : undefined;
+																				handleFieldChangeStrengthConditioning('exercises', exercises);
+																			}}
+																			className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																			placeholder="Reps"
+																		/>
+																	</td>
+																	<td className="px-3 py-2 border border-slate-300 bg-white">
+																		<input
+																			type="number"
+																			value={exercise.load || ''}
+																			onChange={e => {
+																				const exercises = [...(strengthConditioningFormData.exercises || [])];
+																				if (!exercises[idx]) exercises[idx] = {};
+																				exercises[idx].load = e.target.value ? Number(e.target.value) : undefined;
+																				handleFieldChangeStrengthConditioning('exercises', exercises);
+																			}}
+																			className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																			placeholder="Load"
+																		/>
+																	</td>
+																	<td className="px-3 py-2 border border-slate-300 bg-white">
+																		<input
+																			type="number"
+																			value={exercise.rest || ''}
+																			onChange={e => {
+																				const exercises = [...(strengthConditioningFormData.exercises || [])];
+																				if (!exercises[idx]) exercises[idx] = {};
+																				exercises[idx].rest = e.target.value ? Number(e.target.value) : undefined;
+																				handleFieldChangeStrengthConditioning('exercises', exercises);
+																			}}
+																			className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																			placeholder="Rest"
+																		/>
+																	</td>
+																	<td className="px-3 py-2 border border-slate-300 bg-white">
+																		<input
+																			type="number"
+																			value={exercise.distance || ''}
+																			onChange={e => {
+																				const exercises = [...(strengthConditioningFormData.exercises || [])];
+																				if (!exercises[idx]) exercises[idx] = {};
+																				exercises[idx].distance = e.target.value ? Number(e.target.value) : undefined;
+																				handleFieldChangeStrengthConditioning('exercises', exercises);
+																			}}
+																			className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																			placeholder="Distance"
+																		/>
+																	</td>
+																	<td className="px-3 py-2 border border-slate-300 bg-white">
+																		<input
+																			type="number"
+																			value={exercise.avgHR || ''}
+																			onChange={e => {
+																				const exercises = [...(strengthConditioningFormData.exercises || [])];
+																				if (!exercises[idx]) exercises[idx] = {};
+																				exercises[idx].avgHR = e.target.value ? Number(e.target.value) : undefined;
+																				handleFieldChangeStrengthConditioning('exercises', exercises);
+																			}}
+																			className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																			placeholder="HR"
+																		/>
+																	</td>
+																</tr>
+															))}
+														</tbody>
+													</table>
+												</div>
+												<button
+													type="button"
+													onClick={() => {
+														const exercises = [...(strengthConditioningFormData.exercises || []), {}];
+														handleFieldChangeStrengthConditioning('exercises', exercises);
+													}}
+													className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:bg-sky-100"
+												>
+													<i className="fas fa-plus mr-1" aria-hidden="true" />
+													Add Exercise
+												</button>
+											</div>
+										</div>
+									</div>
+
+									{/* Wellness Score */}
+									<div className="mb-8 border-t border-slate-200 pt-6">
+										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
+											Wellness Score
+										</h2>
+										<div className="space-y-4">
+											<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">Sleep Duration (hours)</label>
+													<input
+														type="number"
+														step="0.1"
+														value={strengthConditioningFormData.sleepDuration || ''}
+														onChange={e => handleFieldChangeStrengthConditioning('sleepDuration', e.target.value ? Number(e.target.value) : undefined)}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="Hours"
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">Sleep Quality (1-10)</label>
+													<input
+														type="number"
+														min="1"
+														max="10"
+														value={strengthConditioningFormData.sleepQuality || ''}
+														onChange={e => handleFieldChangeStrengthConditioning('sleepQuality', e.target.value ? Number(e.target.value) : undefined)}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="1-10"
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">Stress Level (1-10)</label>
+													<input
+														type="number"
+														min="1"
+														max="10"
+														value={strengthConditioningFormData.stressLevel || ''}
+														onChange={e => handleFieldChangeStrengthConditioning('stressLevel', e.target.value ? Number(e.target.value) : undefined)}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="1-10"
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">Muscle Soreness (1-10)</label>
+													<input
+														type="number"
+														min="1"
+														max="10"
+														value={strengthConditioningFormData.muscleSoreness || ''}
+														onChange={e => handleFieldChangeStrengthConditioning('muscleSoreness', e.target.value ? Number(e.target.value) : undefined)}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="1-10"
+													/>
+												</div>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-2">Mood State</label>
+												<div className="flex gap-4">
+													<label className="flex items-center">
+														<input
+															type="radio"
+															name="moodState"
+															value="Highly Motivated"
+															checked={strengthConditioningFormData.moodState === 'Highly Motivated'}
+															onChange={e => handleFieldChangeStrengthConditioning('moodState', e.target.value as 'Highly Motivated' | 'Normal / OK' | 'Demotivated')}
+															className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500"
+														/>
+														<span className="text-sm text-slate-700">Highly Motivated</span>
+													</label>
+													<label className="flex items-center">
+														<input
+															type="radio"
+															name="moodState"
+															value="Normal / OK"
+															checked={strengthConditioningFormData.moodState === 'Normal / OK'}
+															onChange={e => handleFieldChangeStrengthConditioning('moodState', e.target.value as 'Highly Motivated' | 'Normal / OK' | 'Demotivated')}
+															className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500"
+														/>
+														<span className="text-sm text-slate-700">Normal / OK</span>
+													</label>
+													<label className="flex items-center">
+														<input
+															type="radio"
+															name="moodState"
+															value="Demotivated"
+															checked={strengthConditioningFormData.moodState === 'Demotivated'}
+															onChange={e => handleFieldChangeStrengthConditioning('moodState', e.target.value as 'Highly Motivated' | 'Normal / OK' | 'Demotivated')}
+															className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500"
+														/>
+														<span className="text-sm text-slate-700">Demotivated</span>
+													</label>
+												</div>
+											</div>
+										</div>
+									</div>
+
+									{/* Calculations & Diagrams */}
+									<div className="mb-8 border-t border-slate-200 pt-6">
+										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
+											Calculations & Diagrams
+										</h2>
+										<div className="space-y-4">
+											<div className="flex gap-4 mb-4">
+												<button
+													type="button"
+													className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:bg-sky-100"
+												>
+													Filter: Daily
+												</button>
+												<button
+													type="button"
+													className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+												>
+													Filter: Weekly
+												</button>
+											</div>
+											<div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
+												<p className="text-sm font-semibold text-slate-900 mb-2">Wellness Visualization</p>
+												<div className="flex items-center justify-center gap-2 text-xs text-slate-600 mb-4">
+													<span className="font-medium">SD: Sleep Duration</span>
+													<span>•</span>
+													<span className="font-medium">SQ: Sleep Quality</span>
+													<span>•</span>
+													<span className="font-medium">SL: Stress Level</span>
+													<span>•</span>
+													<span className="font-medium">MS: Muscle Soreness</span>
+												</div>
+												<div className="mt-4 flex items-center justify-center">
+													{(() => {
+														const sleepDuration = strengthConditioningFormData.sleepDuration || 0;
+														const sleepQuality = strengthConditioningFormData.sleepQuality || 0;
+														const stressLevel = strengthConditioningFormData.stressLevel || 0;
+														const muscleSoreness = strengthConditioningFormData.muscleSoreness || 0;
+														
+														// Check if we have any data to display
+														const hasData = sleepDuration > 0 || sleepQuality > 0 || stressLevel > 0 || muscleSoreness > 0;
+														
+														if (!hasData) {
+															return (
+																<div className="w-32 h-32 rounded-full border-4 border-slate-300 flex items-center justify-center bg-white">
+																	<span className="text-xs text-slate-400">Enter wellness data</span>
+																</div>
+															);
+														}
+														
+														// Normalize values for pie chart
+														// Sleep Duration: normalize to 0-10 hours scale (max 10h = 100)
+														// Sleep Quality, Stress Level, Muscle Soreness: already 0-10 scale
+														const sdNormalized = Math.min((sleepDuration / 10) * 100, 100);
+														const sqNormalized = (sleepQuality / 10) * 100;
+														const slNormalized = (stressLevel / 10) * 100;
+														const msNormalized = (muscleSoreness / 10) * 100;
+														
+														const total = sdNormalized + sqNormalized + slNormalized + msNormalized;
+														
+														// Calculate angles for pie chart segments (proportional to their values)
+														const sdAngle = total > 0 ? (sdNormalized / total) * 360 : 0;
+														const sqAngle = total > 0 ? (sqNormalized / total) * 360 : 0;
+														const slAngle = total > 0 ? (slNormalized / total) * 360 : 0;
+														const msAngle = total > 0 ? (msNormalized / total) * 360 : 0;
+														
+														let currentAngle = -90; // Start from top
+														
+														const size = 140;
+														const radius = size / 2 - 10;
+														const center = size / 2;
+														
+														// Helper to create path for pie segment
+														const createPieSegment = (angle: number, color: string, key: string) => {
+															if (angle <= 0) return null;
+															const startAngle = (currentAngle * Math.PI) / 180;
+															const endAngle = ((currentAngle + angle) * Math.PI) / 180;
+															const prevAngle = currentAngle;
+															currentAngle += angle;
+															
+															const x1 = center + radius * Math.cos(startAngle);
+															const y1 = center + radius * Math.sin(startAngle);
+															const x2 = center + radius * Math.cos(endAngle);
+															const y2 = center + radius * Math.sin(endAngle);
+															
+															const largeArc = angle > 180 ? 1 : 0;
+															
+															return (
+																<path
+																	key={key}
+																	d={`M ${center} ${center} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`}
+																	fill={color}
+																	stroke="white"
+																	strokeWidth="2"
+																/>
+															);
+														};
+														
+														return (
+															<svg width={size} height={size} className="mx-auto" viewBox={`0 0 ${size} ${size}`}>
+																{createPieSegment(sdAngle, '#3b82f6', 'sd')} {/* SD - Blue */}
+																{createPieSegment(sqAngle, '#10b981', 'sq')} {/* SQ - Green */}
+																{createPieSegment(slAngle, '#f59e0b', 'sl')} {/* SL - Amber */}
+																{createPieSegment(msAngle, '#ef4444', 'ms')} {/* MS - Red */}
+																{/* Center circle for donut effect */}
+																<circle cx={center} cy={center} r={radius * 0.5} fill="white" />
+																<text x={center} y={center - 5} textAnchor="middle" className="text-xs font-semibold fill-slate-700">
+																	Wellness
+																</text>
+																<text x={center} y={center + 8} textAnchor="middle" className="text-[10px] fill-slate-500">
+																	Score
+																</text>
+															</svg>
+														);
+													})()}
+												</div>
+												<div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+													<div className="flex items-center justify-center gap-1">
+														<div className="w-3 h-3 rounded bg-blue-500"></div>
+														<span className="text-slate-600">SD: {strengthConditioningFormData.sleepDuration || 0}h</span>
+													</div>
+													<div className="flex items-center justify-center gap-1">
+														<div className="w-3 h-3 rounded bg-green-500"></div>
+														<span className="text-slate-600">SQ: {strengthConditioningFormData.sleepQuality || 0}/10</span>
+													</div>
+													<div className="flex items-center justify-center gap-1">
+														<div className="w-3 h-3 rounded bg-amber-500"></div>
+														<span className="text-slate-600">SL: {strengthConditioningFormData.stressLevel || 0}/10</span>
+													</div>
+													<div className="flex items-center justify-center gap-1">
+														<div className="w-3 h-3 rounded bg-red-500"></div>
+														<span className="text-slate-600">MS: {strengthConditioningFormData.muscleSoreness || 0}/10</span>
+													</div>
+												</div>
+											</div>
+										</div>
+									</div>
+
+									{/* ACWR */}
+									<div className="mb-8 border-t border-slate-200 pt-6">
+										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
+											ACWR (Acute:Chronic Workload Ratio)
+										</h2>
+										<div className="space-y-4">
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">
+													Daily Workload (A.U.) = RPE × Duration (Automatically Calculated)
+												</label>
+												<input
+													type="number"
+													step="0.01"
+													value={calculatedDailyWorkload !== undefined ? calculatedDailyWorkload.toFixed(2) : (strengthConditioningFormData.dailyWorkload || '')}
+													readOnly
+													className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 focus:outline-none"
+													placeholder="Auto-calculated: RPE × Duration"
+												/>
+												<p className="mt-1 text-xs text-slate-500">
+													Daily Workload = RPE × Duration (automatically calculated from S&C section)
+													{calculatedDailyWorkload !== undefined && (
+														<span className="ml-2 text-sky-600">
+															= {strengthConditioningFormData.scRPEPlanned || 0} × {typeof strengthConditioningFormData.scDuration === 'number' ? strengthConditioningFormData.scDuration : (Number(strengthConditioningFormData.scDuration) || 0)}h = {calculatedDailyWorkload.toFixed(2)}
+														</span>
+													)}
+												</p>
+											</div>
+											<div className="grid gap-4 sm:grid-cols-2">
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">Acute Workload (Last 7 Days Total)</label>
+													<input
+														type="number"
+														step="0.01"
+														value={strengthConditioningFormData.acuteWorkload || ''}
+														onChange={e => {
+															const value = e.target.value ? Number(e.target.value) : undefined;
+															handleFieldChangeStrengthConditioning('acuteWorkload', value);
+															// Auto-calculate ACWR
+															if (value && strengthConditioningFormData.chronicWorkload && strengthConditioningFormData.chronicWorkload > 0) {
+																handleFieldChangeStrengthConditioning('acwrRatio', value / strengthConditioningFormData.chronicWorkload);
+															}
+														}}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="Enter acute workload"
+													/>
+												</div>
+												<div>
+													<label className="block text-sm font-medium text-slate-700 mb-1">Chronic Workload (Last 28 Days Avg)</label>
+													<input
+														type="number"
+														step="0.01"
+														value={strengthConditioningFormData.chronicWorkload || ''}
+														onChange={e => {
+															const value = e.target.value ? Number(e.target.value) : undefined;
+															handleFieldChangeStrengthConditioning('chronicWorkload', value);
+															// Auto-calculate ACWR
+															if (value && value > 0 && strengthConditioningFormData.acuteWorkload) {
+																handleFieldChangeStrengthConditioning('acwrRatio', strengthConditioningFormData.acuteWorkload / value);
+															}
+														}}
+														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														placeholder="Enter chronic workload"
+													/>
+												</div>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">ACWR Ratio (Automatically Calculated)</label>
+												<input
+													type="number"
+													step="0.01"
+													value={calculatedACWR !== undefined ? calculatedACWR.toFixed(2) : (strengthConditioningFormData.acwrRatio || '')}
+													readOnly
+													className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 focus:outline-none"
+													placeholder="Auto-calculated: Acute / Chronic"
+												/>
+												<p className="mt-1 text-xs text-slate-500">
+													ACWR = Acute / Chronic (automatically calculated)
+													{calculatedACWR !== undefined && (
+														<span className="ml-2 text-sky-600">
+															= {strengthConditioningFormData.acuteWorkload || 0} / {strengthConditioningFormData.chronicWorkload || 0} = {calculatedACWR.toFixed(2)}
+														</span>
+													)}
+												</p>
+											</div>
+										</div>
+									</div>
+
 									{/* Injury Risk Screening */}
 									<div className="mb-8">
 										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
@@ -3164,14 +3933,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										<div className="space-y-4">
 											{/* Scapular dyskinesia test */}
 											<div>
-												<label className="block text-sm font-medium text-slate-700 mb-1">
+												<label className="block text-sm font-medium text-slate-900 mb-1">
 													Scapular Dyskinesia Test
 												</label>
 												<input
 													type="text"
 													value={strengthConditioningFormData.scapularDyskinesiaTest || ''}
 													onChange={e => handleFieldChangeStrengthConditioning('scapularDyskinesiaTest', e.target.value)}
-													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 													placeholder="Enter result"
 												/>
 											</div>
@@ -3181,71 +3950,71 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 												<table className="min-w-full divide-y divide-slate-200 border border-slate-300 text-left text-sm">
 													<thead className="bg-slate-100">
 														<tr>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Fields</th>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Right</th>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Left</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Fields</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Right</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Left</th>
 														</tr>
 													</thead>
 													<tbody className="divide-y divide-slate-200 bg-white">
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Upper Limb Flexibility</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Upper Limb Flexibility</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.upperLimbFlexibilityRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('upperLimbFlexibilityRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.upperLimbFlexibilityLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('upperLimbFlexibilityLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Shoulder Internal Rotation</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Shoulder Internal Rotation</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.shoulderInternalRotationRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('shoulderInternalRotationRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.shoulderInternalRotationLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('shoulderInternalRotationLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Shoulder External Rotation</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Shoulder External Rotation</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.shoulderExternalRotationRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('shoulderExternalRotationRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.shoulderExternalRotationLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('shoulderExternalRotationLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
@@ -3257,26 +4026,26 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											{/* Thoracic Rotation and Sit and Reach test */}
 											<div className="grid gap-4 sm:grid-cols-2">
 												<div>
-													<label className="block text-sm font-medium text-slate-700 mb-1">
+													<label className="block text-sm font-medium text-slate-900 mb-1">
 														Thoracic Rotation
 													</label>
 													<input
 														type="text"
 														value={strengthConditioningFormData.thoracicRotation || ''}
 														onChange={e => handleFieldChangeStrengthConditioning('thoracicRotation', e.target.value)}
-														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 														placeholder="Enter result"
 													/>
 												</div>
 												<div>
-													<label className="block text-sm font-medium text-slate-700 mb-1">
+													<label className="block text-sm font-medium text-slate-900 mb-1">
 														Sit And Reach Test
 													</label>
 													<input
 														type="text"
 														value={strengthConditioningFormData.sitAndReachTest || ''}
 														onChange={e => handleFieldChangeStrengthConditioning('sitAndReachTest', e.target.value)}
-														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 														placeholder="Enter result"
 													/>
 												</div>
@@ -3287,176 +4056,176 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 												<table className="min-w-full divide-y divide-slate-200 border border-slate-300 text-left text-sm">
 													<thead className="bg-slate-100">
 														<tr>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Fields</th>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Right</th>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Left</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Fields</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Right</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Left</th>
 														</tr>
 													</thead>
 													<tbody className="divide-y divide-slate-200 bg-white">
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Single Leg Squat</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Single Leg Squat</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.singleLegSquatRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('singleLegSquatRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.singleLegSquatLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('singleLegSquatLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Weight Bearing Lunge Test</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Weight Bearing Lunge Test</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.weightBearingLungeTestRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('weightBearingLungeTestRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.weightBearingLungeTestLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('weightBearingLungeTestLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Hamstrings Flexibility</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Hamstrings Flexibility</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.hamstringsFlexibilityRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('hamstringsFlexibilityRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.hamstringsFlexibilityLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('hamstringsFlexibilityLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Quadriceps Flexibility</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Quadriceps Flexibility</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.quadricepsFlexibilityRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('quadricepsFlexibilityRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.quadricepsFlexibilityLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('quadricepsFlexibilityLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Hip External Rotation</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Hip External Rotation</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.hipExternalRotationRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('hipExternalRotationRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.hipExternalRotationLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('hipExternalRotationLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Hip Internal Rotation</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Hip Internal Rotation</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.hipInternalRotationRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('hipInternalRotationRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.hipInternalRotationLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('hipInternalRotationLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Hip Extension</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Hip Extension</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.hipExtensionRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('hipExtensionRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.hipExtensionLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('hipExtensionLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Active SLR</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Active SLR</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.activeSLRRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('activeSLRRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.activeSLRLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('activeSLRLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
@@ -3467,14 +4236,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 											{/* Prone plank */}
 											<div>
-												<label className="block text-sm font-medium text-slate-700 mb-1">
+												<label className="block text-sm font-medium text-slate-900 mb-1">
 													Prone Plank
 												</label>
 												<input
 													type="text"
 													value={strengthConditioningFormData.pronePlank || ''}
 													onChange={e => handleFieldChangeStrengthConditioning('pronePlank', e.target.value)}
-													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 													placeholder="Enter result"
 												/>
 											</div>
@@ -3484,50 +4253,50 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 												<table className="min-w-full divide-y divide-slate-200 border border-slate-300 text-left text-sm">
 													<thead className="bg-slate-100">
 														<tr>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Fields</th>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Right</th>
-															<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Left</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Fields</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Right</th>
+															<th className="px-3 py-2 font-semibold text-slate-900 border border-slate-300 bg-slate-200">Left</th>
 														</tr>
 													</thead>
 													<tbody className="divide-y divide-slate-200 bg-white">
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Side Plank</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Side Plank</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.sidePlankRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('sidePlankRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.sidePlankLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('sidePlankLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
 														</tr>
 														<tr>
-															<td className="px-3 py-2 border border-slate-300 font-medium">Stork Standing Balance Test</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 font-medium text-slate-900 bg-white">Stork Standing Balance Test</td>
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.storkStandingBalanceTestRight || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('storkStandingBalanceTestRight', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
-															<td className="px-3 py-2 border border-slate-300">
+															<td className="px-3 py-2 border border-slate-300 bg-white">
 																<input
 																	type="text"
 																	value={strengthConditioningFormData.storkStandingBalanceTestLeft || ''}
 																	onChange={e => handleFieldChangeStrengthConditioning('storkStandingBalanceTestLeft', e.target.value)}
-																	className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+																	className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																	placeholder="Enter result"
 																/>
 															</td>
@@ -3539,61 +4308,61 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											{/* Additional fields */}
 											<div className="space-y-4">
 												<div>
-													<label className="block text-sm font-medium text-slate-700 mb-1">
+													<label className="block text-sm font-medium text-slate-900 mb-1">
 														Deep Squat
 													</label>
 													<input
 														type="text"
 														value={strengthConditioningFormData.deepSquat || ''}
 														onChange={e => handleFieldChangeStrengthConditioning('deepSquat', e.target.value)}
-														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 														placeholder="Enter result"
 													/>
 												</div>
 												<div>
-													<label className="block text-sm font-medium text-slate-700 mb-1">
+													<label className="block text-sm font-medium text-slate-900 mb-1">
 														Pushup
 													</label>
 													<input
 														type="text"
 														value={strengthConditioningFormData.pushup || ''}
 														onChange={e => handleFieldChangeStrengthConditioning('pushup', e.target.value)}
-														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 														placeholder="Enter result"
 													/>
 												</div>
 												<div>
-													<label className="block text-sm font-medium text-slate-700 mb-1">
+													<label className="block text-sm font-medium text-slate-900 mb-1">
 														FMS Score
 													</label>
 													<input
 														type="text"
 														value={strengthConditioningFormData.fmsScore || ''}
 														onChange={e => handleFieldChangeStrengthConditioning('fmsScore', e.target.value)}
-														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 														placeholder="Enter FMS score"
 													/>
 												</div>
 												<div>
-													<label className="block text-sm font-medium text-slate-700 mb-1">
+													<label className="block text-sm font-medium text-slate-900 mb-1">
 														Total FMS Score
 													</label>
 													<input
 														type="text"
 														value={strengthConditioningFormData.totalFmsScore || ''}
 														onChange={e => handleFieldChangeStrengthConditioning('totalFmsScore', e.target.value)}
-														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 														placeholder="Enter total FMS score"
 													/>
 												</div>
 												<div>
-													<label className="block text-sm font-medium text-slate-700 mb-1">
+													<label className="block text-sm font-medium text-slate-900 mb-1">
 														Summary
 													</label>
 													<textarea
 														value={strengthConditioningFormData.summary || ''}
 														onChange={e => handleFieldChangeStrengthConditioning('summary', e.target.value)}
-														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
 														rows={4}
 														placeholder="Enter summary"
 													/>

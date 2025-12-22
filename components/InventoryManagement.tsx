@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, where, getDocs, getDoc, serverTimestamp, type QuerySnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -75,6 +75,11 @@ export default function InventoryManagement() {
 	const [submitting, setSubmitting] = useState(false);
 	const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+	// Use ref to store latest items to avoid circular dependency in useEffect
+	const itemsRef = useRef<InventoryItem[]>([]);
+	useEffect(() => {
+		itemsRef.current = items;
+	}, [items]);
 
 	// Load inventory items
 	useEffect(() => {
@@ -189,8 +194,9 @@ export default function InventoryManagement() {
 							: undefined;
 					
 					// If category not in issue record, try to get it from items array
+					// Use ref to access latest items without causing dependency loop
 					if (!itemCategory && data.itemId) {
-						const relatedItem = items.find(item => item.id === data.itemId);
+						const relatedItem = itemsRef.current.find(item => item.id === data.itemId);
 						if (relatedItem) {
 							itemCategory = relatedItem.category;
 						}
@@ -228,7 +234,7 @@ export default function InventoryManagement() {
 		);
 
 		return () => unsubscribe();
-	}, [user, items]);
+	}, [user]); // Removed items from dependencies to prevent circular dependency
 
 	// Load staff members for "Issue To" dropdown
 	useEffect(() => {

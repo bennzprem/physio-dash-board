@@ -860,6 +860,46 @@ export async function generatePhysiotherapyReportPDF(
 
 export interface StrengthConditioningData {
 	therapistName?: string;
+	// Athlete Profile
+	sports?: string;
+	trainingAge?: string;
+	competitionLevel?: string;
+	injuryHistory?: string;
+	dominantSide?: 'Right' | 'Left';
+	// Periodization
+	seasonPhase?: 'Off-Season' | 'On-Season' | 'Competition';
+	// Skill Training
+	skillType?: 'Sports specific' | 'Fitness specific';
+	skillDuration?: string; // Time range e.g., "10:00 am to 11:00 am"
+	skillRPEPlanned?: number; // 1-10
+	skillPRPEPerceived?: number; // 1-10
+	// Strength & Conditioning
+	scType?: 'Strength' | 'Endurance' | 'Speed & Power' | 'Agility' | 'Mobility' | 'Prehab' | 'Recovery';
+	scDuration?: string; // Time in 24hrs format
+	scRPEPlanned?: number; // 1-10
+	scPRPEPerceived?: number; // 1-10
+	// Exercise Log (array of exercises)
+	exercises?: Array<{
+		exerciseName?: string;
+		sets?: number;
+		reps?: number;
+		load?: number; // kg/lb
+		rest?: number; // seconds
+		distance?: number;
+		avgHR?: number; // Heart rate
+	}>;
+	// Wellness Score
+	sleepDuration?: number; // hours
+	sleepQuality?: number; // 1-10
+	stressLevel?: number; // 1-10
+	muscleSoreness?: number; // 1-10
+	moodState?: 'Highly Motivated' | 'Normal / OK' | 'Demotivated';
+	// ACWR
+	dailyWorkload?: number; // A.U.
+	acuteWorkload?: number; // Last 7 days total
+	chronicWorkload?: number; // Last 28 days average
+	acwrRatio?: number; // Automatically calculated
+	// Existing fields
 	scapularDyskinesiaTest?: string;
 	upperLimbFlexibilityRight?: string;
 	upperLimbFlexibilityLeft?: string;
