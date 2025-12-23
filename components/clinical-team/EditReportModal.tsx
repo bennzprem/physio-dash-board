@@ -1171,18 +1171,25 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		return 0;
 	};
 
-	// Auto-calculate daily workload from RPE and Duration
+	// Auto-calculate daily workload from RPE and Total Duration
+	// Total Duration = Skill Training Duration + Strength & Conditioning Duration
 	const calculatedDailyWorkload = useMemo(() => {
-		if (strengthConditioningFormData.scRPEPlanned && strengthConditioningFormData.scDuration) {
-			const hours = typeof strengthConditioningFormData.scDuration === 'number' 
+		if (strengthConditioningFormData.scRPEPlanned) {
+			// Calculate total duration: Skill Training Duration + Strength & Conditioning Duration
+			const skillDur = typeof strengthConditioningFormData.skillDuration === 'number' 
+				? strengthConditioningFormData.skillDuration 
+				: Number(strengthConditioningFormData.skillDuration) || 0;
+			const scDur = typeof strengthConditioningFormData.scDuration === 'number' 
 				? strengthConditioningFormData.scDuration 
 				: Number(strengthConditioningFormData.scDuration) || 0;
-			if (hours > 0 && typeof strengthConditioningFormData.scRPEPlanned === 'number') {
-				return strengthConditioningFormData.scRPEPlanned * hours;
+			const totalDuration = skillDur + scDur;
+			
+			if (totalDuration > 0 && typeof strengthConditioningFormData.scRPEPlanned === 'number') {
+				return strengthConditioningFormData.scRPEPlanned * totalDuration;
 			}
 		}
 		return undefined;
-	}, [strengthConditioningFormData.scRPEPlanned, strengthConditioningFormData.scDuration]);
+	}, [strengthConditioningFormData.scRPEPlanned, strengthConditioningFormData.skillDuration, strengthConditioningFormData.scDuration]);
 
 	// Auto-calculate ACWR ratio
 	const calculatedACWR = useMemo(() => {
@@ -1205,8 +1212,69 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		}
 	}, [calculatedACWR]);
 
+	// Validate and normalize duration to time-based decimal format
+	// Format: 0.10 (10 min), 0.15 (15 min), 0.20 (20 min), ..., 0.55 (55 min)
+	// After 0.55, rolls over to 1.0 (1 hour), then 1.10 (1h 10m), 1.15 (1h 15m), etc.
+	// Examples: 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 1.0, 1.10, 1.15, ..., 1.55, 2.0, 2.10, etc.
+	const validateDuration = (value: number | string | undefined): number | undefined => {
+		if (value === undefined || value === null || value === '') return undefined;
+		
+		const numValue = typeof value === 'string' ? parseFloat(value) : value;
+		if (isNaN(numValue) || numValue < 0) return undefined;
+		
+		const hours = Math.floor(numValue);
+		const decimalPart = numValue - hours;
+		
+		// Valid decimal values: 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55
+		// These represent 10, 15, 20, 25, 30, 35, 40, 45, 50, 55 minutes
+		const validDecimals = [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55];
+		
+		// If decimal part is 0 (or very close to 0), it's a whole hour - valid as is
+		if (Math.abs(decimalPart) < 0.001) {
+			return numValue;
+		}
+		
+		// If decimal > 0.55, roll over to next hour (e.g., 0.60 becomes 1.0, 1.60 becomes 2.0)
+		if (decimalPart > 0.55) {
+			return hours + 1;
+		}
+		
+		// Round to nearest 0.05 increment first
+		const roundedTo005 = Math.round(decimalPart * 20) / 20; // Round to nearest 0.05
+		
+		// Normalize to two decimal places for comparison (0.1 becomes 0.10, 0.2 becomes 0.20, etc.)
+		const normalizedRounded = Math.round(roundedTo005 * 100) / 100;
+		
+		// Check if rounded value is in valid list
+		const isValidRounded = validDecimals.some(valid => Math.abs(normalizedRounded - valid) < 0.001);
+		
+		if (isValidRounded) {
+			return hours + normalizedRounded;
+		}
+		
+		// If rounded value is not in valid list, find the closest valid decimal
+		let closestDecimal = 0.10;
+		let minDiff = Math.abs(decimalPart - 0.10);
+		
+		for (const validDec of validDecimals) {
+			const diff = Math.abs(decimalPart - validDec);
+			if (diff < minDiff) {
+				minDiff = diff;
+				closestDecimal = validDec;
+			}
+		}
+		
+		return hours + closestDecimal;
+	};
+
 	const handleFieldChangeStrengthConditioning = (field: keyof StrengthConditioningData, value: any) => {
-		setStrengthConditioningFormData(prev => ({ ...prev, [field]: value }));
+		// Validate duration fields (skillDuration, scDuration, sleepDuration)
+		if ((field === 'skillDuration' || field === 'scDuration' || field === 'sleepDuration') && value !== undefined && value !== '') {
+			const validated = validateDuration(value);
+			setStrengthConditioningFormData(prev => ({ ...prev, [field]: validated }));
+		} else {
+			setStrengthConditioningFormData(prev => ({ ...prev, [field]: value }));
+		}
 	};
 
 	// Handle save for strength conditioning
@@ -3332,6 +3400,65 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									</div>
 
+									{/* List of Matches */}
+									<div className="mb-8 border-t border-slate-200 pt-6">
+										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
+											List of Matches
+										</h2>
+										<div className="space-y-4">
+											{(strengthConditioningFormData.matchDates && strengthConditioningFormData.matchDates.length > 0 
+												? strengthConditioningFormData.matchDates 
+												: ['']).map((matchDate, idx) => (
+												<div key={idx} className="flex items-center gap-2">
+													<label className="block text-sm font-medium text-slate-700 flex-1">
+														Match Date {idx + 1}
+														<input
+															type="date"
+															value={matchDate || ''}
+															onChange={e => {
+																const matchDates = [...(strengthConditioningFormData.matchDates || [])];
+																if (!matchDates[idx]) matchDates[idx] = '';
+																matchDates[idx] = e.target.value;
+																handleFieldChangeStrengthConditioning('matchDates', matchDates);
+															}}
+															className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+														/>
+													</label>
+													{idx === (strengthConditioningFormData.matchDates?.length || 1) - 1 && (
+														<button
+															type="button"
+															onClick={() => {
+																const matchDates = [...(strengthConditioningFormData.matchDates || ['']), ''];
+																handleFieldChangeStrengthConditioning('matchDates', matchDates);
+															}}
+															className="mt-6 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+															title="Add another match date"
+														>
+															<i className="fas fa-plus" aria-hidden="true" />
+														</button>
+													)}
+													{(strengthConditioningFormData.matchDates && strengthConditioningFormData.matchDates.length > 1) && (
+														<button
+															type="button"
+															onClick={() => {
+																const matchDates = [...(strengthConditioningFormData.matchDates || [])];
+																matchDates.splice(idx, 1);
+																handleFieldChangeStrengthConditioning('matchDates', matchDates.length > 0 ? matchDates : undefined);
+															}}
+															className="mt-6 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
+															title="Remove this match date"
+														>
+															<i className="fas fa-times" aria-hidden="true" />
+														</button>
+													)}
+												</div>
+											))}
+											{(!strengthConditioningFormData.matchDates || strengthConditioningFormData.matchDates.length === 0) && (
+												<p className="text-xs text-slate-500 italic">No match dates added yet. Click the + button to add a match date.</p>
+											)}
+										</div>
+									</div>
+
 									{/* Skill Training */}
 									<div className="mb-8 border-t border-slate-200 pt-6">
 										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
@@ -3369,13 +3496,33 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 												<label className="block text-sm font-medium text-slate-700 mb-1">Duration (Hours)</label>
 												<input
 													type="number"
-													step="0.5"
+													step="0.05"
 													min="0"
 													value={strengthConditioningFormData.skillDuration || ''}
-													onChange={e => handleFieldChangeStrengthConditioning('skillDuration', e.target.value ? Number(e.target.value) : undefined)}
+													onChange={e => {
+														const value = e.target.value;
+														if (value === '') {
+															handleFieldChangeStrengthConditioning('skillDuration', undefined);
+														} else {
+															handleFieldChangeStrengthConditioning('skillDuration', value);
+														}
+													}}
+													onBlur={e => {
+														// Validate on blur to ensure proper format
+														const value = e.target.value;
+														if (value) {
+															const validated = validateDuration(value);
+															if (validated !== undefined) {
+																handleFieldChangeStrengthConditioning('skillDuration', validated);
+															}
+														}
+													}}
 													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-													placeholder="e.g., 2, 2.5, 1.5"
+													placeholder="e.g., 0.10, 0.15, 0.55, 1.0, 1.10, 1.15, 1.55, 2.0"
 												/>
+												<p className="mt-1 text-xs text-slate-500">
+													Valid formats: 0.10 (10m), 0.15 (15m), 0.20 (20m), ..., 0.55 (55m), 1.0 (1h), 1.10 (1h 10m), ..., 1.55 (1h 55m), 2.0 (2h), etc.
+												</p>
 											</div>
 											<div className="grid gap-4 sm:grid-cols-2">
 												<div>
@@ -3433,13 +3580,33 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 												<label className="block text-sm font-medium text-slate-700 mb-1">Duration (Hours)</label>
 												<input
 													type="number"
-													step="0.5"
+													step="0.05"
 													min="0"
 													value={strengthConditioningFormData.scDuration || ''}
-													onChange={e => handleFieldChangeStrengthConditioning('scDuration', e.target.value ? Number(e.target.value) : undefined)}
+													onChange={e => {
+														const value = e.target.value;
+														if (value === '') {
+															handleFieldChangeStrengthConditioning('scDuration', undefined);
+														} else {
+															handleFieldChangeStrengthConditioning('scDuration', value);
+														}
+													}}
+													onBlur={e => {
+														// Validate on blur to ensure proper format
+														const value = e.target.value;
+														if (value) {
+															const validated = validateDuration(value);
+															if (validated !== undefined) {
+																handleFieldChangeStrengthConditioning('scDuration', validated);
+															}
+														}
+													}}
 													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-													placeholder="e.g., 2, 2.5, 1.5"
+													placeholder="e.g., 0.10, 0.15, 0.55, 1.0, 1.10, 1.15, 1.55, 2.0"
 												/>
+												<p className="mt-1 text-xs text-slate-500">
+													Valid formats: 0.10 (10m), 0.15 (15m), 0.20 (20m), ..., 0.55 (55m), 1.0 (1h), 1.10 (1h 10m), ..., 1.55 (1h 55m), 2.0 (2h), etc.
+												</p>
 											</div>
 											<div className="grid gap-4 sm:grid-cols-2">
 												<div>
@@ -3466,6 +3633,30 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 														placeholder="1-10"
 													/>
 												</div>
+											</div>
+											{/* Auto-calculated Duration */}
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">Total Duration (Hours) <span className="text-xs text-slate-500 font-normal">(Auto-calculated)</span></label>
+												<input
+													type="number"
+													step="0.5"
+													min="0"
+													value={(() => {
+														const skillDur = typeof strengthConditioningFormData.skillDuration === 'number' 
+															? strengthConditioningFormData.skillDuration 
+															: Number(strengthConditioningFormData.skillDuration) || 0;
+														const scDur = typeof strengthConditioningFormData.scDuration === 'number' 
+															? strengthConditioningFormData.scDuration 
+															: Number(strengthConditioningFormData.scDuration) || 0;
+														return skillDur + scDur;
+													})()}
+													readOnly
+													className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 cursor-not-allowed"
+													placeholder="Auto-calculated"
+												/>
+												<p className="mt-1 text-xs text-slate-500">
+													Skill Training Duration + Strength & Conditioning Duration
+												</p>
 											</div>
 											{/* Exercise Log Table */}
 											<div>
@@ -3615,12 +3806,33 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 													<label className="block text-sm font-medium text-slate-700 mb-1">Sleep Duration (hours)</label>
 													<input
 														type="number"
-														step="0.1"
+														step="0.05"
+														min="0"
 														value={strengthConditioningFormData.sleepDuration || ''}
-														onChange={e => handleFieldChangeStrengthConditioning('sleepDuration', e.target.value ? Number(e.target.value) : undefined)}
+														onChange={e => {
+															const value = e.target.value;
+															if (value === '') {
+																handleFieldChangeStrengthConditioning('sleepDuration', undefined);
+															} else {
+																handleFieldChangeStrengthConditioning('sleepDuration', value);
+															}
+														}}
+														onBlur={e => {
+															// Validate on blur to ensure proper format
+															const value = e.target.value;
+															if (value) {
+																const validated = validateDuration(value);
+																if (validated !== undefined) {
+																	handleFieldChangeStrengthConditioning('sleepDuration', validated);
+																}
+															}
+														}}
 														className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-														placeholder="Hours"
+														placeholder="e.g., 0.10, 0.15, 0.55, 1.0, 1.10, 1.15, 1.55, 2.0"
 													/>
+													<p className="mt-1 text-xs text-slate-500">
+														Valid formats: 0.10 (10m), 0.15 (15m), 0.20 (20m), ..., 0.55 (55m), 1.0 (1h), 1.10 (1h 10m), ..., 1.55 (1h 55m), 2.0 (2h), etc.
+													</p>
 												</div>
 												<div>
 													<label className="block text-sm font-medium text-slate-700 mb-1">Sleep Quality (1-10)</label>
@@ -3839,12 +4051,21 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 													placeholder="Auto-calculated: RPE × Duration"
 												/>
 												<p className="mt-1 text-xs text-slate-500">
-													Daily Workload = RPE × Duration (automatically calculated from S&C section)
-													{calculatedDailyWorkload !== undefined && (
-														<span className="ml-2 text-sky-600">
-															= {strengthConditioningFormData.scRPEPlanned || 0} × {typeof strengthConditioningFormData.scDuration === 'number' ? strengthConditioningFormData.scDuration : (Number(strengthConditioningFormData.scDuration) || 0)}h = {calculatedDailyWorkload.toFixed(2)}
-														</span>
-													)}
+													Daily Workload = RPE × Total Duration (Skill Training Duration + Strength & Conditioning Duration)
+													{calculatedDailyWorkload !== undefined && (() => {
+														const skillDur = typeof strengthConditioningFormData.skillDuration === 'number' 
+															? strengthConditioningFormData.skillDuration 
+															: Number(strengthConditioningFormData.skillDuration) || 0;
+														const scDur = typeof strengthConditioningFormData.scDuration === 'number' 
+															? strengthConditioningFormData.scDuration 
+															: Number(strengthConditioningFormData.scDuration) || 0;
+														const totalDuration = skillDur + scDur;
+														return (
+															<span className="ml-2 text-sky-600">
+																= {strengthConditioningFormData.scRPEPlanned || 0} × {totalDuration.toFixed(1)}h = {calculatedDailyWorkload.toFixed(2)}
+															</span>
+														);
+													})()}
 												</p>
 											</div>
 											<div className="grid gap-4 sm:grid-cols-2">

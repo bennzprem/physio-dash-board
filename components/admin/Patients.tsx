@@ -457,7 +457,7 @@ export default function Patients() {
 				const regDate = patient.registeredAt ? formatDateLabel(patient.registeredAt) : '';
 				return {
 					label: `${patient.name} (${patient.patientId})${regDate ? ` - Registered: ${regDate}` : ''}`,
-					value: patient.patientId,
+				value: patient.patientId,
 				};
 			});
 	}, [patients]);

@@ -1,16 +1,19 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, where, getDocs, getDoc, serverTimestamp, type QuerySnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, where, getDocs, getDoc, serverTimestamp, writeBatch, type QuerySnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
+// @ts-ignore - papaparse types may not be available
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 interface InventoryItem {
 	id: string;
 	name: string;
 	category: 'consumable' | 'non-consumable';
-	type: 'Physiotherapy' | 'Strength and Conditioning' | 'Psychological';
+	type: 'Physiotherapy' | 'Strength and Conditioning' | 'Psychological' | 'Biomechanics';
 	totalQuantity: number;
 	issuedQuantity: number;
 	returnedQuantity: number;
@@ -41,7 +44,7 @@ interface IssueRecord {
 	updatedAt: any;
 }
 
-type ItemType = 'Physiotherapy' | 'Strength and Conditioning' | 'Psychological';
+type ItemType = 'Physiotherapy' | 'Strength and Conditioning' | 'Psychological' | 'Biomechanics';
 
 export default function InventoryManagement() {
 	const { user } = useAuth();
@@ -53,6 +56,10 @@ export default function InventoryManagement() {
 	const [showAddItemModal, setShowAddItemModal] = useState(false);
 	const [showIssueModal, setShowIssueModal] = useState(false);
 	const [showReturnModal, setShowReturnModal] = useState(false);
+	const [showImportModal, setShowImportModal] = useState(false);
+	const [importFile, setImportFile] = useState<File | null>(null);
+	const [importing, setImporting] = useState(false);
+	const [importPreview, setImportPreview] = useState<any[]>([]);
 
 	const [newItem, setNewItem] = useState({ 
 		name: '', 
@@ -646,6 +653,219 @@ export default function InventoryManagement() {
 	const isClinicalTeam = user?.role === 'ClinicalTeam' || user?.role === 'clinic' || user?.role === 'Clinic';
 	const canManageInventory = isFrontDesk || isAdmin || isSuperAdmin || isClinicalTeam;
 
+	// Import functions
+	const parseFile = async (file: File): Promise<any[]> => {
+		return new Promise((resolve, reject) => {
+			const fileName = file.name.toLowerCase();
+			const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+			
+			if (isExcel) {
+				// Parse Excel file
+				const reader = new FileReader();
+				reader.onload = (e) => {
+					try {
+						const data = e.target?.result;
+						const workbook = XLSX.read(data, { type: 'binary' });
+						const firstSheetName = workbook.SheetNames[0];
+						const worksheet = workbook.Sheets[firstSheetName];
+						const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+						
+						if (jsonData.length < 2) {
+							reject(new Error('Excel file must have at least a header row and one data row'));
+							return;
+						}
+						
+						// First row is headers
+						const headers = ((jsonData[0] as unknown) as any[]).map((h: any) => String(h || '').toLowerCase().trim());
+						const rows = jsonData.slice(1).map((row: unknown) => {
+							const rowArray = (row as unknown) as any[];
+							const obj: any = {};
+							headers.forEach((header, idx) => {
+								obj[header] = rowArray[idx] !== undefined && rowArray[idx] !== null ? String(rowArray[idx]).trim() : '';
+							});
+							return obj;
+						});
+						
+						resolve(rows.filter(row => Object.values(row).some(v => v !== '')));
+					} catch (error) {
+						reject(error);
+					}
+				};
+				reader.onerror = () => reject(new Error('Failed to read Excel file'));
+				reader.readAsBinaryString(file);
+			} else {
+				// Parse CSV file
+				Papa.parse(file, {
+					header: true,
+					skipEmptyLines: true,
+					complete: (results: { data?: unknown[] } | any) => {
+						const data = (results as { data?: unknown[] }).data || [];
+						resolve((data as any[]).map((row: any) => {
+							// Normalize keys to lowercase
+							const normalized: any = {};
+							Object.keys(row).forEach(key => {
+								normalized[key.toLowerCase().trim()] = row[key];
+							});
+							return normalized;
+						}));
+					},
+					error: (error: Error | any) => reject(error instanceof Error ? error : new Error(String(error))),
+				});
+			}
+		});
+	};
+
+	const normalizeCategory = (category: string): 'consumable' | 'non-consumable' => {
+		const normalized = category.toLowerCase().trim();
+		if (normalized.includes('consumable') && !normalized.includes('non')) {
+			return 'consumable';
+		}
+		return 'non-consumable';
+	};
+
+	const normalizeType = (type: string): ItemType => {
+		const normalized = type.toLowerCase().trim();
+		if (normalized.includes('strength') || normalized.includes('conditioning')) {
+			return 'Strength and Conditioning';
+		}
+		if (normalized.includes('psychological') || normalized.includes('psychology')) {
+			return 'Psychological';
+		}
+		if (normalized.includes('biomechanics') || normalized.includes('biomechanic')) {
+			return 'Biomechanics';
+		}
+		return 'Physiotherapy';
+	};
+
+	const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+
+		setImportFile(file);
+		setImporting(true);
+		try {
+			const parsed = await parseFile(file);
+			
+			// Map parsed data to inventory items
+			const mapped = parsed.map((row: any, idx: number) => {
+				// Try to find columns by common names (case-insensitive)
+				const itemName = row['item name'] || row['itemname'] || row['name'] || row['item'] || '';
+				const category = row['category'] || row['cat'] || '';
+				const type = row['type'] || '';
+				const totalQuantity = parseInt(row['total quantity'] || row['totalquantity'] || row['total'] || row['quantity'] || '0') || 0;
+				const issued = parseInt(row['issued'] || row['issued quantity'] || '0') || 0;
+				const returned = parseInt(row['returned'] || row['returned quantity'] || '0') || 0;
+				const remaining = parseInt(row['remaining'] || row['remaining quantity'] || '0') || 0;
+
+				return {
+					rowIndex: idx + 2, // +2 because 1-indexed and header row
+					itemName: String(itemName).trim(),
+					category: normalizeCategory(category),
+					type: normalizeType(type),
+					totalQuantity,
+					issuedQuantity: issued,
+					returnedQuantity: returned,
+					remainingQuantity: remaining,
+					errors: [] as string[],
+				};
+			}).filter(item => item.itemName); // Filter out empty rows
+
+			// Validate mapped data
+			const validated = mapped.map(item => {
+				const errors: string[] = [];
+				if (!item.itemName) {
+					errors.push('Item name is required');
+				}
+				if (item.totalQuantity < 0) {
+					errors.push('Total quantity cannot be negative');
+				}
+				if (item.issuedQuantity < 0) {
+					errors.push('Issued quantity cannot be negative');
+				}
+				if (item.returnedQuantity < 0) {
+					errors.push('Returned quantity cannot be negative');
+				}
+				if (item.returnedQuantity > item.issuedQuantity) {
+					errors.push('Returned quantity cannot exceed issued quantity');
+				}
+				if (item.totalQuantity < item.issuedQuantity) {
+					errors.push('Total quantity cannot be less than issued quantity');
+				}
+				return { ...item, errors };
+			});
+
+			setImportPreview(validated);
+		} catch (error: any) {
+			alert(`Failed to parse file: ${error.message || 'Unknown error'}`);
+			setImportFile(null);
+			setImportPreview([]);
+		} finally {
+			setImporting(false);
+		}
+	};
+
+	const handleImportConfirm = async () => {
+		if (!user || importPreview.length === 0) {
+			alert('No data to import');
+			return;
+		}
+
+		// Filter out rows with errors
+		const validRows = importPreview.filter(row => row.errors.length === 0);
+		if (validRows.length === 0) {
+			alert('No valid rows to import. Please fix errors in the preview.');
+			return;
+		}
+
+		setImporting(true);
+		try {
+			const batch = writeBatch(db);
+			let count = 0;
+
+			for (const row of validRows) {
+				const itemRef = doc(collection(db, 'inventoryItems'));
+				batch.set(itemRef, {
+					name: row.itemName,
+					category: row.category,
+					type: row.type,
+					totalQuantity: row.totalQuantity,
+					issuedQuantity: row.issuedQuantity || 0,
+					returnedQuantity: row.returnedQuantity || 0,
+					createdBy: user.uid,
+					createdByName: user.displayName || user.email?.split('@')[0] || 'User',
+					createdAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				});
+				count++;
+
+				// Firestore batch limit is 500, commit in chunks
+				if (count % 500 === 0) {
+					await batch.commit();
+				}
+			}
+
+			// Commit remaining
+			if (count % 500 !== 0) {
+				await batch.commit();
+			}
+
+			setNotification({ 
+				message: `Successfully imported ${count} items!`, 
+				type: 'success' 
+			});
+			setTimeout(() => setNotification(null), 5000);
+			
+			setShowImportModal(false);
+			setImportFile(null);
+			setImportPreview([]);
+		} catch (error: any) {
+			console.error('Import failed:', error);
+			alert(`Failed to import items: ${error.message || 'Unknown error'}`);
+		} finally {
+			setImporting(false);
+		}
+	};
+
 
 	return (
 		<div className="min-h-svh bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 px-6 py-10">
@@ -678,18 +898,28 @@ export default function InventoryManagement() {
 				<div className="flex items-center justify-between">
 					<PageHeader title="Inventory Management" />
 					{canManageInventory && (
-						<button
-							type="button"
-							onClick={() => {
-								setEditingItem(null);
-								setNewItem({ name: '', category: '', type: 'Physiotherapy', totalQuantity: 0 });
-								setShowAddItemModal(true);
-							}}
-							className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-blue-700 hover:via-blue-800 hover:to-indigo-700 transition-all duration-200 hover:scale-105"
-						>
-							<i className="fas fa-plus text-xs" aria-hidden="true" />
-							Add New Item
-						</button>
+						<div className="flex items-center gap-3">
+							<button
+								type="button"
+								onClick={() => setShowImportModal(true)}
+								className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 via-green-700 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-green-700 hover:via-green-800 hover:to-emerald-700 transition-all duration-200 hover:scale-105"
+							>
+								<i className="fas fa-file-import text-xs" aria-hidden="true" />
+								Import Excel/CSV
+							</button>
+							<button
+								type="button"
+								onClick={() => {
+									setEditingItem(null);
+									setNewItem({ name: '', category: '', type: 'Physiotherapy', totalQuantity: 0 });
+									setShowAddItemModal(true);
+								}}
+								className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-blue-700 hover:via-blue-800 hover:to-indigo-700 transition-all duration-200 hover:scale-105"
+							>
+								<i className="fas fa-plus text-xs" aria-hidden="true" />
+								Add New Item
+							</button>
+						</div>
 					)}
 				</div>
 
@@ -701,10 +931,10 @@ export default function InventoryManagement() {
 						{canManageInventory && (
 							<button
 								type="button"
-							onClick={() => {
-								setIssueForm({ itemId: '', quantity: 0, issuedTo: '' });
-								setShowIssueModal(true);
-							}}
+								onClick={() => {
+									setIssueForm({ itemId: '', quantity: 0, issuedTo: '' });
+									setShowIssueModal(true);
+								}}
 								className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-indigo-700 hover:via-indigo-800 hover:to-purple-700 transition-all duration-200 hover:scale-105"
 							>
 								<i className="fas fa-hand-holding text-xs" aria-hidden="true" />
@@ -972,12 +1202,14 @@ export default function InventoryManagement() {
 											<option value="Physiotherapy">Physiotherapy</option>
 											<option value="Strength and Conditioning">Strength and Conditioning</option>
 											<option value="Psychological">Psychological</option>
+											<option value="Biomechanics">Biomechanics</option>
 										</>
 									) : newItem.category === 'consumable' ? (
 										<>
 											<option value="Physiotherapy">Physiotherapy</option>
 											<option value="Strength and Conditioning">Strength and Conditioning</option>
 											<option value="Psychological">Psychological</option>
+											<option value="Biomechanics">Biomechanics</option>
 										</>
 									) : (
 										<option value="">Select category first</option>
@@ -1204,6 +1436,139 @@ export default function InventoryManagement() {
 								</button>
 							</div>
 						</form>
+					</div>
+				</div>
+			)}
+
+			{/* Import Excel/CSV Modal */}
+			{showImportModal && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+					<div className="bg-white rounded-2xl p-6 max-w-4xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+						<div className="flex items-center justify-between mb-4">
+							<h3 className="text-lg font-semibold text-slate-900">Import Inventory Items</h3>
+							<button
+								type="button"
+								onClick={() => {
+									setShowImportModal(false);
+									setImportFile(null);
+									setImportPreview([]);
+								}}
+								className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+								aria-label="Close modal"
+							>
+								<i className="fas fa-times" aria-hidden="true" />
+							</button>
+						</div>
+
+						<div className="flex-1 overflow-y-auto space-y-4">
+							<div>
+								<label htmlFor="importFile" className="block text-sm font-medium text-slate-700 mb-2">
+									Select Excel or CSV File <span className="text-red-500">*</span>
+								</label>
+								<input
+									id="importFile"
+									type="file"
+									accept=".xlsx,.xls,.csv"
+									onChange={handleFileSelect}
+									disabled={importing}
+									className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+								/>
+								<p className="mt-2 text-xs text-slate-500">
+									Expected columns: Item Name, Category (Non-Consumable/Consumable), Type, Total Quantity, Issued, Returned, Remaining
+								</p>
+							</div>
+
+							{importPreview.length > 0 && (
+								<div>
+									<h4 className="text-sm font-semibold text-slate-900 mb-2">
+										Preview ({importPreview.length} items)
+									</h4>
+									<div className="overflow-x-auto border border-slate-200 rounded-lg">
+										<table className="min-w-full divide-y divide-slate-200 text-xs">
+											<thead className="bg-slate-50">
+												<tr>
+													<th className="px-3 py-2 text-left font-semibold text-slate-700">Row</th>
+													<th className="px-3 py-2 text-left font-semibold text-slate-700">Item Name</th>
+													<th className="px-3 py-2 text-left font-semibold text-slate-700">Category</th>
+													<th className="px-3 py-2 text-left font-semibold text-slate-700">Type</th>
+													<th className="px-3 py-2 text-left font-semibold text-slate-700">Total Qty</th>
+													<th className="px-3 py-2 text-left font-semibold text-slate-700">Issued</th>
+													<th className="px-3 py-2 text-left font-semibold text-slate-700">Returned</th>
+													<th className="px-3 py-2 text-left font-semibold text-slate-700">Status</th>
+												</tr>
+											</thead>
+											<tbody className="divide-y divide-slate-100 bg-white">
+												{importPreview.map((row, idx) => (
+													<tr key={idx} className={row.errors.length > 0 ? 'bg-red-50' : ''}>
+														<td className="px-3 py-2 text-slate-600">{row.rowIndex}</td>
+														<td className="px-3 py-2 font-medium text-slate-900">{row.itemName || '—'}</td>
+														<td className="px-3 py-2 text-slate-600">{row.category}</td>
+														<td className="px-3 py-2 text-slate-600">{row.type}</td>
+														<td className="px-3 py-2 text-slate-600">{row.totalQuantity}</td>
+														<td className="px-3 py-2 text-slate-600">{row.issuedQuantity}</td>
+														<td className="px-3 py-2 text-slate-600">{row.returnedQuantity}</td>
+														<td className="px-3 py-2">
+															{row.errors.length > 0 ? (
+																<span className="text-red-600 text-xs" title={row.errors.join(', ')}>
+																	<i className="fas fa-exclamation-circle mr-1" aria-hidden="true" />
+																	Error
+																</span>
+															) : (
+																<span className="text-green-600 text-xs">
+																	<i className="fas fa-check-circle mr-1" aria-hidden="true" />
+																	Valid
+																</span>
+															)}
+														</td>
+													</tr>
+												))}
+											</tbody>
+										</table>
+									</div>
+									{importPreview.some(row => row.errors.length > 0) && (
+										<div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+											<p className="text-xs text-red-700 font-semibold mb-1">
+												<i className="fas fa-exclamation-triangle mr-1" aria-hidden="true" />
+												Some rows have errors and will be skipped
+											</p>
+										</div>
+									)}
+								</div>
+							)}
+						</div>
+
+						<div className="flex items-center gap-3 justify-end pt-4 border-t border-slate-200 mt-4">
+							<button
+								type="button"
+								onClick={() => {
+									setShowImportModal(false);
+									setImportFile(null);
+									setImportPreview([]);
+								}}
+								className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900"
+								disabled={importing}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleImportConfirm}
+								disabled={importing || importPreview.length === 0 || importPreview.every(row => row.errors.length > 0)}
+								className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-green-600 via-green-700 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-green-700 hover:via-green-800 hover:to-emerald-700 transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+							>
+								{importing ? (
+									<>
+										<div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+										Importing...
+									</>
+								) : (
+									<>
+										<i className="fas fa-file-import text-xs" aria-hidden="true" />
+										Import {importPreview.filter(row => row.errors.length === 0).length} Items
+									</>
+								)}
+							</button>
+						</div>
 					</div>
 				</div>
 			)}
