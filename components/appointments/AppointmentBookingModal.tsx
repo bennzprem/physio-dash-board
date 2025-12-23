@@ -517,10 +517,18 @@ export default function AppointmentBookingModal({
 					continue;
 				}
 
-				// Filter out past slots for today
-				if (isToday && timeString < currentTimeString) {
-					currentTime.setMinutes(currentTime.getMinutes() + SLOT_INTERVAL_MINUTES);
-					continue;
+				// Filter out slots whose END time has passed for today
+				if (isToday) {
+					// Calculate slot end time (start time + 30 minutes)
+					const slotEndTime = new Date(currentTime);
+					slotEndTime.setMinutes(slotEndTime.getMinutes() + SLOT_INTERVAL_MINUTES);
+					const slotEndTimeString = `${String(slotEndTime.getHours()).padStart(2, '0')}:${String(slotEndTime.getMinutes()).padStart(2, '0')}`;
+					
+					// Only hide slots whose END time has passed
+					if (slotEndTimeString <= currentTimeString) {
+						currentTime.setMinutes(currentTime.getMinutes() + SLOT_INTERVAL_MINUTES);
+						continue;
+					}
 				}
 				
 				slots.push(timeString);
