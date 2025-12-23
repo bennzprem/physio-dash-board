@@ -133,5 +133,19 @@ export function getMonthName(month: number): string {
 	return months[month - 1] || '';
 }
 
+/**
+ * Get current calendar year start and end dates
+ */
+export function getCurrentCalendarYear(): { startDate: string; endDate: string } {
+	const now = new Date();
+	const year = now.getFullYear();
+	const startDate = new Date(year, 0, 1); // January 1
+	const endDate = new Date(year, 11, 31); // December 31
+	return {
+		startDate: formatDate(startDate),
+		endDate: formatDate(endDate),
+	};
+}
+
 
 

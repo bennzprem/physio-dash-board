@@ -14,7 +14,7 @@ import PageHeader from '@/components/PageHeader';
 import { sendEmailNotification } from '@/lib/email';
 import { sendSMSNotification, isValidPhoneNumber } from '@/lib/sms';
 import { notifyAdmins } from '@/lib/notificationUtils';
-import { getCurrentBillingCycle, getNextBillingCycle, getBillingCycleId, getMonthName, type BillingCycle } from '@/lib/billingUtils';
+import { getCurrentBillingCycle, getNextBillingCycle, getBillingCycleId, getMonthName, getCurrentCalendarYear, type BillingCycle } from '@/lib/billingUtils';
 import { getRemainingFreeSessions, normalizeSessionAllowance } from '@/lib/sessionAllowance';
 import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
 import type { RecordSessionUsageResult } from '@/lib/sessionAllowanceClient';
@@ -59,7 +59,7 @@ interface BillingRecord {
 	installmentsPaid?: number;
 	amountPaid?: number;
 	date: string;
-	status: 'Pending' | 'Completed';
+	status: 'Pending' | 'Completed' | 'Auto-Paid';
 	paymentMode?: string;
 	utr?: string;
 	createdAt?: string | Timestamp;
@@ -1132,11 +1132,40 @@ export default function Billing() {
 							billAmount = standardAmount;
 						}
 					} else if (patientType === 'Dyes' || patientType === 'DYES') {
-						// DYES: Always create bill with status Pending (no paywall)
-						// Bills will have invoice and bill available when pending
-						// When billed (status changes to Completed), invoice and receipt will be available
+						// DYES: Conditional billing based on total sessions in current calendar year
 						shouldCreateBill = true;
-						billAmount = standardAmount;
+						
+						try {
+							// Get current calendar year dates
+							const { startDate, endDate } = getCurrentCalendarYear();
+							
+							// Query completed appointments for this patient in current calendar year
+							const completedSessionsQuery = query(
+								collection(db, 'appointments'),
+								where('patientId', '==', appt.patientId),
+								where('status', '==', 'completed'),
+								where('date', '>=', startDate),
+								where('date', '<=', endDate)
+							);
+							const completedSessionsSnapshot = await getDocs(completedSessionsQuery);
+							const totalSessionsThisYear = completedSessionsSnapshot.size;
+							
+							// Apply DYES billing rule:
+							// - If ≤ 500 sessions: amount = 0, status = 'Pending'
+							// - If ≥ 501 sessions: standard amount, status = 'Auto-Paid'
+							if (totalSessionsThisYear <= 500) {
+								billAmount = 0;
+								// Status will be set to 'Pending' below
+							} else {
+								// 501 or more sessions: charge standard rate
+								billAmount = standardAmount;
+								// Status will be set to 'Auto-Paid' below
+							}
+						} catch (error) {
+							console.error('Error calculating DYES billing:', error);
+							// Fallback to standard amount if query fails
+							billAmount = standardAmount;
+						}
 					} else if (patientType === 'Gethhma') {
 						// Gethhma: Treat as "Paid" without concession
 						shouldCreateBill = true;
@@ -1156,6 +1185,13 @@ export default function Billing() {
 
 						const billingId = 'BILL-' + (appt.appointmentId || Date.now().toString());
 						
+						// Determine status based on patient type and billing rules
+						let billStatus: 'Pending' | 'Completed' | 'Auto-Paid' = 'Pending';
+						if ((patientType === 'Dyes' || patientType === 'DYES') && billAmount > 0) {
+							// DYES patients with 501+ sessions get Auto-Paid status
+							billStatus = 'Auto-Paid';
+						}
+						
 						// Create billing record in billing collection
 						await addDoc(collection(db, 'billing'), {
 							billingId,
@@ -1165,8 +1201,8 @@ export default function Billing() {
 							doctor: appt.doctor || '',
 							amount: billAmount,
 							date: appt.date || defaultBillingDate,
-							status: 'Pending',
-							paymentMode: null,
+							status: billStatus,
+							paymentMode: billStatus === 'Auto-Paid' ? 'Auto-Paid' : null,
 							utr: null,
 							createdByFrontdesk: currentUser?.uid || null,
 							createdByFrontdeskName: currentUser?.displayName || currentUser?.email || null,
@@ -2245,7 +2281,7 @@ export default function Billing() {
 			if (billDate && isWithinCycle(billDate, cycle)) {
 				if (bill.status === 'Pending') {
 					pendingCount += 1;
-				} else if (bill.status === 'Completed') {
+				} else if (bill.status === 'Completed' || bill.status === 'Auto-Paid') {
 					completedCount += 1;
 					collectedAmount += Number.isFinite(billAmount) ? billAmount : 0;
 					const key = bill.doctor || 'Unassigned';
@@ -2281,7 +2317,7 @@ export default function Billing() {
 	// Completed payments from billing collection
 	const completed = useMemo(() => {
 		return billing
-			.filter(b => b.status === 'Completed')
+			.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid')
 			.filter(bill => {
 				if (departmentFilter === 'all') return true;
 				const patient = bill.patientId ? patientLookup.get(bill.patientId) : undefined;
