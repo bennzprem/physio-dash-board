@@ -218,6 +218,15 @@ export default function Availability() {
 	const DEFAULT_END_TIME = '18:00';
 	const DEFAULT_SLOTS: TimeSlot[] = [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }];
 
+	const normalizeDateKey = (dateString: string): string => {
+		const date = new Date(dateString + 'T00:00:00');
+		if (Number.isNaN(date.getTime())) return dateString;
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	};
+
 	const getDateSchedule = (date: string): DayAvailability => {
 		const dayName = getDayName(date);
 		const isSunday = dayName === 'Sunday';
@@ -227,9 +236,13 @@ export default function Availability() {
 			return { enabled: false, slots: DEFAULT_SLOTS };
 		}
 		
-		// If date-specific unavailability exists, return it (marked as unavailable)
-		if (dateSpecific[date]) {
-			return dateSpecific[date];
+		// Normalize date key for lookup
+		const normalizedDate = normalizeDateKey(date);
+		
+		// Check for date-specific availability (try both normalized and original key)
+		const dateSchedule = dateSpecific[normalizedDate] || dateSpecific[date];
+		if (dateSchedule) {
+			return dateSchedule;
 		}
 		
 		// Default: available from 9 AM to 6 PM for all days except Sunday
@@ -350,11 +363,13 @@ const loadAppointmentsForDate = async (
 		const currentSchedule = getDateSchedule(date);
 		// For unavailability, we store it as enabled: false
 		// If the date is in dateSpecific, it means it's marked as unavailable
-		const isUnavailable = !!dateSpecific[date] && !dateSpecific[date].enabled;
+		const normalizedDate = normalizeDateKey(date);
+		const dateSchedule = dateSpecific[normalizedDate] || dateSpecific[date];
+		const isUnavailable = !!dateSchedule && !dateSchedule.enabled;
 		setEditingDateSchedule({
 			enabled: !isUnavailable, // If not in dateSpecific or enabled=true, it's available
 			slots: DEFAULT_SLOTS.map(slot => ({ ...slot })),
-			unavailableSlots: dateSpecific[date]?.unavailableSlots || [],
+			unavailableSlots: dateSchedule?.unavailableSlots || [],
 		});
 		setNewUnavailableSlot({ start: '', end: '' }); // Reset new slot form
 		// Appointments will be loaded automatically via useEffect when selectedDate changes
@@ -371,28 +386,47 @@ const loadAppointmentsForDate = async (
 			return;
 		}
 
+		// Normalize date to YYYY-MM-DD format for consistent key matching
+		const normalizeDateKey = (dateString: string): string => {
+			const date = new Date(dateString + 'T00:00:00');
+			if (Number.isNaN(date.getTime())) return dateString;
+			const year = date.getFullYear();
+			const month = String(date.getMonth() + 1).padStart(2, '0');
+			const day = String(date.getDate()).padStart(2, '0');
+			return `${year}-${month}-${day}`;
+		};
+
+		const normalizedDate = normalizeDateKey(selectedDate);
+
 		// If enabled is false, mark as unavailable (store in dateSpecific)
 		// If enabled is true but has unavailable slots, store in dateSpecific with unavailableSlots
 		// If enabled is true and no unavailable slots, remove from dateSpecific (use default availability)
 		const updatedSchedule = { ...dateSpecific };
 		const hasUnavailableSlots = editingDateSchedule.unavailableSlots && editingDateSchedule.unavailableSlots.length > 0;
 		
+		// Remove any existing entry for this date (in case date format changed)
+		Object.keys(updatedSchedule).forEach(key => {
+			if (normalizeDateKey(key) === normalizedDate) {
+				delete updatedSchedule[key];
+			}
+		});
+		
 		if (!editingDateSchedule.enabled) {
 			// Mark as unavailable
-			updatedSchedule[selectedDate] = {
+			updatedSchedule[normalizedDate] = {
 				enabled: false,
 				slots: DEFAULT_SLOTS, // Store default slots for reference
 			};
 		} else if (hasUnavailableSlots) {
 			// Day is available but has unavailable time slots - store in dateSpecific
-			updatedSchedule[selectedDate] = {
+			updatedSchedule[normalizedDate] = {
 				enabled: true,
 				slots: DEFAULT_SLOTS,
 				unavailableSlots: editingDateSchedule.unavailableSlots,
 			};
 		} else {
 			// Day is available with no unavailable slots - remove from dateSpecific to use default
-			delete updatedSchedule[selectedDate];
+			// Already deleted above, so nothing to do here
 		}
 
 		// Update local state immediately for better UX
@@ -400,19 +434,20 @@ const loadAppointmentsForDate = async (
 		setSelectedDate(null);
 		setEditingDateSchedule(null);
 
-		// Auto-save to Firestore
+		// Auto-save to Firestore - use updateDoc to replace the entire object
 		isSavingRef.current = true;
 		try {
 			const staffRef = doc(db, 'staff', staffDocId);
-			await setDoc(
+			// Use updateDoc to ensure the entire dateSpecificAvailability object is replaced
+			// This ensures deleted dates are actually removed from Firestore
+			await updateDoc(
 				staffRef,
 				{
 					dateSpecificAvailability: updatedSchedule,
 					availabilityUpdatedAt: serverTimestamp(),
-				},
-				{ merge: true }
+				}
 			);
-			console.log('✅ Saved availability for', selectedDate);
+			console.log('✅ Saved availability for', normalizedDate, 'Schedule:', updatedSchedule);
 			setSavedMessage(true);
 			setTimeout(() => setSavedMessage(false), 3000);
 		} catch (error) {
@@ -787,7 +822,8 @@ const loadAppointmentsForDate = async (
 						{monthDates.map((date, index) => {
 							const dayName = getDayName(date);
 							const dateSchedule = getDateSchedule(date);
-							const hasSchedule = !!dateSpecific[date];
+							const normalizedDate = normalizeDateKey(date);
+							const hasSchedule = !!(dateSpecific[normalizedDate] || dateSpecific[date]);
 							const today = new Date();
 							const isToday = date === todayKey;
 							const isCurrentMonthDay = isCurrentMonth(date);
@@ -803,7 +839,10 @@ const loadAppointmentsForDate = async (
 											: isToday
 											? 'border-sky-400 bg-sky-50'
 											: hasSchedule
-											? dateSpecific[date]?.unavailableSlots && dateSpecific[date].unavailableSlots.length > 0
+											? (() => {
+												const schedule = dateSpecific[normalizedDate] || dateSpecific[date];
+												return (schedule?.unavailableSlots?.length ?? 0) > 0;
+											})()
 												? 'border-amber-300 bg-amber-50'
 												: 'border-emerald-300 bg-emerald-50'
 											: 'border-slate-200 bg-white'
@@ -837,8 +876,10 @@ const loadAppointmentsForDate = async (
 											{(() => {
 												const dayName = getDayName(date);
 												const isSunday = dayName === 'Sunday';
-												const isUnavailable = !!dateSpecific[date] && !dateSpecific[date].enabled;
-												const unavailableSlots = dateSpecific[date]?.unavailableSlots || [];
+												const normalizedDate = normalizeDateKey(date);
+												const dateSchedule = dateSpecific[normalizedDate] || dateSpecific[date];
+												const isUnavailable = !!dateSchedule && !dateSchedule.enabled;
+												const unavailableSlots = dateSchedule?.unavailableSlots || [];
 												const hasUnavailableSlots = unavailableSlots.length > 0;
 												
 												if (isSunday) {
@@ -880,7 +921,9 @@ const loadAppointmentsForDate = async (
 												{(() => {
 													const dayName = getDayName(date);
 													const isSunday = dayName === 'Sunday';
-													const isUnavailable = !!dateSpecific[date] && !dateSpecific[date].enabled;
+													const normalizedDate = normalizeDateKey(date);
+													const dateSchedule = dateSpecific[normalizedDate] || dateSpecific[date];
+													const isUnavailable = !!dateSchedule && !dateSchedule.enabled;
 													
 													if (isSunday) {
 														return (

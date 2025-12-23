@@ -1283,15 +1283,28 @@ export default function Patients() {
 			return [];
 		}
 
+		// Normalize date to YYYY-MM-DD format for consistent key matching
+		const formatDateKey = (dateString: string): string => {
+			if (!dateString) return '';
+			const date = new Date(dateString + 'T00:00:00');
+			if (Number.isNaN(date.getTime())) return dateString;
+			const year = date.getFullYear();
+			const month = String(date.getMonth() + 1).padStart(2, '0');
+			const day = String(date.getDate()).padStart(2, '0');
+			return `${year}-${month}-${day}`;
+		};
+		
+		const dateKey = formatDateKey(bookingForm.date);
+		
 		// Check for date-specific availability
-		let dayAvailability = staffMember.dateSpecificAvailability?.[bookingForm.date];
+		let dayAvailability = staffMember.dateSpecificAvailability?.[dateKey];
 		
 		// If date-specific availability exists and is marked as unavailable, return empty
 		if (dayAvailability && !dayAvailability.enabled) {
 			return [];
 		}
 		
-		// If no date-specific availability or it's enabled, use default
+		// If no date-specific availability or it's enabled but has no slots, use default
 		if (!dayAvailability || !dayAvailability.slots || dayAvailability.slots.length === 0) {
 			dayAvailability = {
 				enabled: true,
@@ -1409,15 +1422,28 @@ export default function Patients() {
 			return [];
 		}
 
+		// Normalize date to YYYY-MM-DD format for consistent key matching
+		const formatDateKey = (dateString: string): string => {
+			if (!dateString) return '';
+			const date = new Date(dateString + 'T00:00:00');
+			if (Number.isNaN(date.getTime())) return dateString;
+			const year = date.getFullYear();
+			const month = String(date.getMonth() + 1).padStart(2, '0');
+			const day = String(date.getDate()).padStart(2, '0');
+			return `${year}-${month}-${day}`;
+		};
+		
+		const dateKey = formatDateKey(registerAppointmentForm.date);
+		
 		// Check for date-specific availability
-		let dayAvailability = staffMember.dateSpecificAvailability?.[registerAppointmentForm.date];
+		let dayAvailability = staffMember.dateSpecificAvailability?.[dateKey];
 		
 		// If date-specific availability exists and is marked as unavailable, return empty
 		if (dayAvailability && !dayAvailability.enabled) {
 			return [];
 		}
 		
-		// If no date-specific availability or it's enabled, use default
+		// If no date-specific availability or it's enabled but has no slots, use default
 		if (!dayAvailability || !dayAvailability.slots || dayAvailability.slots.length === 0) {
 			dayAvailability = {
 				enabled: true,
@@ -3514,6 +3540,12 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 									<p className="font-semibold text-slate-800">Patient Details</p>
 									<p>{selectedBookingPatient?.name ?? 'Not available'}</p>
 									<p>ID: {selectedBookingPatient?.patientId ?? '—'}</p>
+									{selectedBookingPatient?.registeredAt && (
+										<p className="text-xs font-semibold text-indigo-600">
+											<i className="fas fa-calendar-check mr-1" aria-hidden="true" />
+											Registered: {formatDateLabel(selectedBookingPatient.registeredAt)}
+										</p>
+									)}
 									<p>Phone: {selectedBookingPatient?.phone ?? '—'}</p>
 									<p>Email: {selectedBookingPatient?.email ?? '—'}</p>
 								</div>

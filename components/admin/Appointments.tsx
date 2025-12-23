@@ -232,11 +232,41 @@ export default function Appointments() {
 
 	const patientSelectOptions = useMemo(() => {
 		return [...patients]
-			.sort((a, b) => a.name.localeCompare(b.name))
-			.map(patient => ({
-				label: `${patient.name} (${patient.patientId})`,
-				value: patient.patientId,
-			}));
+			.sort((a, b) => {
+				// Sort by latest registration date first, then alphabetically by name
+				let dateA = 0;
+				let dateB = 0;
+				
+				if (a.registeredAt) {
+					const parsedA = new Date(a.registeredAt);
+					dateA = isNaN(parsedA.getTime()) ? 0 : parsedA.getTime();
+				}
+				
+				if (b.registeredAt) {
+					const parsedB = new Date(b.registeredAt);
+					dateB = isNaN(parsedB.getTime()) ? 0 : parsedB.getTime();
+				}
+				
+				if (dateA === 0 && dateB === 0) {
+					return a.name.localeCompare(b.name);
+				} else if (dateA === 0) {
+					return 1;
+				} else if (dateB === 0) {
+					return -1;
+				} else {
+					if (dateB !== dateA) {
+						return dateB - dateA;
+					}
+					return a.name.localeCompare(b.name);
+				}
+			})
+			.map(patient => {
+				const regDate = patient.registeredAt ? formatDateLabel(patient.registeredAt) : '';
+				return {
+					label: `${patient.name} (${patient.patientId})${regDate ? ` - Registered: ${regDate}` : ''}`,
+					value: patient.patientId,
+				};
+			});
 	}, [patients]);
 
 	useEffect(() => {

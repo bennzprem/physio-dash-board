@@ -80,6 +80,7 @@ type PatientRecordWithSessions = PatientRecord & {
 	registeredBy?: string;
 	registeredByName?: string;
 	registeredByEmail?: string;
+	registeredAt?: string;
 };
 
 interface BookingForm {
@@ -268,6 +269,32 @@ export default function Appointments() {
 			(snapshot: QuerySnapshot) => {
 				const mapped = snapshot.docs.map(docSnap => {
 					const data = docSnap.data() as Record<string, unknown>;
+					
+					// Handle registeredAt - can be Timestamp, string, or undefined
+					let registeredAt: string | undefined = undefined;
+					const registeredAtValue = data.registeredAt;
+					if (registeredAtValue) {
+						if (registeredAtValue instanceof Date) {
+							registeredAt = registeredAtValue.toISOString();
+						} else if (typeof registeredAtValue === 'string') {
+							registeredAt = registeredAtValue;
+						} else if (registeredAtValue && typeof registeredAtValue === 'object' && 'toDate' in registeredAtValue) {
+							// Firestore Timestamp
+							const timestamp = registeredAtValue as Timestamp;
+							const date = timestamp.toDate?.();
+							if (date && !isNaN(date.getTime())) {
+								registeredAt = date.toISOString();
+							}
+						} else if (registeredAtValue && typeof registeredAtValue === 'object' && 'seconds' in registeredAtValue) {
+							// Firestore Timestamp with seconds property
+							const timestamp = registeredAtValue as { seconds: number; nanoseconds?: number };
+							const date = new Date(timestamp.seconds * 1000);
+							if (!isNaN(date.getTime())) {
+								registeredAt = date.toISOString();
+							}
+						}
+					}
+					
 					return {
 						id: docSnap.id,
 						patientId: data.patientId ? String(data.patientId) : '',
@@ -300,8 +327,22 @@ export default function Appointments() {
 						registeredBy: data.registeredBy ? String(data.registeredBy) : undefined,
 						registeredByName: data.registeredByName ? String(data.registeredByName) : undefined,
 						registeredByEmail: data.registeredByEmail ? String(data.registeredByEmail) : undefined,
+						registeredAt,
 					} as PatientRecordWithSessions;
 				});
+				// Debug: Log registeredAt data
+				if (process.env.NODE_ENV === 'development') {
+					const withDates = mapped.filter(p => p.registeredAt);
+					console.log('📅 Patients loaded:', {
+						total: mapped.length,
+						withRegisteredAt: withDates.length,
+						sample: withDates.slice(0, 3).map(p => ({
+							name: p.name,
+							registeredAt: p.registeredAt,
+							formatted: p.registeredAt ? formatDateLabel(p.registeredAt) : 'N/A'
+						}))
+					});
+				}
 				setPatients(mapped);
 			},
 			error => {
@@ -697,7 +738,7 @@ export default function Appointments() {
 		return patients;
 	}, [patients]);
 
-	// Filter patients based on search term for booking modal and sort alphabetically
+	// Filter patients based on search term for booking modal and sort by latest registration
 	const filteredAvailablePatients = useMemo(() => {
 		let filtered = availablePatients;
 		
@@ -710,11 +751,44 @@ export default function Appointments() {
 			);
 		}
 		
-		// Sort alphabetically by patient name (case-insensitive)
+		// Sort by latest registration date first, then alphabetically by name
 		return [...filtered].sort((a, b) => {
-			const nameA = a.name.toLowerCase().trim();
-			const nameB = b.name.toLowerCase().trim();
-			return nameA.localeCompare(nameB);
+			// First, sort by registration date (latest first)
+			let dateA = 0;
+			let dateB = 0;
+			
+			if (a.registeredAt) {
+				const parsedA = new Date(a.registeredAt);
+				dateA = isNaN(parsedA.getTime()) ? 0 : parsedA.getTime();
+			}
+			
+			if (b.registeredAt) {
+				const parsedB = new Date(b.registeredAt);
+				dateB = isNaN(parsedB.getTime()) ? 0 : parsedB.getTime();
+			}
+			
+			// Sort by date (latest first) - use negative value for missing dates to push them to end
+			if (dateA === 0 && dateB === 0) {
+				// Both missing dates - sort alphabetically
+				const nameA = a.name.toLowerCase().trim();
+				const nameB = b.name.toLowerCase().trim();
+				return nameA.localeCompare(nameB);
+			} else if (dateA === 0) {
+				// A has no date, B has date - B comes first
+				return 1;
+			} else if (dateB === 0) {
+				// B has no date, A has date - A comes first
+				return -1;
+			} else {
+				// Both have dates - latest first
+				if (dateB !== dateA) {
+					return dateB - dateA;
+				}
+				// Same date - sort alphabetically
+				const nameA = a.name.toLowerCase().trim();
+				const nameB = b.name.toLowerCase().trim();
+				return nameA.localeCompare(nameB);
+			}
 		});
 	}, [availablePatients, patientSearchTerm]);
 
@@ -1955,23 +2029,23 @@ export default function Appointments() {
 																	{packageAppointmentsByPatient[group.patientId].map((apt, idx) => {
 																		const isCompleted = apt.status === 'completed';
 																		return (
-																			<button
-																				key={apt.id}
-																				type="button"
-																				onClick={() => {
-																					setReportModalPatientId(group.patientId);
-																					setShowReportModal(true);
-																				}}
+																		<button
+																			key={apt.id}
+																			type="button"
+																			onClick={() => {
+																				setReportModalPatientId(group.patientId);
+																				setShowReportModal(true);
+																			}}
 																				className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white shadow-sm transition-all ${
 																					isCompleted
 																						? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
 																						: 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
 																				}`}
-																				title={`Session ${apt.sessionNumber || idx + 1}${apt.date ? ` - ${formatDateLabel(apt.date)}` : ' - Not scheduled'}`}
-																			>
-																				<i className="fas fa-file-medical text-xs" aria-hidden="true" />
-																				Session {apt.sessionNumber || idx + 1}
-																			</button>
+																			title={`Session ${apt.sessionNumber || idx + 1}${apt.date ? ` - ${formatDateLabel(apt.date)}` : ' - Not scheduled'}`}
+																		>
+																			<i className="fas fa-file-medical text-xs" aria-hidden="true" />
+																			Session {apt.sessionNumber || idx + 1}
+																		</button>
 																		);
 																	})}
 																</div>
@@ -2123,9 +2197,19 @@ export default function Appointments() {
 																}}
 																className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500"
 															/>
-															<div className="flex-1">
+															<div className="flex-1 min-w-0">
 																<p className="text-sm font-medium text-slate-900">{patient.name}</p>
-																<p className="text-xs text-slate-500">ID: {patient.patientId}</p>
+																<div className="flex flex-col gap-1 mt-1">
+																	<p className="text-xs text-slate-500">ID: {patient.patientId}</p>
+																	{patient.registeredAt ? (
+																		<p className="text-xs font-semibold text-indigo-600">
+																			<i className="fas fa-calendar-check mr-1" aria-hidden="true" />
+																			Registered: {formatDateLabel(patient.registeredAt)}
+																		</p>
+																	) : (
+																		<p className="text-xs text-slate-400 italic">Registration date not available</p>
+																	)}
+																</div>
 															</div>
 															{isSelected && (
 																<i className="fas fa-check text-indigo-600" aria-hidden="true" />

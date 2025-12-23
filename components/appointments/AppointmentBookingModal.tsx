@@ -288,7 +288,11 @@ export default function AppointmentBookingModal({
 			if (!dateSpecific.enabled) {
 				return dateSpecific;
 			}
-			// If enabled, use the date-specific schedule
+			// If enabled but has no slots or empty slots, fall back to default availability
+			if (!dateSpecific.slots || dateSpecific.slots.length === 0) {
+				return DEFAULT_DAY_AVAILABILITY;
+			}
+			// If enabled and has slots, use the date-specific schedule
 			return dateSpecific;
 		}
 		

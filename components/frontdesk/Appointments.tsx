@@ -73,6 +73,7 @@ type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'S
 type PatientRecordWithSessions = PatientRecord & {
 	totalSessionsRequired?: number;
 	remainingSessions?: number;
+	registeredAt?: string;
 };
 
 interface BookingForm {
@@ -158,6 +159,32 @@ export default function Appointments() {
 			(snapshot: QuerySnapshot) => {
 				const mapped = snapshot.docs.map(docSnap => {
 					const data = docSnap.data() as Record<string, unknown>;
+					
+					// Handle registeredAt - can be Timestamp, string, or undefined
+					let registeredAt: string | undefined = undefined;
+					const registeredAtValue = data.registeredAt;
+					if (registeredAtValue) {
+						if (registeredAtValue instanceof Date) {
+							registeredAt = registeredAtValue.toISOString();
+						} else if (typeof registeredAtValue === 'string') {
+							registeredAt = registeredAtValue;
+						} else if (registeredAtValue && typeof registeredAtValue === 'object' && 'toDate' in registeredAtValue) {
+							// Firestore Timestamp
+							const timestamp = registeredAtValue as Timestamp;
+							const date = timestamp.toDate?.();
+							if (date && !isNaN(date.getTime())) {
+								registeredAt = date.toISOString();
+							}
+						} else if (registeredAtValue && typeof registeredAtValue === 'object' && 'seconds' in registeredAtValue) {
+							// Firestore Timestamp with seconds property
+							const timestamp = registeredAtValue as { seconds: number; nanoseconds?: number };
+							const date = new Date(timestamp.seconds * 1000);
+							if (!isNaN(date.getTime())) {
+								registeredAt = date.toISOString();
+							}
+						}
+					}
+					
 					return {
 						id: docSnap.id,
 						patientId: data.patientId ? String(data.patientId) : '',
@@ -185,6 +212,7 @@ export default function Appointments() {
 						assignedFrontdeskId: data.assignedFrontdeskId ? String(data.assignedFrontdeskId) : undefined,
 						assignedFrontdeskName: data.assignedFrontdeskName ? String(data.assignedFrontdeskName) : undefined,
 						assignedFrontdeskEmail: data.assignedFrontdeskEmail ? String(data.assignedFrontdeskEmail) : undefined,
+						registeredAt,
 					} as PatientRecordWithSessions;
 				});
 				setPatients(mapped);
@@ -1229,11 +1257,14 @@ export default function Appointments() {
 													? 'No eligible patients (all have completed appointments)' 
 													: 'No patients available'}
 										</option>
-										{eligiblePatients.map(patient => (
-											<option key={patient.id} value={patient.patientId}>
-												{patient.name} ({patient.patientId})
-											</option>
-										))}
+										{eligiblePatients.map(patient => {
+											const regDate = patient.registeredAt ? formatDateLabel(patient.registeredAt) : '';
+											return (
+												<option key={patient.id} value={patient.patientId}>
+													{patient.name} ({patient.patientId}){regDate ? ` - Registered: ${regDate}` : ''}
+												</option>
+											);
+										})}
 									</select>
 									{patients.length > eligiblePatients.length && (
 										<p className="mt-1 text-xs text-amber-600">
