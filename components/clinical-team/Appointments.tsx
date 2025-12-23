@@ -11,7 +11,6 @@ import type { PatientRecord } from '@/lib/types';
 import { sendEmailNotification } from '@/lib/email';
 import { sendSMSNotification, isValidPhoneNumber } from '@/lib/sms';
 import { checkAppointmentConflict } from '@/lib/appointmentUtils';
-import AppointmentTemplates from '@/components/appointments/AppointmentTemplates';
 import { normalizeSessionAllowance } from '@/lib/sessionAllowance';
 import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
 import type { RecordSessionUsageResult } from '@/lib/sessionAllowanceClient';
@@ -2307,26 +2306,6 @@ export default function Appointments() {
 									)}
 								</div>
 
-								{/* Appointment Templates */}
-								{bookingForm.staffId && (
-									<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-										<AppointmentTemplates
-											doctor={staff.find(s => s.id === bookingForm.staffId)?.userName}
-											onSelectTemplate={template => {
-												const selectedStaff = staff.find(s => s.userName === template.doctor);
-												if (selectedStaff) {
-													setBookingForm(prev => ({
-														...prev,
-														staffId: selectedStaff.id,
-														time: template.time,
-														selectedTimes: template.time ? [template.time] : [],
-														notes: template.notes || prev.notes,
-													}));
-												}
-											}}
-										/>
-									</div>
-								)}
 
 								{/* Date Selection */}
 								{bookingForm.staffId && (
@@ -2452,34 +2431,56 @@ export default function Appointments() {
 																		</div>
 																	</div>
 																) : (
-																	<button
-																		type="button"
-																		onClick={(e) => {
-																			// Don't trigger if clicking the edit icon
-																			if ((e.target as HTMLElement).closest('.edit-slot-btn')) {
-																				return;
-																			}
-																			setBookingForm(prev => {
-																				const newSelectedTimes = isSelected
-																					? prev.selectedTimes.filter(t => t !== slot)
-																					: [...prev.selectedTimes, slot].sort();
-																				return {
-																					...prev,
-																					time: newSelectedTimes.length === 1 ? newSelectedTimes[0] : prev.time,
-																					selectedTimes: newSelectedTimes,
-																				};
-																			});
-																		}}
-																		className={`relative rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition w-full ${
-																			isSelected
-																				? 'border-sky-500 bg-sky-50 text-sky-800 ring-2 ring-sky-200'
-																				: isEmpty
-																				? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100'
-																				: 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
-																		}`}
-																		title={isEmpty ? 'No patients booked at this slot' : `${patientCount} patient${patientCount === 1 ? '' : 's'} booked at this slot`}
-																		aria-pressed={isSelected}
-																	>
+																	<div className="relative">
+																		<button
+																			type="button"
+																			onClick={() => {
+																				setBookingForm(prev => {
+																					const newSelectedTimes = isSelected
+																						? prev.selectedTimes.filter(t => t !== slot)
+																						: [...prev.selectedTimes, slot].sort();
+																					return {
+																						...prev,
+																						time: newSelectedTimes.length === 1 ? newSelectedTimes[0] : prev.time,
+																						selectedTimes: newSelectedTimes,
+																					};
+																				});
+																			}}
+																			className={`rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition w-full ${
+																				isSelected
+																					? 'border-sky-500 bg-sky-50 text-sky-800 ring-2 ring-sky-200'
+																					: isEmpty
+																					? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100'
+																					: 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
+																			}`}
+																			title={isEmpty ? 'No patients booked at this slot' : `${patientCount} patient${patientCount === 1 ? '' : 's'} booked at this slot`}
+																			aria-pressed={isSelected}
+																		>
+																			<div className="flex items-center justify-between pr-6">
+																				<div>
+																					<p className="font-semibold">{displaySlot} – {slotEnd}</p>
+																					<p className="text-xs text-slate-500">30 minutes</p>
+																					{!isEmpty && (
+																						<p className="text-xs font-medium text-slate-600 mt-0.5">
+																							<i className="fas fa-users mr-1" aria-hidden="true" />
+																							{patientCount} {patientCount === 1 ? 'patient' : 'patients'}
+																						</p>
+																					)}
+																					{isEmpty && (
+																						<p className="text-xs font-normal text-emerald-600 mt-0.5">
+																							<i className="fas fa-circle text-[6px] mr-1" aria-hidden="true" />
+																							No patients
+																						</p>
+																					)}
+																				</div>
+																				<span className={`text-xs ${isSelected ? 'text-sky-600' : 'text-slate-400'}`}>
+																					<i
+																						className={`fas ${isSelected ? 'fa-check-circle' : 'fa-clock'}`}
+																						aria-hidden="true"
+																					/>
+																				</span>
+																			</div>
+																		</button>
 																		<button
 																			type="button"
 																			onClick={(e) => {
@@ -2487,36 +2488,12 @@ export default function Appointments() {
 																				setEditingSlotTime(slot);
 																				setEditedSlotTime(displaySlot + ':00'); // Convert to HH:MM:SS format for time input
 																			}}
-																			className="edit-slot-btn absolute top-1 right-1 rounded p-1 text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
+																			className="absolute top-1 right-1 rounded p-1 text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition z-10"
 																			title="Edit time"
 																		>
 																			<i className="fas fa-edit" aria-hidden="true" />
 																		</button>
-																		<div className="flex items-center justify-between pr-6">
-																			<div>
-																				<p className="font-semibold">{displaySlot} – {slotEnd}</p>
-																				<p className="text-xs text-slate-500">30 minutes</p>
-																				{!isEmpty && (
-																					<p className="text-xs font-medium text-slate-600 mt-0.5">
-																						<i className="fas fa-users mr-1" aria-hidden="true" />
-																						{patientCount} {patientCount === 1 ? 'patient' : 'patients'}
-																					</p>
-																				)}
-																				{isEmpty && (
-																					<p className="text-xs font-normal text-emerald-600 mt-0.5">
-																						<i className="fas fa-circle text-[6px] mr-1" aria-hidden="true" />
-																						No patients
-																					</p>
-																				)}
-																			</div>
-																			<span className={`text-xs ${isSelected ? 'text-sky-600' : 'text-slate-400'}`}>
-																				<i
-																					className={`fas ${isSelected ? 'fa-check-circle' : 'fa-clock'}`}
-																					aria-hidden="true"
-																				/>
-																			</span>
-																		</div>
-																	</button>
+																	</div>
 																)}
 															</div>
 														);
