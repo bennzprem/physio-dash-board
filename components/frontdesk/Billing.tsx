@@ -184,17 +184,19 @@ async function generateInvoiceHtml(
 		cgstRate?: number;
 		sgstRate?: number;
 		companyBankDetails?: string;
+		patientType?: string;
 	}
 ) {
-	const taxableValue = Number(bill.amount || 0);
+	const isReferral = (options?.patientType || '').toUpperCase() === 'REFERRAL';
+	const taxableValue = isReferral ? 0 : Number(bill.amount || 0);
 	const cgstRate = options?.cgstRate ?? 5; // Default 5% CGST
 	const sgstRate = options?.sgstRate ?? 5; // Default 5% SGST
-	const cgstAmount = Number((taxableValue * (cgstRate / 100)).toFixed(2));
-	const sgstAmount = Number((taxableValue * (sgstRate / 100)).toFixed(2));
-	const grandTotal = Number((taxableValue + cgstAmount + sgstAmount).toFixed(2));
+	const cgstAmount = isReferral ? 0 : Number((taxableValue * (cgstRate / 100)).toFixed(2));
+	const sgstAmount = isReferral ? 0 : Number((taxableValue * (sgstRate / 100)).toFixed(2));
+	const grandTotal = isReferral ? 0 : Number((taxableValue + cgstAmount + sgstAmount).toFixed(2));
 
-	const words = numberToWords(grandTotal);
-	const taxWords = numberToWords(cgstAmount + sgstAmount);
+	const words = isReferral ? 'N/A' : numberToWords(grandTotal);
+	const taxWords = isReferral ? 'N/A' : numberToWords(cgstAmount + sgstAmount);
 	const showDate = bill.date || new Date().toLocaleDateString('en-IN');
 
 	// Show last 5 digits of UTR if payment mode is UPI / Online
@@ -386,9 +388,9 @@ async function generateInvoiceHtml(
 						<td>${escapeHtml(description)}</td>
 						<td>${escapeHtml(hsnSac)}</td>
 						<td>1</td>
-						<td>${taxableValue.toFixed(2)}</td>
+						<td>${isReferral ? 'N/A' : taxableValue.toFixed(2)}</td>
 						<td>Session</td>
-						<td class="text-right">${taxableValue.toFixed(2)}</td>
+						<td class="text-right">${isReferral ? 'N/A' : taxableValue.toFixed(2)}</td>
 					</tr>
 
 					<tr class="spacer-row">
@@ -412,21 +414,21 @@ async function generateInvoiceHtml(
 						</td>
 						<td style="border-bottom: 1px solid #000;" class="text-right">
 							<br><br>
-							${cgstAmount.toFixed(2)}<br>
-							${sgstAmount.toFixed(2)}
+							${isReferral ? 'N/A' : cgstAmount.toFixed(2)}<br>
+							${isReferral ? 'N/A' : sgstAmount.toFixed(2)}
 						</td>
 					</tr>
 					
 					<tr class="bold">
 						<td colspan="6" class="text-right">Total</td>
-						<td class="text-right">${grandTotal.toFixed(2)}</td>
+						<td class="text-right">${isReferral ? 'N/A' : grandTotal.toFixed(2)}</td>
 					</tr>
 				</tbody>
 			</table>
 
 			<div style="border: 1px solid #000; border-top: none; padding: 5px;">
 				<strong>Amount Chargeable (in words):</strong><br>
-				${escapeHtml(words.toUpperCase())} ONLY
+				${isReferral ? 'N/A' : escapeHtml(words.toUpperCase())} ${isReferral ? '' : 'ONLY'}
 			</div>
 
 			<table class="text-center" style="border-top: none;">
@@ -445,21 +447,21 @@ async function generateInvoiceHtml(
 				</tr>
 				<tr>
 					<td>${escapeHtml(hsnSac)}</td>
-					<td>${taxableValue.toFixed(2)}</td>
+					<td>${isReferral ? 'N/A' : taxableValue.toFixed(2)}</td>
 					<td>${cgstRate}%</td>
-					<td>${cgstAmount.toFixed(2)}</td>
+					<td>${isReferral ? 'N/A' : cgstAmount.toFixed(2)}</td>
 					<td>${sgstRate}%</td>
-					<td>${sgstAmount.toFixed(2)}</td>
-					<td>${(cgstAmount + sgstAmount).toFixed(2)}</td>
+					<td>${isReferral ? 'N/A' : sgstAmount.toFixed(2)}</td>
+					<td>${isReferral ? 'N/A' : (cgstAmount + sgstAmount).toFixed(2)}</td>
 				</tr>
 				<tr class="bold">
 					<td class="text-right">Total</td>
-					<td>${taxableValue.toFixed(2)}</td>
+					<td>${isReferral ? 'N/A' : taxableValue.toFixed(2)}</td>
 					<td></td>
-					<td>${cgstAmount.toFixed(2)}</td>
+					<td>${isReferral ? 'N/A' : cgstAmount.toFixed(2)}</td>
 					<td></td>
-					<td>${sgstAmount.toFixed(2)}</td>
-					<td>${(cgstAmount + sgstAmount).toFixed(2)}</td>
+					<td>${isReferral ? 'N/A' : sgstAmount.toFixed(2)}</td>
+					<td>${isReferral ? 'N/A' : (cgstAmount + sgstAmount).toFixed(2)}</td>
 				</tr>
 			</table>
 
@@ -531,9 +533,10 @@ async function getReceiptLogoAsDataUrl(): Promise<string> {
 /* --------------------------------------------------------
 	GENERATE RECEIPT HTML (MATCHING RECEIPT IMAGE FORMAT)
 ---------------------------------------------------------- */
-async function generateReceiptHtml(bill: BillingRecord, receiptNo: string) {
-	const amount = Number(bill.amount || 0).toFixed(2);
-	const words = numberToWords(Number(bill.amount || 0));
+async function generateReceiptHtml(bill: BillingRecord, receiptNo: string, options?: { patientType?: string }) {
+	const isReferral = (options?.patientType || '').toUpperCase() === 'REFERRAL';
+	const amount = isReferral ? 'N/A' : Number(bill.amount || 0).toFixed(2);
+	const words = isReferral ? 'N/A' : numberToWords(Number(bill.amount || 0));
 	const showDate = bill.date || new Date().toLocaleDateString('en-IN');
 	
 	const paymentModeDisplay = bill.paymentMode || 'Cash';
@@ -706,11 +709,11 @@ async function generateReceiptHtml(bill: BillingRecord, receiptNo: string) {
 					</div>
 					<div class="amount-right">
 						<span>Amount</span>
-						<strong>Rs. ${amount}</strong>
+						<strong>${isReferral ? 'N/A' : `Rs. ${amount}`}</strong>
 					</div>
 				</div>
 				<div class="words-row">
-					Amount in words: <span style="font-weight: normal;">${escapeHtml(words)}</span>
+					Amount in words: <span style="font-weight: normal;">${isReferral ? 'N/A' : escapeHtml(words)}</span>
 				</div>
 				<div class="details-box">
 					<strong>For</strong>
@@ -750,7 +753,7 @@ export default function Billing() {
 	} | null>(null);
 	const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI/Card'>('Cash');
 	const [utr, setUtr] = useState('');
-	const [paymentAmount, setPaymentAmount] = useState<number>(0);
+	const [paymentAmount, setPaymentAmount] = useState<number | string>(0);
 	const [syncing, setSyncing] = useState(false);
 	const [resettingCycle, setResettingCycle] = useState(false);
 	const [sendingNotifications, setSendingNotifications] = useState(false);
@@ -773,6 +776,7 @@ export default function Billing() {
 		cgstRate: number;
 		sgstRate: number;
 		companyBankDetails?: string;
+		patientType?: string;
 	} | null>(null);
 
 	// Load billing records from Firestore (ordered by createdAt desc)
@@ -914,7 +918,11 @@ export default function Billing() {
 					let shouldCreateBill = false;
 					let billAmount = standardAmount;
 
-					if (patientType === 'VIP') {
+					if (patientType === 'Referral' || patientType === 'REFERRAL') {
+						// Referral: Create billing record with 0 amount (will show N/A in invoices/receipts)
+						shouldCreateBill = true;
+						billAmount = 0;
+					} else if (patientType === 'VIP') {
 						// VIP: Create bill for every completed session as normal
 						shouldCreateBill = true;
 						billAmount = standardAmount;
@@ -1038,18 +1046,24 @@ export default function Billing() {
 		setSelectedBill(bill);
 		setPaymentMode('Cash');
 		setUtr('');
-		setPaymentAmount(bill.amount);
+		const patient = patients.find(p => p.patientId === bill.patientId);
+		const isReferral = (patient?.patientType || '').toUpperCase() === 'REFERRAL';
+		setPaymentAmount(isReferral ? 'N/A' : bill.amount);
 		setShowPayModal(true);
 	};
 
 	const handleSubmitPayment = async () => {
 		if (!selectedBill || !selectedBill.id) return;
 
+		// For referral patients, amount should be 0 (stored in DB) even if displayed as "N/A"
+		const paymentAmountStr = String(paymentAmount).trim().toUpperCase();
+		const amountToSave = paymentAmountStr === 'N/A' ? 0 : (typeof paymentAmount === 'number' ? paymentAmount : parseFloat(String(paymentAmount)) || 0);
+
 		try {
 			const billingRef = doc(db, 'billing', selectedBill.id);
 			await updateDoc(billingRef, {
 				status: 'Completed',
-				amount: paymentAmount,
+				amount: amountToSave,
 				paymentMode,
 				utr: paymentMode === 'UPI/Card' ? utr : null,
 				updatedAt: serverTimestamp(),
@@ -1179,7 +1193,9 @@ export default function Billing() {
 		} : selectedBill;
 		
 		const receiptNo = billToPrint.billingId || `BILL-${billToPrint.id?.slice(0, 8) || 'NA'}`;
-		const html = await generateReceiptHtml(billToPrint, receiptNo);
+		const patient = patients.find(p => p.patientId === billToPrint.patientId);
+		const patientType = patient?.patientType || '';
+		const html = await generateReceiptHtml(billToPrint, receiptNo, { patientType });
 		const printWindow = window.open('', '_blank');
 
 		if (!printWindow) {
@@ -1401,6 +1417,7 @@ export default function Billing() {
 		const patient = patients.find(p => p.patientId === bill.patientId);
 		const invoiceNo = bill.invoiceNo || bill.billingId || `INV-${bill.id?.slice(0, 8) || 'NA'}`;
 		const invoiceDate = bill.date || new Date().toISOString().split('T')[0];
+		const patientType = patient?.patientType || '';
 		
 		setEditableInvoice({
 			invoiceNo,
@@ -1416,6 +1433,7 @@ export default function Billing() {
 			cgstRate: 5, // Default 5% CGST
 			sgstRate: 5, // Default 5% SGST
 			companyBankDetails: 'A/c Holder\'s Name: Six Sports & Business Solutions INC\nBank Name: Canara Bank\nA/c No.: 0284201007444\nBranch & IFS Code: CNRB0000444',
+			patientType,
 		});
 		setSelectedBill(bill);
 		setShowInvoicePreview(true);
@@ -1445,6 +1463,7 @@ export default function Billing() {
 				cgstRate: editableInvoice.cgstRate,
 				sgstRate: editableInvoice.sgstRate,
 				companyBankDetails: editableInvoice.companyBankDetails,
+				patientType: editableInvoice.patientType,
 			});
 			
 			const printWindow = window.open('', '_blank');
@@ -1505,6 +1524,7 @@ export default function Billing() {
 				cgstRate: editableInvoice.cgstRate,
 				sgstRate: editableInvoice.sgstRate,
 				companyBankDetails: editableInvoice.companyBankDetails,
+				patientType: editableInvoice.patientType,
 			});
 
 			setPreviewHtml(html);
@@ -1731,6 +1751,7 @@ export default function Billing() {
 													{pending.map(bill => {
 														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
 														const isDyes = (patientType || '').toUpperCase() === 'DYES';
+														const isReferral = (patientType || '').toUpperCase() === 'REFERRAL';
 														const payLabel = isDyes ? 'Bill' : 'Pay';
 														return (
 															<tr key={bill.billingId}>
@@ -1741,7 +1762,7 @@ export default function Billing() {
 																{bill.patient}
 															</td>
 															<td className="px-3 py-3 text-sm font-semibold text-slate-900">
-																Rs. {bill.amount}
+																{isReferral ? 'N/A' : `Rs. ${bill.amount}`}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
 																{bill.date}
@@ -1812,7 +1833,10 @@ export default function Billing() {
 													</tr>
 												</thead>
 												<tbody className="divide-y divide-slate-100">
-													{completed.map(bill => (
+													{completed.map(bill => {
+														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
+														const isReferral = (patientType || '').toUpperCase() === 'REFERRAL';
+														return (
 														<tr key={bill.billingId}>
 															<td className="px-3 py-3 text-sm font-medium text-slate-800">
 																{bill.billingId}
@@ -1821,7 +1845,7 @@ export default function Billing() {
 																{bill.patient}
 															</td>
 															<td className="px-3 py-3 text-sm font-semibold text-slate-900">
-																Rs. {bill.amount}
+																{isReferral ? 'N/A' : `Rs. ${bill.amount}`}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
 																{bill.paymentMode || '--'}
@@ -1855,7 +1879,8 @@ export default function Billing() {
 																</div>
 															</td>
 														</tr>
-													))}
+														);
+													})}
 												</tbody>
 											</table>
 										</div>
@@ -1891,20 +1916,34 @@ export default function Billing() {
 									</div>
 									<div>
 										<label className="block text-sm font-medium text-slate-700 mb-2">Amount</label>
-										<div className="relative">
-											<span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-500">
-												Rs.
-											</span>
-											<input
-												type="number"
-												min="0"
-												step="0.01"
-												value={paymentAmount}
-												onChange={e => setPaymentAmount(parseFloat(e.target.value) || 0)}
-												className="w-full rounded-lg border border-slate-300 pl-12 pr-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-												placeholder="Enter amount"
-											/>
-										</div>
+										{(() => {
+											const patient = patients.find(p => p.patientId === selectedBill.patientId);
+											const isReferral = (patient?.patientType || '').toUpperCase() === 'REFERRAL';
+											return (
+												<div className="relative">
+													{!isReferral && (
+														<span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-500">
+															Rs.
+														</span>
+													)}
+													<input
+														type={isReferral ? 'text' : 'number'}
+														min={isReferral ? undefined : '0'}
+														step={isReferral ? undefined : '0.01'}
+														value={paymentAmount}
+														onChange={e => {
+															if (!isReferral) {
+																setPaymentAmount(parseFloat(e.target.value) || 0);
+															}
+														}}
+														disabled={isReferral}
+														readOnly={isReferral}
+														className={`w-full rounded-lg border border-slate-300 ${isReferral ? 'px-3' : 'pl-12 pr-3'} py-2 text-sm ${isReferral ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'text-slate-800'} transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200`}
+														placeholder={isReferral ? 'N/A' : 'Enter amount'}
+													/>
+												</div>
+											);
+										})()}
 									</div>
 									<div>
 										<span className="font-semibold text-slate-700">Date:</span>{' '}
