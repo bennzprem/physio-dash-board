@@ -3480,7 +3480,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Load (kg/lb)</th>
 																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Rest (sec)</th>
 																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Distance</th>
-																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Avg HR</th>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Heart Rate</th>
 															</tr>
 														</thead>
 														<tbody className="divide-y divide-slate-200 bg-white">
@@ -3700,26 +3700,9 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									</div>
 
-									{/* Calculations & Diagrams */}
+									{/* Wellness Visualization */}
 									<div className="mb-8 border-t border-slate-200 pt-6">
-										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
-											Calculations & Diagrams
-										</h2>
 										<div className="space-y-4">
-											<div className="flex gap-4 mb-4">
-												<button
-													type="button"
-													className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:bg-sky-100"
-												>
-													Filter: Daily
-												</button>
-												<button
-													type="button"
-													className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-												>
-													Filter: Weekly
-												</button>
-											</div>
 											<div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
 												<p className="text-sm font-semibold text-slate-900 mb-2">Wellness Visualization</p>
 												<div className="flex items-center justify-center gap-2 text-xs text-slate-600 mb-4">
