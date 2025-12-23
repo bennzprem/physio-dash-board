@@ -20,7 +20,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import ReportModal from '@/components/frontdesk/ReportModal';
 
 type PaymentTypeOption = 'with' | 'without';
-type PatientTypeOption = 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '';
+type PatientTypeOption = 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'REFERRAL' | '';
 
 // ROM constants for report display
 const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
@@ -450,6 +450,7 @@ export default function Patients() {
 	const [registerFormErrors, setRegisterFormErrors] = useState<Partial<Record<keyof RegisterFormState, string>>>({});
 	const [registerSubmitting, setRegisterSubmitting] = useState(false);
 	const [registerNotice, setRegisterNotice] = useState<RegisterNotice | null>(null);
+	const [showReferralDialog, setShowReferralDialog] = useState(false);
 	const [bookAppointment, setBookAppointment] = useState(false);
 	const [registerAppointmentForm, setRegisterAppointmentForm] = useState({
 		doctor: '',
@@ -1702,6 +1703,30 @@ const handleCloseRegisterModal = () => {
 		notes: '',
 	});
 	setRegisterSelectedSlots([]);
+	setShowReferralDialog(false);
+};
+
+const handleReferralConfirm = (isReferral: boolean) => {
+	if (isReferral) {
+		setRegisterForm(prev => ({
+			...prev,
+			patientType: 'REFERRAL',
+		}));
+		setRegisterFormErrors(prev => ({
+			...prev,
+			patientType: undefined,
+		}));
+	} else {
+		setRegisterForm(prev => ({
+			...prev,
+			patientType: 'OTHERS',
+		}));
+		setRegisterFormErrors(prev => ({
+			...prev,
+			patientType: undefined,
+		}));
+	}
+	setShowReferralDialog(false);
 };
 
 const handleRegisterFormChange =
@@ -1859,7 +1884,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 							patient: registerForm.fullName.trim(),
 							patientId,
 							doctor: registerAppointmentForm.doctor,
-							amount: APPOINTMENT_BOOKING_CHARGE,
+							amount: registerForm.patientType === 'REFERRAL' ? 0 : APPOINTMENT_BOOKING_CHARGE,
 							amountPaid: 0,
 							date: registerAppointmentForm.date,
 							status: 'Pending',
@@ -2074,7 +2099,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 					patient: selectedPatient.name,
 					patientId: selectedPatient.patientId,
 					doctor: bookingForm.doctor,
-					amount: APPOINTMENT_BOOKING_CHARGE,
+					amount: selectedPatient.patientType === 'REFERRAL' ? 0 : APPOINTMENT_BOOKING_CHARGE,
 					amountPaid: 0,
 					date: bookingForm.date,
 					status: 'Pending',
@@ -3044,20 +3069,26 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 													type="radio"
 													name="registerPatientType"
 													value={type}
-													checked={registerForm.patientType === type}
+													checked={registerForm.patientType === type || (type === 'OTHERS' && registerForm.patientType === 'REFERRAL')}
 													onChange={() => {
-														setRegisterForm(prev => ({
-															...prev,
-															patientType: type,
-														}));
-														setRegisterFormErrors(prev => ({
-															...prev,
-															patientType: undefined,
-														}));
+														if (type === 'OTHERS') {
+															setShowReferralDialog(true);
+														} else {
+															setRegisterForm(prev => ({
+																...prev,
+																patientType: type,
+															}));
+															setRegisterFormErrors(prev => ({
+																...prev,
+																patientType: undefined,
+															}));
+														}
 													}}
 													className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-200"
 												/>
-												<span className="text-sm font-medium text-slate-700">{type}</span>
+												<span className="text-sm font-medium text-slate-700">
+													{registerForm.patientType === 'REFERRAL' && type === 'OTHERS' ? 'REFERRAL' : type}
+												</span>
 											</label>
 										))}
 									</div>
@@ -3244,6 +3275,49 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 								</button>
 							</footer>
 						</form>
+					</div>
+				</div>
+			)}
+
+			{/* Referral Confirmation Dialog */}
+			{showReferralDialog && (
+				<div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 px-4 py-6">
+					<div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl">
+						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+							<div>
+								<h2 className="text-lg font-semibold text-slate-900">Confirm Patient Type</h2>
+								<p className="text-xs text-slate-500">Is this patient from a referral?</p>
+							</div>
+							<button
+								type="button"
+								onClick={() => setShowReferralDialog(false)}
+								className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:bg-slate-100 focus-visible:text-slate-600 focus-visible:outline-none"
+								aria-label="Close dialog"
+							>
+								<i className="fas fa-times" aria-hidden="true" />
+							</button>
+						</header>
+						<div className="px-6 py-4">
+							<p className="text-sm text-slate-700 mb-6">
+								Please confirm if this patient is from a referral. Referral patients will not be charged for services.
+							</p>
+							<div className="flex items-center justify-end gap-3">
+								<button
+									type="button"
+									onClick={() => handleReferralConfirm(false)}
+									className="btn-secondary"
+								>
+									No, Regular Patient
+								</button>
+								<button
+									type="button"
+									onClick={() => handleReferralConfirm(true)}
+									className="btn-primary"
+								>
+									Yes, Referral Patient
+								</button>
+							</div>
+						</div>
 					</div>
 				</div>
 			)}
