@@ -860,6 +860,7 @@ export async function generatePhysiotherapyReportPDF(
 
 export interface StrengthConditioningData {
 	therapistName?: string;
+	assessmentDate?: string; // Date of assessment
 	// Athlete Profile
 	sports?: string;
 	trainingAge?: string;
@@ -1002,6 +1003,14 @@ export async function generateStrengthConditioningPDF(
 		});
 		y = (doc as any).lastAutoTable.finalY + 10;
 
+		// Date
+		if (data.formData.assessmentDate) {
+			doc.setFontSize(10);
+			doc.setFont('helvetica', 'normal');
+			doc.text(`Date: ${data.formData.assessmentDate}`, pageMargin, y);
+			y += 8;
+		}
+
 		// Therapist Name
 		if (data.formData.therapistName) {
 			doc.setFontSize(10);
@@ -1010,13 +1019,239 @@ export async function generateStrengthConditioningPDF(
 			y += 8;
 		}
 
+		// Athlete Profile Section
+		const athleteProfileFields: string[][] = [];
+		if (data.formData.sports) athleteProfileFields.push(['Sports', data.formData.sports]);
+		if (data.formData.trainingAge) athleteProfileFields.push(['Training Age (years)', data.formData.trainingAge]);
+		if (data.formData.competitionLevel) athleteProfileFields.push(['Competition Level', data.formData.competitionLevel]);
+		if (data.formData.injuryHistory) athleteProfileFields.push(['Injury History', data.formData.injuryHistory]);
+		if (data.formData.dominantSide) athleteProfileFields.push(['Dominant Side', data.formData.dominantSide]);
+
+		if (athleteProfileFields.length > 0) {
+			// Check if we need a new page
+			if (y > pageHeight - 50) {
+				doc.addPage();
+				y = 20;
+			}
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Athlete Profile', pageMargin, y);
+			y += 8;
+
+			autoTable(doc, {
+				startY: y,
+				head: [['Field', 'Value']],
+				body: athleteProfileFields,
+				theme: 'grid',
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
+				styles: { fontSize: 9, cellPadding: 2 },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+				margin: { left: pageMargin, right: pageMargin },
+			});
+			y = (doc as any).lastAutoTable.finalY + 6;
+		}
+
+		// Periodization Section
+		const periodizationFields: string[][] = [];
+		if (data.formData.seasonPhase) periodizationFields.push(['Season Phase', data.formData.seasonPhase]);
+		if (data.formData.matchDates && data.formData.matchDates.length > 0) {
+			periodizationFields.push(['Match Dates', data.formData.matchDates.join(', ')]);
+		}
+
+		if (periodizationFields.length > 0) {
+			// Check if we need a new page
+			if (y > pageHeight - 50) {
+				doc.addPage();
+				y = 20;
+			}
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Periodization', pageMargin, y);
+			y += 8;
+
+			autoTable(doc, {
+				startY: y,
+				head: [['Field', 'Value']],
+				body: periodizationFields,
+				theme: 'grid',
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
+				styles: { fontSize: 9, cellPadding: 2 },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+				margin: { left: pageMargin, right: pageMargin },
+			});
+			y = (doc as any).lastAutoTable.finalY + 6;
+		}
+
+		// Skill Training Section
+		const skillTrainingFields: string[][] = [];
+		if (data.formData.skillType) skillTrainingFields.push(['Skill Type', data.formData.skillType]);
+		if (data.formData.skillDuration) skillTrainingFields.push(['Skill Duration', data.formData.skillDuration]);
+		if (data.formData.skillRPEPlanned !== undefined) skillTrainingFields.push(['Skill RPE (Planned)', String(data.formData.skillRPEPlanned)]);
+		if (data.formData.skillPRPEPerceived !== undefined) skillTrainingFields.push(['Skill RPE (Perceived)', String(data.formData.skillPRPEPerceived)]);
+
+		if (skillTrainingFields.length > 0) {
+			// Check if we need a new page
+			if (y > pageHeight - 50) {
+				doc.addPage();
+				y = 20;
+			}
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Skill Training', pageMargin, y);
+			y += 8;
+
+			autoTable(doc, {
+				startY: y,
+				head: [['Field', 'Value']],
+				body: skillTrainingFields,
+				theme: 'grid',
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
+				styles: { fontSize: 9, cellPadding: 2 },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+				margin: { left: pageMargin, right: pageMargin },
+			});
+			y = (doc as any).lastAutoTable.finalY + 6;
+		}
+
+		// Strength & Conditioning Section
+		const scFields: string[][] = [];
+		if (data.formData.scType) scFields.push(['Type', data.formData.scType]);
+		if (data.formData.scDuration) scFields.push(['Duration', data.formData.scDuration]);
+		if (data.formData.scRPEPlanned !== undefined) scFields.push(['RPE (Planned)', String(data.formData.scRPEPlanned)]);
+		if (data.formData.scPRPEPerceived !== undefined) scFields.push(['RPE (Perceived)', String(data.formData.scPRPEPerceived)]);
+
+		if (scFields.length > 0) {
+			// Check if we need a new page
+			if (y > pageHeight - 50) {
+				doc.addPage();
+				y = 20;
+			}
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Strength & Conditioning', pageMargin, y);
+			y += 8;
+
+			autoTable(doc, {
+				startY: y,
+				head: [['Field', 'Value']],
+				body: scFields,
+				theme: 'grid',
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
+				styles: { fontSize: 9, cellPadding: 2 },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+				margin: { left: pageMargin, right: pageMargin },
+			});
+			y = (doc as any).lastAutoTable.finalY + 6;
+		}
+
+		// Exercise Log Section
+		if (data.formData.exercises && data.formData.exercises.length > 0) {
+			// Check if we need a new page
+			if (y > pageHeight - 50) {
+				doc.addPage();
+				y = 20;
+			}
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Exercise Log', pageMargin, y);
+			y += 8;
+
+			const exerciseRows = data.formData.exercises
+				.filter(ex => ex.exerciseName)
+				.map(ex => [
+					ex.exerciseName || '',
+					ex.sets !== undefined ? String(ex.sets) : '',
+					ex.reps !== undefined ? String(ex.reps) : '',
+					ex.load !== undefined ? String(ex.load) : '',
+					ex.rest !== undefined ? String(ex.rest) : '',
+					ex.distance !== undefined ? String(ex.distance) : '',
+					ex.avgHR !== undefined ? String(ex.avgHR) : '',
+				]);
+
+			if (exerciseRows.length > 0) {
+				autoTable(doc, {
+					startY: y,
+					head: [['Exercise', 'Sets', 'Reps', 'Load (kg)', 'Rest (s)', 'Distance', 'Avg HR']],
+					body: exerciseRows,
+					theme: 'grid',
+					headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
+					styles: { fontSize: 8, cellPadding: 2 },
+					margin: { left: pageMargin, right: pageMargin },
+				});
+				y = (doc as any).lastAutoTable.finalY + 6;
+			}
+		}
+
+		// Wellness Score Section
+		const wellnessFields: string[][] = [];
+		if (data.formData.sleepDuration !== undefined) wellnessFields.push(['Sleep Duration (hours)', String(data.formData.sleepDuration)]);
+		if (data.formData.sleepQuality !== undefined) wellnessFields.push(['Sleep Quality (1-10)', String(data.formData.sleepQuality)]);
+		if (data.formData.stressLevel !== undefined) wellnessFields.push(['Stress Level (1-10)', String(data.formData.stressLevel)]);
+		if (data.formData.muscleSoreness !== undefined) wellnessFields.push(['Muscle Soreness (1-10)', String(data.formData.muscleSoreness)]);
+		if (data.formData.moodState) wellnessFields.push(['Mood State', data.formData.moodState]);
+
+		if (wellnessFields.length > 0) {
+			// Check if we need a new page
+			if (y > pageHeight - 50) {
+				doc.addPage();
+				y = 20;
+			}
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Wellness Score', pageMargin, y);
+			y += 8;
+
+			autoTable(doc, {
+				startY: y,
+				head: [['Field', 'Value']],
+				body: wellnessFields,
+				theme: 'grid',
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
+				styles: { fontSize: 9, cellPadding: 2 },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+				margin: { left: pageMargin, right: pageMargin },
+			});
+			y = (doc as any).lastAutoTable.finalY + 6;
+		}
+
+		// ACWR Section
+		const acwrFields: string[][] = [];
+		if (data.formData.dailyWorkload !== undefined) acwrFields.push(['Daily Workload (A.U.)', String(data.formData.dailyWorkload)]);
+		if (data.formData.acuteWorkload !== undefined) acwrFields.push(['Acute Workload (7 days)', String(data.formData.acuteWorkload)]);
+		if (data.formData.chronicWorkload !== undefined) acwrFields.push(['Chronic Workload (28 days avg)', String(data.formData.chronicWorkload)]);
+		if (data.formData.acwrRatio !== undefined) acwrFields.push(['ACWR Ratio', String(data.formData.acwrRatio)]);
+
+		if (acwrFields.length > 0) {
+			// Check if we need a new page
+			if (y > pageHeight - 50) {
+				doc.addPage();
+				y = 20;
+			}
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('ACWR (Acute:Chronic Workload Ratio)', pageMargin, y);
+			y += 8;
+
+			autoTable(doc, {
+				startY: y,
+				head: [['Field', 'Value']],
+				body: acwrFields,
+				theme: 'grid',
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
+				styles: { fontSize: 9, cellPadding: 2 },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+				margin: { left: pageMargin, right: pageMargin },
+			});
+			y = (doc as any).lastAutoTable.finalY + 6;
+		}
+
 		// Injury Risk Screening Section
 		doc.setFontSize(12);
 		doc.setFont('helvetica', 'bold');
 		doc.text('Injury Risk Screening', pageMargin, y);
 		y += 8;
 
-		// Build body rows
+		// Build body rows for single-field items
 		const bodyRows: string[][] = [];
 
 		if (data.formData.scapularDyskinesiaTest) {
@@ -1043,6 +1278,7 @@ export async function generateStrengthConditioningPDF(
 			y = (doc as any).lastAutoTable.finalY + 6;
 		}
 
+		// Add more single-field rows
 		if (data.formData.thoracicRotation) {
 			bodyRows.push(['Thoracic Rotation', data.formData.thoracicRotation]);
 		}
@@ -1110,6 +1346,26 @@ export async function generateStrengthConditioningPDF(
 				startY: y,
 				head: [['Field', 'Value']],
 				body: additionalFields,
+				theme: 'grid',
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
+				styles: { fontSize: 9, cellPadding: 2 },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+				margin: { left: pageMargin, right: pageMargin },
+			});
+			y = (doc as any).lastAutoTable.finalY + 6;
+		}
+
+		// Render single-field rows (scapularDyskinesiaTest, thoracicRotation, sitAndReachTest, pronePlank)
+		if (bodyRows.length > 0) {
+			// Check if we need a new page
+			if (y > pageHeight - 40) {
+				doc.addPage();
+				y = 20;
+			}
+			autoTable(doc, {
+				startY: y,
+				head: [['Field', 'Value']],
+				body: bodyRows,
 				theme: 'grid',
 				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
 				styles: { fontSize: 9, cellPadding: 2 },

@@ -633,18 +633,18 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		return () => unsubscribe();
 	}, []);
 
-	// Sync strength conditioning data with form data
+	// Initialize therapist name on initial load if form is empty
+	// Note: The onSnapshot listener handles all Firestore data updates to prevent overwriting user edits
 	useEffect(() => {
-		if (strengthConditioningData) {
-			setStrengthConditioningFormData(strengthConditioningData);
-		} else if (reportPatientData) {
-			// Initialize with current user's name if available
+		// Only initialize therapist name on first load when form is completely empty
+		if (!strengthConditioningData && reportPatientData && Object.keys(strengthConditioningFormData).length === 0 && clinicalTeamMembers.length > 0) {
 			const currentUserStaff = clinicalTeamMembers.find(m => m.userEmail === user?.email);
 			setStrengthConditioningFormData({
 				therapistName: currentUserStaff?.userName || user?.displayName || user?.email || '',
 			});
 		}
-	}, [strengthConditioningData, reportPatientData, clinicalTeamMembers, user?.displayName, user?.email]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [reportPatientData?.patientId, clinicalTeamMembers.length]); // Only on initial patient/clinical team load
 
 	// Handle PDF download for report
 	// Helper function to build report data
@@ -1284,19 +1284,26 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			return;
 		}
 
+		// Preserve current form data to prevent it from being cleared
+		const dataToSave = {
+			...strengthConditioningFormData,
+			therapistName: strengthConditioningFormData.therapistName || user?.displayName || user?.email || '',
+			patientId: reportPatientData.patientId,
+			patientName: reportPatientData.name,
+			updatedAt: new Date().toISOString(),
+			updatedBy: user?.email || user?.displayName || 'Unknown',
+		};
+
 		setSavingStrengthConditioning(true);
 		try {
 			// Use patientDocId if available, otherwise fall back to patientId
 			const documentId = patientDocId || patientId;
 			const docRef = doc(db, 'strengthConditioningReports', documentId);
-			await setDoc(docRef, {
-				...strengthConditioningFormData,
-				therapistName: strengthConditioningFormData.therapistName || user?.displayName || user?.email || '',
-				patientId: reportPatientData.patientId,
-				patientName: reportPatientData.name,
-				updatedAt: new Date().toISOString(),
-				updatedBy: user?.email || user?.displayName || 'Unknown',
-			}, { merge: true });
+			await setDoc(docRef, dataToSave, { merge: true });
+
+			// Explicitly update form data with saved data to ensure it persists
+			// This prevents any timing issues with onSnapshot
+			setStrengthConditioningFormData(dataToSave);
 
 			setSavedStrengthConditioningMessage(true);
 			setTimeout(() => setSavedStrengthConditioningMessage(false), 3000);
@@ -3275,6 +3282,19 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 												<p className="text-sm font-medium text-slate-900">{reportPatientData.email || '—'}</p>
 											</div>
 										</div>
+									</div>
+
+									{/* Date */}
+									<div className="mb-6">
+										<label className="block text-sm font-semibold text-slate-700 mb-2">
+											Date
+										</label>
+										<input
+											type="date"
+											value={strengthConditioningFormData.assessmentDate || ''}
+											onChange={e => handleFieldChangeStrengthConditioning('assessmentDate', e.target.value)}
+											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
 									</div>
 
 									{/* Therapist Name */}
