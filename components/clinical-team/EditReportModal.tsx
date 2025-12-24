@@ -637,14 +637,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	useEffect(() => {
 		if (strengthConditioningData) {
 			setStrengthConditioningFormData(strengthConditioningData);
-		} else if (reportPatientData?.id) {
+		} else if (reportPatientData) {
 			// Initialize with current user's name if available
 			const currentUserStaff = clinicalTeamMembers.find(m => m.userEmail === user?.email);
 			setStrengthConditioningFormData({
 				therapistName: currentUserStaff?.userName || user?.displayName || user?.email || '',
 			});
 		}
-	}, [strengthConditioningData, reportPatientData?.id, clinicalTeamMembers, user?.displayName, user?.email]);
+	}, [strengthConditioningData, reportPatientData, clinicalTeamMembers, user?.displayName, user?.email]);
 
 	// Handle PDF download for report
 	// Helper function to build report data
@@ -1279,14 +1279,16 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 	// Handle save for strength conditioning
 	const handleSaveStrengthConditioning = async () => {
-		if (!reportPatientData?.id || savingStrengthConditioning || !patientId) {
+		if (!reportPatientData || savingStrengthConditioning || !patientId) {
 			alert('Please select a patient first');
 			return;
 		}
 
 		setSavingStrengthConditioning(true);
 		try {
-			const docRef = doc(db, 'strengthConditioningReports', reportPatientData.id);
+			// Use patientDocId if available, otherwise fall back to patientId
+			const documentId = patientDocId || patientId;
+			const docRef = doc(db, 'strengthConditioningReports', documentId);
 			await setDoc(docRef, {
 				...strengthConditioningFormData,
 				therapistName: strengthConditioningFormData.therapistName || user?.displayName || user?.email || '',
