@@ -2284,37 +2284,37 @@ export default function Billing() {
 				Total Collections (filtered): <span className="font-semibold">{rupee(totalCollections)}</span>
 			</p>
 
-			<section className="mx-auto mt-4 grid max-w-6xl gap-6 lg:grid-cols-2">
-				<article className="rounded-2xl bg-white shadow-[0_20px_50px_rgba(30,58,138,0.15)] border border-navy-100">
-					<header className="flex items-center justify-between rounded-t-2xl bg-gradient-to-r from-indigo-100 to-blue-100 px-5 py-4 border-b border-indigo-200">
+			<section className="mx-auto mt-4 grid max-w-6xl gap-4 lg:grid-cols-2">
+				<article className="flex flex-col rounded-2xl bg-white shadow-[0_20px_50px_rgba(30,58,138,0.15)] border border-navy-100 max-h-[calc(100vh-280px)]">
+					<header className="flex items-center justify-between rounded-t-2xl bg-gradient-to-r from-indigo-100 to-blue-100 px-4 py-3 border-b border-indigo-200 flex-shrink-0">
 						<div>
-							<h2 className="text-lg font-semibold text-indigo-900">Pending Billing</h2>
+							<h2 className="text-base font-semibold text-indigo-900">Pending Billing</h2>
 							<p className="text-xs text-indigo-700">
 								Completed appointments awaiting a recorded payment.
 							</p>
 						</div>
 						<div className="flex items-center gap-2">
-						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-navy-600 px-2 text-xs font-semibold text-white shadow-md">
+						<span className="inline-flex h-6 min-w-7 items-center justify-center rounded-full bg-navy-600 px-2 text-xs font-semibold text-white shadow-md">
 							{pendingRows.length}
 						</span>
 						</div>
 					</header>
-					<div className="overflow-x-auto px-5 pb-5 pt-3">
-						<table className="min-w-full divide-y divide-indigo-200 text-left text-sm text-slate-700">
-							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900">
+					<div className="overflow-x-auto overflow-y-auto px-4 pb-4 pt-2 flex-1">
+						<table className="min-w-full divide-y divide-indigo-200 text-left text-xs text-slate-700">
+							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900 sticky top-0">
 								<tr>
-									<th className="px-3 py-2 font-semibold">Patient / Department</th>
-									<th className="px-3 py-2 font-semibold">Clinician</th>
-									<th className="px-3 py-2 font-semibold">Visit Date</th>
-									<th className="px-3 py-2 font-semibold">Amount (₹)</th>
-									<th className="px-3 py-2 font-semibold">Billing Date</th>
-									<th className="px-3 py-2 font-semibold text-right">Action</th>
+									<th className="px-2 py-1.5 font-semibold">Patient / Department</th>
+									<th className="px-2 py-1.5 font-semibold">Clinician</th>
+									<th className="px-2 py-1.5 font-semibold">Visit Date</th>
+									<th className="px-2 py-1.5 font-semibold">Amount (₹)</th>
+									<th className="px-2 py-1.5 font-semibold">Billing Date</th>
+									<th className="px-2 py-1.5 font-semibold text-right">Action</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-indigo-100">
 								{pendingRows.length === 0 ? (
 									<tr>
-										<td colSpan={6} className="px-3 py-6 text-center text-sm text-slate-500">
+										<td colSpan={6} className="px-2 py-4 text-center text-xs text-slate-500">
 											No pending billing items for the selected filters.
 										</td>
 									</tr>
@@ -2326,13 +2326,13 @@ export default function Billing() {
 										};
 										return (
 											<tr key={row.appointment.id}>
-												<td className="px-3 py-3 font-medium text-slate-800">
-													<div>{row.patientName}</div>
+												<td className="px-2 py-2 font-medium text-slate-800">
+													<div className="text-xs">{row.patientName}</div>
 													{row.patientRecord?.department && (
-														<p className="mt-0.5 text-xs text-indigo-600 font-medium">{row.patientRecord.department}</p>
+														<p className="mt-0.5 text-[10px] text-indigo-600 font-medium">{row.patientRecord.department}</p>
 													)}
 													{row.patientRecord?.patientType === 'DYES' && (
-														<p className="mt-0.5 text-xs text-amber-600">
+														<p className="mt-0.5 text-[10px] text-amber-600">
 															Pending sessions:{' '}
 															{row.patientRecord.sessionAllowance?.pendingPaidSessions ?? 0}
 															{row.patientRecord.sessionAllowance
@@ -2341,9 +2341,9 @@ export default function Billing() {
 														</p>
 													)}
 												</td>
-												<td className="px-3 py-3 text-slate-600">{row.appointment.doctor || '—'}</td>
-												<td className="px-3 py-3 text-slate-600">{row.appointment.date || '—'}</td>
-												<td className="px-3 py-3">
+												<td className="px-2 py-2 text-xs text-slate-600">{row.appointment.doctor || '—'}</td>
+												<td className="px-2 py-2 text-xs text-slate-600">{row.appointment.date || '—'}</td>
+												<td className="px-2 py-2">
 													<input
 														type="number"
 														min="0"
@@ -2352,26 +2352,26 @@ export default function Billing() {
 														onChange={event =>
 															handlePendingDraftChange(row.appointment.id, 'amount', event.target.value)
 														}
-														className="w-28 rounded border border-amber-200 px-2 py-1 text-sm text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-200"
+														className="w-24 rounded border border-amber-200 px-1.5 py-0.5 text-xs text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-200"
 													/>
 												</td>
-												<td className="px-3 py-3">
+												<td className="px-2 py-2">
 													<input
 														type="date"
 														value={draft.date}
 														onChange={event =>
 															handlePendingDraftChange(row.appointment.id, 'date', event.target.value)
 														}
-														className="w-36 rounded border border-amber-200 px-2 py-1 text-sm text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-200"
+														className="w-32 rounded border border-amber-200 px-1.5 py-0.5 text-xs text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-200"
 													/>
 												</td>
-												<td className="px-3 py-3 text-right">
+												<td className="px-2 py-2 text-right">
 													<button
 														type="button"
 														onClick={() => handleSaveBilling(row.appointment.id)}
-														className="inline-flex items-center rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-emerald-500"
+														className="inline-flex items-center rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-white transition hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-emerald-500"
 													>
-														<i className="fas fa-save mr-1 text-[11px]" aria-hidden="true" />
+														<i className="fas fa-save mr-1 text-[9px]" aria-hidden="true" />
 														Save
 													</button>
 												</td>
@@ -2384,55 +2384,55 @@ export default function Billing() {
 					</div>
 				</article>
 
-				<article className="rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
-					<header className="flex items-center justify-between rounded-t-2xl bg-sky-500 px-5 py-4 text-white">
+				<article className="flex flex-col rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)] max-h-[calc(100vh-280px)]">
+					<header className="flex items-center justify-between rounded-t-2xl bg-sky-500 px-4 py-3 text-white flex-shrink-0">
 						<div>
-							<h2 className="text-lg font-semibold">Billing History</h2>
+							<h2 className="text-base font-semibold">Billing History</h2>
 							<p className="text-xs text-blue-100">Recorded invoices that have been completed.</p>
 						</div>
-						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-indigo-800 px-2 text-xs font-semibold text-white shadow-md">
+						<span className="inline-flex h-6 min-w-7 items-center justify-center rounded-full bg-indigo-800 px-2 text-xs font-semibold text-white shadow-md">
 							{billingHistoryRows.length}
 						</span>
 					</header>
-					<div className="overflow-x-auto px-5 pb-5 pt-3">
-						<table className="min-w-full divide-y divide-sky-200 text-left text-sm text-slate-700">
-							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900">
+					<div className="overflow-x-auto overflow-y-auto px-4 pb-4 pt-2 flex-1">
+						<table className="min-w-full divide-y divide-sky-200 text-left text-xs text-slate-700">
+							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900 sticky top-0">
 								<tr>
-									<th className="px-3 py-2 font-semibold">Patient / Department</th>
-									<th className="px-3 py-2 font-semibold">Clinician</th>
-									<th className="px-3 py-2 font-semibold">Visit Date</th>
-									<th className="px-3 py-2 font-semibold">Amount (₹)</th>
-									<th className="px-3 py-2 font-semibold">Billing Date</th>
-									<th className="px-3 py-2 font-semibold">Created By</th>
-									<th className="px-3 py-2 font-semibold text-right">Receipt</th>
+									<th className="px-2 py-1.5 font-semibold">Patient / Department</th>
+									<th className="px-2 py-1.5 font-semibold">Clinician</th>
+									<th className="px-2 py-1.5 font-semibold">Visit Date</th>
+									<th className="px-2 py-1.5 font-semibold">Amount (₹)</th>
+									<th className="px-2 py-1.5 font-semibold">Billing Date</th>
+									<th className="px-2 py-1.5 font-semibold">Created By</th>
+									<th className="px-2 py-1.5 font-semibold text-right">Receipt</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-sky-100">
 								{billingHistoryRows.length === 0 ? (
 									<tr>
-										<td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">
+										<td colSpan={7} className="px-2 py-4 text-center text-xs text-slate-500">
 											No billing history for the selected filters.
 										</td>
 									</tr>
 								) : (
 									billingHistoryRows.map(row => (
 										<tr key={row.appointment.id}>
-											<td className="px-3 py-3 font-medium text-slate-800">
-												<div>{row.patientName}</div>
+											<td className="px-2 py-2 font-medium text-slate-800">
+												<div className="text-xs">{row.patientName}</div>
 												{row.patientRecord?.department && (
-													<p className="mt-0.5 text-xs text-indigo-600 font-medium">{row.patientRecord.department}</p>
+													<p className="mt-0.5 text-[10px] text-indigo-600 font-medium">{row.patientRecord.department}</p>
 												)}
 											</td>
-											<td className="px-3 py-3 text-slate-600">{row.appointment.doctor || '—'}</td>
-											<td className="px-3 py-3 text-slate-600">{row.appointment.date || '—'}</td>
-											<td className="px-3 py-3 text-slate-700">
+											<td className="px-2 py-2 text-xs text-slate-600">{row.appointment.doctor || '—'}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">{row.appointment.date || '—'}</td>
+											<td className="px-2 py-2 text-xs text-slate-700">
 												{rupee(Number(row.appointment.billing?.amount ?? 0))}
 											</td>
-											<td className="px-3 py-3 text-slate-600">{row.appointment.billing?.date || '—'}</td>
-											<td className="px-3 py-3 text-slate-600 text-xs">
+											<td className="px-2 py-2 text-xs text-slate-600">{row.appointment.billing?.date || '—'}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">
 												{row.billingRecord?.createdByFrontdeskName || '—'}
 											</td>
-											<td className="px-3 py-3 text-right">
+											<td className="px-2 py-2 text-right">
 												<button
 													type="button"
 													onClick={() =>
@@ -2444,9 +2444,9 @@ export default function Billing() {
 															amount: row.appointment.billing?.amount ?? '0',
 														})
 													}
-													className="inline-flex items-center rounded-full border border-sky-200 px-3 py-1 text-xs font-semibold text-sky-700 transition hover:border-sky-400 hover:text-sky-800 focus-visible:border-sky-400 focus-visible:text-sky-800 focus-visible:outline-none"
+													className="inline-flex items-center rounded-full border border-sky-200 px-2 py-0.5 text-[10px] font-semibold text-sky-700 transition hover:border-sky-400 hover:text-sky-800 focus-visible:border-sky-400 focus-visible:text-sky-800 focus-visible:outline-none"
 												>
-													<i className="fas fa-receipt mr-1 text-[11px]" aria-hidden="true" />
+													<i className="fas fa-receipt mr-1 text-[9px]" aria-hidden="true" />
 													Invoice
 												</button>
 											</td>
@@ -2657,64 +2657,64 @@ export default function Billing() {
 			)}
 
 			{/* Pending Payments Section */}
-			<section className="mx-auto mt-6 grid max-w-6xl gap-6">
-				<article className="rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
-					<header className="flex items-center justify-between rounded-t-2xl bg-amber-100 px-5 py-4 text-amber-900">
+			<section className="mx-auto mt-4 grid max-w-6xl gap-4">
+				<article className="flex flex-col rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)] max-h-[calc(100vh-280px)]">
+					<header className="flex items-center justify-between rounded-t-2xl bg-amber-100 px-4 py-3 text-amber-900 flex-shrink-0">
 						<div>
-							<h2 className="text-lg font-semibold">Pending Payments</h2>
+							<h2 className="text-base font-semibold">Pending Payments</h2>
 							<p className="text-xs text-amber-800/80">
 								Bills awaiting payment confirmation.
 							</p>
 						</div>
-						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-amber-500 px-2 text-xs font-semibold text-white">
+						<span className="inline-flex h-6 min-w-7 items-center justify-center rounded-full bg-amber-500 px-2 text-xs font-semibold text-white">
 							{pending.length}
 						</span>
 					</header>
-					<div className="overflow-x-auto px-5 pb-5 pt-3">
-						<table className="min-w-full divide-y divide-amber-200 text-left text-sm text-slate-700">
-							<thead className="bg-amber-50 text-xs uppercase tracking-wide text-amber-700">
+					<div className="overflow-x-auto overflow-y-auto px-4 pb-4 pt-2 flex-1">
+						<table className="min-w-full divide-y divide-amber-200 text-left text-xs text-slate-700">
+							<thead className="bg-amber-50 text-xs uppercase tracking-wide text-amber-700 sticky top-0">
 								<tr>
-									<th className="px-3 py-2 font-semibold">Patient</th>
-									<th className="px-3 py-2 font-semibold">Patient ID</th>
-									<th className="px-3 py-2 font-semibold">Doctor</th>
-									<th className="px-3 py-2 font-semibold">Amount (₹)</th>
-									<th className="px-3 py-2 font-semibold">Plan</th>
-									<th className="px-3 py-2 font-semibold">Date</th>
-									<th className="px-3 py-2 font-semibold text-right">Action</th>
+									<th className="px-2 py-1.5 font-semibold">Patient</th>
+									<th className="px-2 py-1.5 font-semibold">Patient ID</th>
+									<th className="px-2 py-1.5 font-semibold">Doctor</th>
+									<th className="px-2 py-1.5 font-semibold">Amount (₹)</th>
+									<th className="px-2 py-1.5 font-semibold">Plan</th>
+									<th className="px-2 py-1.5 font-semibold">Date</th>
+									<th className="px-2 py-1.5 font-semibold text-right">Action</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-amber-100">
 								{pending.length === 0 ? (
 									<tr>
-										<td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">
+										<td colSpan={7} className="px-2 py-4 text-center text-xs text-slate-500">
 											No pending payments.
 										</td>
 									</tr>
 								) : (
 									pending.map(bill => (
 										<tr key={bill.id}>
-											<td className="px-3 py-3 font-medium text-slate-800">{bill.patient}</td>
-											<td className="px-3 py-3 text-slate-600">{bill.patientId}</td>
-											<td className="px-3 py-3 text-slate-600">{bill.doctor || '—'}</td>
-											<td className="px-3 py-3 text-slate-700">Rs. {bill.amount.toFixed(2)}</td>
-											<td className="px-3 py-3 text-slate-600">{formatInstallmentPlan(bill)}</td>
-											<td className="px-3 py-3 text-slate-600">{bill.date || '—'}</td>
-											<td className="px-3 py-3 text-right">
-												<div className="flex items-center justify-end gap-2">
+											<td className="px-2 py-2 text-xs font-medium text-slate-800">{bill.patient}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">{bill.patientId}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">{bill.doctor || '—'}</td>
+											<td className="px-2 py-2 text-xs text-slate-700">Rs. {bill.amount.toFixed(2)}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">{formatInstallmentPlan(bill)}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">{bill.date || '—'}</td>
+											<td className="px-2 py-2 text-right">
+												<div className="flex items-center justify-end gap-1.5">
 													<button
 														type="button"
 														onClick={() => handlePay(bill)}
-														className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+														className="inline-flex items-center rounded-lg bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
 													>
 														Pay
 													</button>
 													<button
 														type="button"
 														onClick={() => handleDeleteBilling(bill)}
-														className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-rose-600 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+														className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
 														title="Delete billing record"
 													>
-														<i className="fas fa-trash text-xs" aria-hidden="true" />
+														<i className="fas fa-trash text-[9px]" aria-hidden="true" />
 													</button>
 												</div>
 											</td>
@@ -2728,38 +2728,38 @@ export default function Billing() {
 			</section>
 
 			{/* Completed Payments Section */}
-			<section className="mx-auto mt-6 grid max-w-6xl gap-6">
-				<article className="rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
-					<header className="flex items-center justify-between rounded-t-2xl bg-emerald-100 px-5 py-4 text-emerald-900">
+			<section className="mx-auto mt-4 grid max-w-6xl gap-4">
+				<article className="flex flex-col rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)] max-h-[calc(100vh-280px)]">
+					<header className="flex items-center justify-between rounded-t-2xl bg-emerald-100 px-4 py-3 text-emerald-900 flex-shrink-0">
 						<div>
-							<h2 className="text-lg font-semibold">Completed Payments</h2>
+							<h2 className="text-base font-semibold">Completed Payments</h2>
 							<p className="text-xs text-navy-700">
 								Payments that have been completed.
 							</p>
 						</div>
-						<span className="inline-flex h-7 min-w-8 items-center justify-center rounded-full bg-navy-600 px-2 text-xs font-semibold text-white shadow-md">
+						<span className="inline-flex h-6 min-w-7 items-center justify-center rounded-full bg-navy-600 px-2 text-xs font-semibold text-white shadow-md">
 							{completed.length}
 						</span>
 					</header>
-					<div className="overflow-x-auto px-5 pb-5 pt-3">
-						<table className="min-w-full divide-y divide-emerald-200 text-left text-sm text-slate-700">
-							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900">
+					<div className="overflow-x-auto overflow-y-auto px-4 pb-4 pt-2 flex-1">
+						<table className="min-w-full divide-y divide-emerald-200 text-left text-xs text-slate-700">
+							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900 sticky top-0">
 								<tr>
-									<th className="px-3 py-2 font-semibold">Patient / Department</th>
-									<th className="px-3 py-2 font-semibold">Patient ID</th>
-									<th className="px-3 py-2 font-semibold">Doctor</th>
-									<th className="px-3 py-2 font-semibold">Amount (₹)</th>
-									<th className="px-3 py-2 font-semibold">Plan</th>
-									<th className="px-3 py-2 font-semibold">Payment Mode</th>
-									<th className="px-3 py-2 font-semibold">Created By</th>
-									<th className="px-3 py-2 font-semibold">Payment By</th>
-									<th className="px-3 py-2 font-semibold text-right">Actions</th>
+									<th className="px-2 py-1.5 font-semibold">Patient / Department</th>
+									<th className="px-2 py-1.5 font-semibold">Patient ID</th>
+									<th className="px-2 py-1.5 font-semibold">Doctor</th>
+									<th className="px-2 py-1.5 font-semibold">Amount (₹)</th>
+									<th className="px-2 py-1.5 font-semibold">Plan</th>
+									<th className="px-2 py-1.5 font-semibold">Payment Mode</th>
+									<th className="px-2 py-1.5 font-semibold">Created By</th>
+									<th className="px-2 py-1.5 font-semibold">Payment By</th>
+									<th className="px-2 py-1.5 font-semibold text-right">Actions</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-emerald-100">
 								{completed.length === 0 ? (
 									<tr>
-										<td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-500">
+										<td colSpan={9} className="px-2 py-4 text-center text-xs text-slate-500">
 											No completed payments.
 										</td>
 									</tr>
@@ -2768,46 +2768,46 @@ export default function Billing() {
 										const patient = bill.patientId ? patientLookup.get(bill.patientId) : undefined;
 										return (
 										<tr key={bill.id}>
-												<td className="px-3 py-3 font-medium text-slate-800">
+												<td className="px-2 py-2 text-xs font-medium text-slate-800">
 													<div>{bill.patient}</div>
 													{patient?.department && (
-														<p className="mt-0.5 text-xs text-indigo-600 font-medium">{patient.department}</p>
+														<p className="mt-0.5 text-[10px] text-indigo-600 font-medium">{patient.department}</p>
 													)}
 												</td>
-											<td className="px-3 py-3 text-slate-600">{bill.patientId}</td>
-											<td className="px-3 py-3 text-slate-600">{bill.doctor || '—'}</td>
-											<td className="px-3 py-3 text-slate-700">Rs. {bill.amount.toFixed(2)}</td>
-											<td className="px-3 py-3 text-slate-600">{formatInstallmentPlan(bill)}</td>
-											<td className="px-3 py-3 text-slate-600">{bill.paymentMode || '—'}</td>
-												<td className="px-3 py-3 text-slate-600 text-xs">
+											<td className="px-2 py-2 text-xs text-slate-600">{bill.patientId}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">{bill.doctor || '—'}</td>
+											<td className="px-2 py-2 text-xs text-slate-700">Rs. {bill.amount.toFixed(2)}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">{formatInstallmentPlan(bill)}</td>
+											<td className="px-2 py-2 text-xs text-slate-600">{bill.paymentMode || '—'}</td>
+												<td className="px-2 py-2 text-xs text-slate-600">
 													{bill.createdByFrontdeskName || '—'}
 												</td>
-												<td className="px-3 py-3 text-slate-600 text-xs">
+												<td className="px-2 py-2 text-xs text-slate-600">
 													{bill.paymentRegisteredByFrontdeskName || '—'}
 												</td>
-											<td className="px-3 py-3">
-												<div className="flex items-center justify-end gap-2">
+											<td className="px-2 py-2 text-right">
+												<div className="flex items-center justify-end gap-1.5">
 													<button
 														type="button"
 														onClick={() => handleViewPaymentSlip(bill)}
-														className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+														className="inline-flex items-center rounded-lg bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
 													>
 														Receipt
 													</button>
 													<button
 														type="button"
 														onClick={() => handleGenerateInvoice(bill)}
-														className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
+														className="inline-flex items-center rounded-lg border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
 													>
 														Invoice
 													</button>
 													<button
 														type="button"
 														onClick={() => handleDeleteBilling(bill)}
-														className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-rose-600 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+														className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
 														title="Delete billing record"
 													>
-														<i className="fas fa-trash text-xs" aria-hidden="true" />
+														<i className="fas fa-trash text-[9px]" aria-hidden="true" />
 													</button>
 												</div>
 											</td>
