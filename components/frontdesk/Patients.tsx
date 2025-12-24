@@ -445,6 +445,12 @@ export default function Patients() {
 	const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
 	const [bookingLoading, setBookingLoading] = useState(false);
 	const [showBookingModal, setShowBookingModal] = useState(false);
+	const [editingSlotTime, setEditingSlotTime] = useState<string | null>(null);
+	const [editedSlotTime, setEditedSlotTime] = useState<string>('');
+	const [customTimeSlots, setCustomTimeSlots] = useState<Map<string, string>>(new Map());
+	const [editingRegisterSlotTime, setEditingRegisterSlotTime] = useState<string | null>(null);
+	const [editedRegisterSlotTime, setEditedRegisterSlotTime] = useState<string>('');
+	const [customRegisterTimeSlots, setCustomRegisterTimeSlots] = useState<Map<string, string>>(new Map());
 	const [showRegisterModal, setShowRegisterModal] = useState(false);
 	const [registerForm, setRegisterForm] = useState<RegisterFormState>(REGISTER_FORM_INITIAL_STATE);
 	const [registerFormErrors, setRegisterFormErrors] = useState<Partial<Record<keyof RegisterFormState, string>>>({});
@@ -1384,8 +1390,13 @@ export default function Patients() {
 				}
 
 				if (isToday) {
-					const minutesFromMidnight = current.getHours() * 60 + current.getMinutes();
-					if (minutesFromMidnight < currentTimeMinutes) {
+					// Calculate slot end time (start time + 30 minutes)
+					const slotEndTime = new Date(current);
+					slotEndTime.setMinutes(slotEndTime.getMinutes() + SLOT_INTERVAL_MINUTES);
+					const slotEndMinutesFromMidnight = slotEndTime.getHours() * 60 + slotEndTime.getMinutes();
+					
+					// Only hide slots whose END time has passed
+					if (slotEndMinutesFromMidnight <= currentTimeMinutes) {
 						current.setMinutes(current.getMinutes() + SLOT_INTERVAL_MINUTES);
 						continue;
 					}
@@ -1523,8 +1534,13 @@ export default function Patients() {
 				}
 
 				if (isToday) {
-					const minutesFromMidnight = current.getHours() * 60 + current.getMinutes();
-					if (minutesFromMidnight < currentTimeMinutes) {
+					// Calculate slot end time (start time + 30 minutes)
+					const slotEndTime = new Date(current);
+					slotEndTime.setMinutes(slotEndTime.getMinutes() + SLOT_INTERVAL_MINUTES);
+					const slotEndMinutesFromMidnight = slotEndTime.getHours() * 60 + slotEndTime.getMinutes();
+					
+					// Only hide slots whose END time has passed
+					if (slotEndMinutesFromMidnight <= currentTimeMinutes) {
 						current.setMinutes(current.getMinutes() + SLOT_INTERVAL_MINUTES);
 						continue;
 					}
@@ -1700,6 +1716,9 @@ export default function Patients() {
 			notes: '',
 		});
 		setSelectedSlots([]);
+		setEditingSlotTime(null);
+		setEditedSlotTime('');
+		setCustomTimeSlots(new Map());
 	};
 
 const handleOpenRegisterModal = () => {
@@ -1886,6 +1905,9 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 			try {
 				const staffMember = staff.find(member => member.userName === registerAppointmentForm.doctor);
 				if (staffMember) {
+					// Use custom edited time if available, otherwise use original time
+					const finalTime = customRegisterTimeSlots.get(registerAppointmentForm.time) || registerAppointmentForm.time;
+					
 					const appointmentId = `APT${Date.now()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 					await addDoc(collection(db, 'appointments'), {
 						appointmentId,
@@ -1894,7 +1916,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 						doctor: registerAppointmentForm.doctor,
 						staffId: staffMember.id,
 						date: registerAppointmentForm.date,
-						time: registerAppointmentForm.time,
+						time: finalTime,
 						duration: registerAppointmentForm.duration,
 						status: 'pending' as AdminAppointmentStatus,
 						notes: registerAppointmentForm.notes?.trim() || null,
@@ -1948,7 +1970,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 									patientId,
 									doctor: registerAppointmentForm.doctor,
 									date: registerAppointmentForm.date,
-									time: registerAppointmentForm.time,
+									time: customRegisterTimeSlots.get(registerAppointmentForm.time) || registerAppointmentForm.time,
 									appointmentId,
 								},
 							});
@@ -2101,6 +2123,9 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 			);
 			const isConsultation = patientAllAppointments.length === 0; // First appointment if no appointments exist
 
+			// Use custom edited time if available, otherwise use original time
+			const finalTime = customTimeSlots.get(bookingForm.time) || bookingForm.time;
+
 			const appointmentId = `APT${Date.now()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 			await addDoc(collection(db, 'appointments'), {
 				appointmentId,
@@ -2109,7 +2134,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 				doctor: bookingForm.doctor,
 				staffId: staffMember.id,
 				date: bookingForm.date,
-				time: bookingForm.time,
+				time: finalTime,
 				duration: bookingForm.duration,
 				status: 'pending' as AdminAppointmentStatus,
 				notes: bookingForm.notes?.trim() || null,
@@ -3228,34 +3253,109 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 										) : (
 											<div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
 												{registerAvailableSlots.map(slot => {
-													const slotEnd = minutesToTimeString(timeStringToMinutes(slot) + SLOT_INTERVAL_MINUTES);
+													const displaySlot = customRegisterTimeSlots.get(slot) || slot;
+													const slotEnd = minutesToTimeString(timeStringToMinutes(displaySlot) + SLOT_INTERVAL_MINUTES);
 													const isSelected = registerSelectedSlots.includes(slot);
+													const isEditing = editingRegisterSlotTime === slot;
+													
 													return (
-														<button
-															type="button"
-															key={slot}
-															onClick={() => handleRegisterSlotToggle(slot)}
-															className={`rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition ${
-																isSelected
-																	? 'border-sky-500 bg-sky-50 text-sky-800 ring-2 ring-sky-200'
-																	: 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
-															}`}
-															aria-pressed={isSelected}
-															disabled={registerSubmitting}
-														>
-															<div className="flex items-center justify-between">
-																<div>
-																	<p className="font-semibold">{slot} – {slotEnd}</p>
-																	<p className="text-xs text-slate-500">30 minutes</p>
+														<div key={slot} className="relative">
+															{isEditing ? (
+																<div className="rounded-xl border border-sky-500 bg-sky-50 px-3 py-2 shadow-sm">
+																	<div className="flex items-center gap-2">
+																		<input
+																			type="time"
+																			value={editedRegisterSlotTime}
+																			onChange={(e) => setEditedRegisterSlotTime(e.target.value)}
+																			className="flex-1 rounded border border-sky-300 px-2 py-1 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																			autoFocus
+																		/>
+																		<button
+																			type="button"
+																			onClick={() => {
+																				if (editedRegisterSlotTime) {
+																					const newTime = editedRegisterSlotTime.substring(0, 5); // Get HH:MM format
+																					setCustomRegisterTimeSlots(prev => {
+																						const newMap = new Map(prev);
+																						newMap.set(slot, newTime);
+																						return newMap;
+																					});
+																					// Update selected slots if this slot was selected
+																					if (isSelected) {
+																						setRegisterSelectedSlots(prev => prev.map(s => s === slot ? newTime : s));
+																						setRegisterAppointmentForm(prev => ({
+																							...prev,
+																							time: prev.time === slot ? newTime : prev.time,
+																						}));
+																					}
+																				}
+																				setEditingRegisterSlotTime(null);
+																				setEditedRegisterSlotTime('');
+																			}}
+																			className="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700"
+																			title="Save"
+																		>
+																			<i className="fas fa-check" aria-hidden="true" />
+																		</button>
+																		<button
+																			type="button"
+																			onClick={() => {
+																				setEditingRegisterSlotTime(null);
+																				setEditedRegisterSlotTime('');
+																			}}
+																			className="rounded bg-slate-300 px-2 py-1 text-xs text-white hover:bg-slate-400"
+																			title="Cancel"
+																		>
+																			<i className="fas fa-times" aria-hidden="true" />
+																		</button>
+																	</div>
 																</div>
-																<span className={`text-xs ${isSelected ? 'text-sky-600' : 'text-slate-400'}`}>
-																	<i
-																		className={`fas ${isSelected ? 'fa-check-circle' : 'fa-clock'}`}
-																		aria-hidden="true"
-																	/>
-																</span>
-															</div>
-														</button>
+															) : (
+																<button
+																	type="button"
+																	onClick={(e) => {
+																		// Don't trigger if clicking the edit icon
+																		if ((e.target as HTMLElement).closest('.edit-slot-btn')) {
+																			return;
+																		}
+																		handleRegisterSlotToggle(slot);
+																	}}
+																	className={`relative rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition w-full ${
+																		isSelected
+																			? 'border-sky-500 bg-sky-50 text-sky-800 ring-2 ring-sky-200'
+																			: 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
+																	}`}
+																	aria-pressed={isSelected}
+																	disabled={registerSubmitting}
+																>
+																	<button
+																		type="button"
+																		onClick={(e) => {
+																			e.stopPropagation();
+																			setEditingRegisterSlotTime(slot);
+																			setEditedRegisterSlotTime(displaySlot + ':00'); // Convert to HH:MM:SS format for time input
+																		}}
+																		className="edit-slot-btn absolute top-1 right-1 rounded p-1 text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
+																		title="Edit time"
+																		disabled={registerSubmitting}
+																	>
+																		<i className="fas fa-edit" aria-hidden="true" />
+																	</button>
+																	<div className="flex items-center justify-between pr-6">
+																		<div>
+																			<p className="font-semibold">{displaySlot} – {slotEnd}</p>
+																			<p className="text-xs text-slate-500">30 minutes</p>
+																		</div>
+																		<span className={`text-xs ${isSelected ? 'text-sky-600' : 'text-slate-400'}`}>
+																			<i
+																				className={`fas ${isSelected ? 'fa-check-circle' : 'fa-clock'}`}
+																				aria-hidden="true"
+																			/>
+																		</span>
+																	</div>
+																</button>
+															)}
+														</div>
 													);
 												})}
 											</div>
@@ -3622,34 +3722,109 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 									) : (
 										<div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
 											{availableSlots.map(slot => {
-												const slotEnd = minutesToTimeString(timeStringToMinutes(slot) + SLOT_INTERVAL_MINUTES);
+												const displaySlot = customTimeSlots.get(slot) || slot;
+												const slotEnd = minutesToTimeString(timeStringToMinutes(displaySlot) + SLOT_INTERVAL_MINUTES);
 												const isSelected = selectedSlots.includes(slot);
+												const isEditing = editingSlotTime === slot;
+												
 												return (
-													<button
-														type="button"
-														key={slot}
-														onClick={() => handleSlotToggle(slot)}
-														className={`rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition ${
-															isSelected
-																? 'border-sky-500 bg-sky-50 text-sky-800 ring-2 ring-sky-200'
-																: 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
-														}`}
-														aria-pressed={isSelected}
-														disabled={bookingLoading}
-													>
-														<div className="flex items-center justify-between">
-															<div>
-																<p className="font-semibold">{slot} – {slotEnd}</p>
-																<p className="text-xs text-slate-500">30 minutes</p>
+													<div key={slot} className="relative">
+														{isEditing ? (
+															<div className="rounded-xl border border-sky-500 bg-sky-50 px-3 py-2 shadow-sm">
+																<div className="flex items-center gap-2">
+																	<input
+																		type="time"
+																		value={editedSlotTime}
+																		onChange={(e) => setEditedSlotTime(e.target.value)}
+																		className="flex-1 rounded border border-sky-300 px-2 py-1 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+																		autoFocus
+																	/>
+																	<button
+																		type="button"
+																		onClick={() => {
+																			if (editedSlotTime) {
+																				const newTime = editedSlotTime.substring(0, 5); // Get HH:MM format
+																				setCustomTimeSlots(prev => {
+																					const newMap = new Map(prev);
+																					newMap.set(slot, newTime);
+																					return newMap;
+																				});
+																				// Update selected slots if this slot was selected
+																				if (isSelected) {
+																					setSelectedSlots(prev => prev.map(s => s === slot ? newTime : s));
+																													setBookingForm(prev => ({
+																														...prev,
+																														time: prev.time === slot ? newTime : prev.time,
+																													}));
+																				}
+																			}
+																			setEditingSlotTime(null);
+																			setEditedSlotTime('');
+																		}}
+																		className="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-700"
+																		title="Save"
+																	>
+																		<i className="fas fa-check" aria-hidden="true" />
+																	</button>
+																	<button
+																		type="button"
+																		onClick={() => {
+																			setEditingSlotTime(null);
+																			setEditedSlotTime('');
+																		}}
+																		className="rounded bg-slate-300 px-2 py-1 text-xs text-white hover:bg-slate-400"
+																		title="Cancel"
+																	>
+																		<i className="fas fa-times" aria-hidden="true" />
+																	</button>
+																</div>
 															</div>
-															<span className={`text-xs ${isSelected ? 'text-sky-600' : 'text-slate-400'}`}>
-																<i
-																	className={`fas ${isSelected ? 'fa-check-circle' : 'fa-clock'}`}
-																	aria-hidden="true"
-																/>
-															</span>
-									</div>
-													</button>
+														) : (
+															<button
+																type="button"
+																onClick={(e) => {
+																	// Don't trigger if clicking the edit icon
+																	if ((e.target as HTMLElement).closest('.edit-slot-btn')) {
+																		return;
+																	}
+																	handleSlotToggle(slot);
+																}}
+																className={`relative rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition w-full ${
+																	isSelected
+																		? 'border-sky-500 bg-sky-50 text-sky-800 ring-2 ring-sky-200'
+																		: 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
+																}`}
+																aria-pressed={isSelected}
+																disabled={bookingLoading}
+															>
+																<button
+																	type="button"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		setEditingSlotTime(slot);
+																		setEditedSlotTime(displaySlot + ':00'); // Convert to HH:MM:SS format for time input
+																	}}
+																	className="edit-slot-btn absolute top-1 right-1 rounded p-1 text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
+																	title="Edit time"
+																	disabled={bookingLoading}
+																>
+																	<i className="fas fa-edit" aria-hidden="true" />
+																</button>
+																<div className="flex items-center justify-between pr-6">
+																	<div>
+																		<p className="font-semibold">{displaySlot} – {slotEnd}</p>
+																		<p className="text-xs text-slate-500">30 minutes</p>
+																	</div>
+																	<span className={`text-xs ${isSelected ? 'text-sky-600' : 'text-slate-400'}`}>
+																		<i
+																			className={`fas ${isSelected ? 'fa-check-circle' : 'fa-clock'}`}
+																			aria-hidden="true"
+																		/>
+																	</span>
+																</div>
+															</button>
+														)}
+													</div>
 												);
 											})}
 										</div>

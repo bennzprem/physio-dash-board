@@ -13,6 +13,7 @@ import {
 	getDocs,
 	serverTimestamp,
 	orderBy,
+	writeBatch,
 	type QuerySnapshot,
 	type Timestamp,
 } from 'firebase/firestore';
@@ -24,6 +25,7 @@ import {
 	getNextBillingCycle,
 	getBillingCycleId,
 	getMonthName,
+	getCurrentCalendarYear,
 	type BillingCycle,
 } from '@/lib/billingUtils';
 
@@ -36,7 +38,7 @@ interface BillingRecord {
 	doctor?: string;
 	amount: number;
 	date: string;
-	status: 'Pending' | 'Completed';
+	status: 'Pending' | 'Completed' | 'Auto-Paid';
 	paymentMode?: string;
 	utr?: string;
 	createdAt?: string | Timestamp;
@@ -762,6 +764,12 @@ export default function Billing() {
 	const [patients, setPatients] = useState<any[]>([]);
 	const [selectedCycleId, setSelectedCycleId] = useState<string>('current');
 	const [showInvoicePreview, setShowInvoicePreview] = useState(false);
+	const [pendingSearchQuery, setPendingSearchQuery] = useState<string>('');
+	const [completedSearchQuery, setCompletedSearchQuery] = useState<string>('');
+	const [showImportModal, setShowImportModal] = useState(false);
+	const [importFile, setImportFile] = useState<File | null>(null);
+	const [importing, setImporting] = useState(false);
+	const [importPreview, setImportPreview] = useState<any[]>([]);
 	const [editableInvoice, setEditableInvoice] = useState<{
 		invoiceNo: string;
 		invoiceDate: string;
@@ -937,11 +945,40 @@ export default function Billing() {
 							billAmount = standardAmount;
 						}
 					} else if (patientType === 'Dyes' || patientType === 'DYES') {
-						// DYES: Always create bill with status Pending (no paywall)
-						// Bills will have invoice and bill available when pending
-						// When billed (status changes to Completed), invoice and receipt will be available
+						// DYES: Conditional billing based on total sessions in current calendar year
 						shouldCreateBill = true;
-						billAmount = standardAmount;
+						
+						try {
+							// Get current calendar year dates
+							const { startDate, endDate } = getCurrentCalendarYear();
+							
+							// Query completed appointments for this patient in current calendar year
+							const completedSessionsQuery = query(
+								collection(db, 'appointments'),
+								where('patientId', '==', appt.patientId),
+								where('status', '==', 'completed'),
+								where('date', '>=', startDate),
+								where('date', '<=', endDate)
+							);
+							const completedSessionsSnapshot = await getDocs(completedSessionsQuery);
+							const totalSessionsThisYear = completedSessionsSnapshot.size;
+							
+							// Apply DYES billing rule:
+							// - If ≤ 500 sessions: amount = 0, status = 'Pending'
+							// - If ≥ 501 sessions: standard amount, status = 'Auto-Paid'
+							if (totalSessionsThisYear <= 500) {
+								billAmount = 0;
+								// Status will be set to 'Pending' below
+							} else {
+								// 501 or more sessions: charge standard rate
+								billAmount = standardAmount;
+								// Status will be set to 'Auto-Paid' below
+							}
+						} catch (error) {
+							console.error('Error calculating DYES billing:', error);
+							// Fallback to standard amount if query fails
+							billAmount = standardAmount;
+						}
 					} else if (patientType === 'Gethhma') {
 						// Gethhma: Treat as "Paid" without concession
 						shouldCreateBill = true;
@@ -955,6 +992,14 @@ export default function Billing() {
 					// Create billing record if rules allow
 					if (shouldCreateBill) {
 						const billingId = 'BILL-' + (appt.appointmentId || Date.now().toString());
+						
+						// Determine status based on patient type and billing rules
+						let billStatus: 'Pending' | 'Completed' | 'Auto-Paid' = 'Pending';
+						if ((patientType === 'Dyes' || patientType === 'DYES') && billAmount > 0) {
+							// DYES patients with 501+ sessions get Auto-Paid status
+							billStatus = 'Auto-Paid';
+						}
+						
 						await addDoc(collection(db, 'billing'), {
 							billingId,
 							appointmentId: appt.appointmentId,
@@ -963,8 +1008,8 @@ export default function Billing() {
 							doctor: appt.doctor || '',
 							amount: billAmount,
 							date: appt.date || new Date().toISOString().split('T')[0],
-							status: 'Pending',
-							paymentMode: null,
+							status: billStatus,
+							paymentMode: billStatus === 'Auto-Paid' ? 'Auto-Paid' : null,
 							utr: null,
 							createdAt: serverTimestamp(),
 							updatedAt: serverTimestamp(),
@@ -994,12 +1039,37 @@ export default function Billing() {
 
 	const monthlyTotal = useMemo(() => {
 		return filteredBilling
-			.filter(b => b.status === 'Completed')
+			.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid')
 			.reduce((sum, bill) => sum + (bill.amount || 0), 0);
 	}, [filteredBilling]);
 
 	const pending = useMemo(() => filteredBilling.filter(b => b.status === 'Pending'), [filteredBilling]);
-	const completed = useMemo(() => filteredBilling.filter(b => b.status === 'Completed'), [filteredBilling]);
+	const filteredPending = useMemo(() => {
+		if (!pendingSearchQuery.trim()) return pending;
+		const query = pendingSearchQuery.toLowerCase().trim();
+		return pending.filter(bill => 
+			bill.billingId?.toLowerCase().includes(query) ||
+			bill.patient?.toLowerCase().includes(query) ||
+			bill.patientId?.toLowerCase().includes(query) ||
+			bill.doctor?.toLowerCase().includes(query) ||
+			bill.amount?.toString().includes(query) ||
+			bill.date?.toLowerCase().includes(query)
+		);
+	}, [pending, pendingSearchQuery]);
+	const completed = useMemo(() => filteredBilling.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid'), [filteredBilling]);
+	const filteredCompleted = useMemo(() => {
+		if (!completedSearchQuery.trim()) return completed;
+		const query = completedSearchQuery.toLowerCase().trim();
+		return completed.filter(bill => 
+			bill.billingId?.toLowerCase().includes(query) ||
+			bill.patient?.toLowerCase().includes(query) ||
+			bill.patientId?.toLowerCase().includes(query) ||
+			bill.doctor?.toLowerCase().includes(query) ||
+			bill.amount?.toString().includes(query) ||
+			bill.date?.toLowerCase().includes(query) ||
+			bill.paymentMode?.toLowerCase().includes(query)
+		);
+	}, [completed, completedSearchQuery]);
 
 	// Calculate cycle summary based on selected cycle
 	type CycleRange = ReturnType<typeof getCurrentBillingCycle>;
@@ -1030,9 +1100,9 @@ export default function Billing() {
 		});
 
 		const pendingCount = cycleBills.filter(b => b.status === 'Pending').length;
-		const completedCount = cycleBills.filter(b => b.status === 'Completed').length;
+		const completedCount = cycleBills.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid').length;
 		const collections = cycleBills
-			.filter(b => b.status === 'Completed')
+			.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid')
 			.reduce((sum, bill) => sum + (bill.amount || 0), 0);
 
 		return {
@@ -1120,6 +1190,179 @@ export default function Billing() {
 			// If parsing fails, return original
 		}
 		return dateStr;
+	};
+
+	// Parse Excel file
+	const parseExcelFile = async (file: File): Promise<any[]> => {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = (e) => {
+				try {
+					const data = e.target?.result;
+					const workbook = XLSX.read(data, { type: 'binary' });
+
+					const allRows: any[] = [];
+
+					workbook.SheetNames.forEach(sheetName => {
+						const worksheet = workbook.Sheets[sheetName];
+						const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+						if (jsonData.length < 2) {
+							return; // skip empty/headers-only sheets
+						}
+
+						const headers = ((jsonData[0] as unknown) as any[]).map((h: any) => String(h || '').toLowerCase().trim());
+						const rows = jsonData.slice(1).map((row: unknown) => {
+							const rowArray = (row as unknown) as any[];
+							const obj: any = {};
+							headers.forEach((header, idx) => {
+								obj[header] = rowArray[idx] !== undefined && rowArray[idx] !== null ? String(rowArray[idx]).trim() : '';
+							});
+							return obj;
+						});
+
+						allRows.push(...rows.filter(row => Object.values(row).some(v => v !== '')));
+					});
+
+					if (allRows.length === 0) {
+						reject(new Error('Excel file must have at least one sheet with data rows'));
+						return;
+					}
+
+					resolve(allRows);
+				} catch (error) {
+					reject(error);
+				}
+			};
+			reader.onerror = () => reject(new Error('Failed to read Excel file'));
+			reader.readAsBinaryString(file);
+		});
+	};
+
+	// Handle file selection for import
+	const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+
+		setImportFile(file);
+		try {
+			const parsed = await parseExcelFile(file);
+			
+		// Map columns to billing fields (flexible column name matching)
+		const mapped = parsed.map((row: any, index: number) => {
+			// Find doctor
+			const doctor = row['doctor'] || row['doctor name'] || row['doctorname'] || '';
+			// Find amount
+			const amountStr = row['amount'] || row['total'] || row['price'] || '0';
+			const amount = parseFloat(String(amountStr).replace(/[^0-9.-]/g, '')) || 0;
+			// Find date (this is the registration date)
+			const dateStr = row['date'] || row['registration date'] || row['reg date'] || row['registered date'] || '';
+			// Format date to YYYY-MM-DD
+			let formattedDate = '';
+			if (dateStr) {
+				try {
+					const date = new Date(dateStr);
+					if (!isNaN(date.getTime())) {
+						const year = date.getFullYear();
+						const month = String(date.getMonth() + 1).padStart(2, '0');
+						const day = String(date.getDate()).padStart(2, '0');
+						formattedDate = `${year}-${month}-${day}`;
+					} else {
+						formattedDate = dateStr;
+					}
+				} catch {
+					formattedDate = dateStr;
+				}
+			}
+
+			// Generate IDs
+			const timestamp = Date.now();
+			const billingId = `BILL-IMPORT-${timestamp}-${index + 1}`;
+			const patientId = `IMP-${timestamp}-${index + 1}`;
+			const patientName =
+				row['name of athlete'] ||
+				row['name of athelete'] ||
+				row['athlete name'] ||
+				row['athlete'] ||
+				row['patient'] ||
+				row['patient name'] ||
+				row['name'] ||
+				row['patientname'] ||
+				`Imported Patient ${index + 1}`;
+
+			return {
+				billingId,
+				patient: patientName,
+				patientId,
+				doctor: doctor || undefined,
+				amount,
+				date: formattedDate || new Date().toISOString().split('T')[0],
+				paymentMode: 'N/A',
+				status: 'Completed' as const,
+				rowIndex: index + 2, // Excel row number (1-indexed, +1 for header)
+				originalRow: row,
+				errors: [] as string[],
+			};
+		});
+
+		// Validate mapped data
+		const validated = mapped.map((item: any) => {
+			const errors: string[] = [];
+			if (!item.date) errors.push('Missing date');
+			return { ...item, errors };
+		});
+
+			setImportPreview(validated);
+		} catch (error: any) {
+			console.error('Failed to parse Excel file', error);
+			alert(`Failed to parse Excel file: ${error.message || 'Unknown error'}`);
+			setImportFile(null);
+		}
+	};
+
+	// Handle import confirmation
+	const handleImportConfirm = async () => {
+		if (!importPreview.length) return;
+
+		const validRows = importPreview.filter((row: any) => row.errors.length === 0);
+		if (validRows.length === 0) {
+			alert('No valid rows to import. Please fix errors in the preview.');
+			return;
+		}
+
+		setImporting(true);
+		try {
+			const batch = writeBatch(db);
+
+			for (const row of validRows) {
+				const billingRef = doc(collection(db, 'billing'));
+				batch.set(billingRef, {
+					billingId: row.billingId,
+					patient: row.patient,
+					patientId: row.patientId,
+					doctor: row.doctor || null,
+					amount: row.amount,
+					date: row.date,
+					status: 'Completed',
+					paymentMode: 'N/A',
+					utr: null,
+					createdAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				});
+			}
+
+			await batch.commit();
+
+			alert(`Successfully imported ${validRows.length} completed payment(s)!`);
+			setShowImportModal(false);
+			setImportFile(null);
+			setImportPreview([]);
+		} catch (error: any) {
+			console.error('Import failed:', error);
+			alert(`Failed to import payments: ${error.message || 'Unknown error'}`);
+		} finally {
+			setImporting(false);
+		}
 	};
 
 	const handleViewPaymentSlip = (bill: BillingRecord) => {
@@ -1719,24 +1962,36 @@ export default function Billing() {
 					<>
 						<section className="section-card mx-auto mt-8 flex max-w-6xl flex-col gap-6">
 							{/* Pending Payments */}
-							<div className="rounded-2xl border border-amber-200 bg-white shadow-sm">
-								<div className="border-b border-amber-200 bg-amber-50 px-6 py-4">
-									<h2 className="text-lg font-semibold text-slate-900">
-										Pending Payments{' '}
-										<span className="ml-2 rounded-full bg-amber-600 px-2.5 py-0.5 text-xs font-semibold text-white">
-											{pending.length}
-										</span>
-									</h2>
+							<div className="rounded-2xl border border-amber-200 bg-white shadow-sm flex flex-col" style={{ maxHeight: '500px' }}>
+								<div className="border-b border-amber-200 bg-amber-50 px-6 py-4 flex-shrink-0">
+									<div className="flex items-center justify-between mb-3">
+										<h2 className="text-lg font-semibold text-slate-900">
+											Pending Payments{' '}
+											<span className="ml-2 rounded-full bg-amber-600 px-2.5 py-0.5 text-xs font-semibold text-white">
+												{pending.length}
+											</span>
+										</h2>
+									</div>
+									<div className="relative">
+										<input
+											type="text"
+											placeholder="Search by Bill ID, Patient, Patient ID, Doctor, Amount, or Date..."
+											value={pendingSearchQuery}
+											onChange={(e) => setPendingSearchQuery(e.target.value)}
+											className="w-full rounded-lg border border-amber-300 bg-white px-4 py-2 pl-10 text-sm text-slate-900 placeholder-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+										/>
+										<i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+									</div>
 								</div>
-								<div className="p-6">
-									{pending.length === 0 ? (
+								<div className="p-6 overflow-y-auto flex-1">
+									{filteredPending.length === 0 ? (
 										<p className="py-8 text-center text-sm text-slate-500">
-											No pending payments.
+											{pendingSearchQuery.trim() ? 'No pending payments match your search.' : 'No pending payments.'}
 										</p>
 									) : (
 										<div className="overflow-x-auto">
 											<table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-												<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+												<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
 													<tr>
 														<th className="px-3 py-2 font-semibold">Bill ID</th>
 														<th className="px-3 py-2 font-semibold">Patient</th>
@@ -1748,7 +2003,7 @@ export default function Billing() {
 													</tr>
 												</thead>
 												<tbody className="divide-y divide-slate-100">
-													{pending.map(bill => {
+													{filteredPending.map(bill => {
 														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
 														const isDyes = (patientType || '').toUpperCase() === 'DYES';
 														const isReferral = (patientType || '').toUpperCase() === 'REFERRAL';
@@ -1806,24 +2061,44 @@ export default function Billing() {
 							</div>
 
 							{/* Completed Payments */}
-							<div className="rounded-2xl border border-emerald-200 bg-white shadow-sm">
-								<div className="border-b border-emerald-200 bg-emerald-50 px-6 py-4">
-									<h2 className="text-lg font-semibold text-slate-900">
-										Completed Payments{' '}
-										<span className="ml-2 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-semibold text-white">
-											{completed.length}
-										</span>
-									</h2>
+							<div className="rounded-2xl border border-emerald-200 bg-white shadow-sm flex flex-col" style={{ maxHeight: '500px' }}>
+								<div className="border-b border-emerald-200 bg-emerald-50 px-6 py-4 flex-shrink-0">
+									<div className="flex items-center justify-between mb-3">
+										<h2 className="text-lg font-semibold text-slate-900">
+											Completed Payments{' '}
+											<span className="ml-2 rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-semibold text-white">
+												{completed.length}
+											</span>
+										</h2>
+										<button
+											type="button"
+											onClick={() => setShowImportModal(true)}
+											className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-emerald-700 hover:via-emerald-800 hover:to-teal-700 transition-all duration-200 hover:scale-105"
+										>
+											<i className="fas fa-file-excel text-xs" aria-hidden="true" />
+											Import Excel
+										</button>
+									</div>
+									<div className="relative">
+										<input
+											type="text"
+											placeholder="Search by Bill ID, Patient, Patient ID, Doctor, Amount, Date, or Payment Mode..."
+											value={completedSearchQuery}
+											onChange={(e) => setCompletedSearchQuery(e.target.value)}
+											className="w-full rounded-lg border border-emerald-300 bg-white px-4 py-2 pl-10 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+										/>
+										<i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+									</div>
 								</div>
-								<div className="p-6">
-									{completed.length === 0 ? (
+								<div className="p-6 overflow-y-auto flex-1">
+									{filteredCompleted.length === 0 ? (
 										<p className="py-8 text-center text-sm text-slate-500">
-											No completed payments.
+											{completedSearchQuery.trim() ? 'No completed payments match your search.' : 'No completed payments.'}
 										</p>
 									) : (
 										<div className="overflow-x-auto">
 											<table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-												<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+												<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
 													<tr>
 														<th className="px-3 py-2 font-semibold">Bill ID</th>
 														<th className="px-3 py-2 font-semibold">Patient</th>
@@ -1833,7 +2108,7 @@ export default function Billing() {
 													</tr>
 												</thead>
 												<tbody className="divide-y divide-slate-100">
-													{completed.map(bill => {
+													{filteredCompleted.map(bill => {
 														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
 														const isReferral = (patientType || '').toUpperCase() === 'REFERRAL';
 														return (
@@ -2492,6 +2767,149 @@ export default function Billing() {
 									</>
 								)}
 							</footer>
+						</div>
+					</div>
+				)}
+
+				{/* Import Excel Modal */}
+				{showImportModal && (
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+						<div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+							<div className="p-6 border-b border-slate-200">
+								<h2 className="text-xl font-semibold text-slate-900">Import Completed Payments from Excel</h2>
+								<p className="text-sm text-slate-600 mt-1">
+									Upload an Excel file with payment data. BILL ID will be auto-generated and PAID BY will be set to "N/A".
+								</p>
+							</div>
+							<div className="p-6">
+								{!importFile ? (
+									<div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center">
+										<input
+											type="file"
+											accept=".xlsx,.xls"
+											onChange={handleFileSelect}
+											className="hidden"
+											id="excel-file-input"
+										/>
+										<label
+											htmlFor="excel-file-input"
+											className="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition"
+										>
+											<i className="fas fa-file-excel" aria-hidden="true" />
+											Select Excel File
+										</label>
+										<p className="text-sm text-slate-500 mt-4">
+											Supported formats: .xlsx, .xls
+										</p>
+									</div>
+								) : (
+									<div className="space-y-4">
+										<div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+											<div className="flex items-center gap-3">
+												<i className="fas fa-file-excel text-emerald-600 text-xl" aria-hidden="true" />
+												<div>
+													<p className="font-medium text-slate-900">{importFile.name}</p>
+													<p className="text-xs text-slate-500">
+														{(importFile.size / 1024).toFixed(2)} KB
+													</p>
+												</div>
+											</div>
+											<button
+												type="button"
+												onClick={() => {
+													setImportFile(null);
+													setImportPreview([]);
+												}}
+												className="text-slate-500 hover:text-slate-700"
+											>
+												<i className="fas fa-times" aria-hidden="true" />
+											</button>
+										</div>
+
+										{importPreview.length > 0 && (
+											<div className="border border-slate-200 rounded-lg overflow-hidden">
+												<div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+													<p className="text-sm font-semibold text-slate-900">
+														Preview ({importPreview.length} rows)
+													</p>
+												</div>
+												<div className="overflow-x-auto max-h-96">
+													<table className="min-w-full divide-y divide-slate-200 text-sm">
+														<thead className="bg-slate-50">
+															<tr>
+																<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Row</th>
+																<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Bill ID</th>
+																<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Patient</th>
+																<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Patient ID</th>
+																<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Amount</th>
+																<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Date</th>
+																<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Status</th>
+															</tr>
+														</thead>
+														<tbody className="divide-y divide-slate-100">
+															{importPreview.map((row: any, idx: number) => (
+																<tr
+																	key={idx}
+																	className={row.errors.length > 0 ? 'bg-rose-50' : 'bg-white'}
+																>
+																	<td className="px-3 py-2 text-slate-600">{row.rowIndex}</td>
+																	<td className="px-3 py-2 font-mono text-xs text-slate-700">{row.billingId}</td>
+																	<td className="px-3 py-2 text-slate-700">{row.patient || <span className="text-rose-600">Missing</span>}</td>
+																	<td className="px-3 py-2 text-slate-600">{row.patientId || <span className="text-rose-600">Missing</span>}</td>
+																	<td className="px-3 py-2 text-slate-700">Rs. {row.amount.toFixed(2)}</td>
+																	<td className="px-3 py-2 text-slate-600">{row.date}</td>
+																	<td className="px-3 py-2">
+																		{row.errors.length > 0 ? (
+																			<div className="text-xs text-rose-600">
+																				{row.errors.join(', ')}
+																			</div>
+																		) : (
+																			<span className="text-xs text-emerald-600 font-semibold">Valid</span>
+																		)}
+																	</td>
+																</tr>
+															))}
+														</tbody>
+													</table>
+												</div>
+											</div>
+										)}
+									</div>
+								)}
+							</div>
+							<div className="p-6 border-t border-slate-200 flex items-center justify-end gap-3">
+								<button
+									type="button"
+									onClick={() => {
+										setShowImportModal(false);
+										setImportFile(null);
+										setImportPreview([]);
+									}}
+									className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+									disabled={importing}
+								>
+									Cancel
+								</button>
+								{importFile && importPreview.length > 0 && (
+									<button
+										type="button"
+										onClick={handleImportConfirm}
+										disabled={importing || importPreview.filter((r: any) => r.errors.length === 0).length === 0}
+										className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+									>
+										{importing ? (
+											<>
+												<i className="fas fa-spinner fa-spin mr-2" aria-hidden="true" />
+												Importing...
+											</>
+										) : (
+											<>
+												Import {importPreview.filter((r: any) => r.errors.length === 0).length} Payment(s)
+											</>
+										)}
+									</button>
+								)}
+							</div>
 						</div>
 					</div>
 				)}
