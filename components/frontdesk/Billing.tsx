@@ -1983,21 +1983,22 @@ export default function Billing() {
 										<i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
 									</div>
 								</div>
-								<div className="p-6 overflow-y-auto flex-1">
+								<div className="overflow-y-auto overflow-x-auto flex-1">
 									{filteredPending.length === 0 ? (
-										<p className="py-8 text-center text-sm text-slate-500">
-											{pendingSearchQuery.trim() ? 'No pending payments match your search.' : 'No pending payments.'}
-										</p>
+										<div className="p-6">
+											<p className="py-8 text-center text-sm text-slate-500">
+												{pendingSearchQuery.trim() ? 'No pending payments match your search.' : 'No pending payments.'}
+											</p>
+										</div>
 									) : (
-										<div className="overflow-x-auto">
-											<table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-												<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
-													<tr>
-														<th className="px-3 py-2 font-semibold">Bill ID</th>
-														<th className="px-3 py-2 font-semibold">Patient</th>
-														<th className="px-3 py-2 font-semibold">Amount</th>
-														<th className="px-3 py-2 font-semibold">Date</th>
-														<th className="px-3 py-2 text-right font-semibold">
+										<table className="min-w-full divide-y divide-slate-200 text-left text-sm m-6">
+											<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0 z-10">
+												<tr>
+														<th className="px-3 py-2 font-semibold bg-slate-50">Bill ID</th>
+														<th className="px-3 py-2 font-semibold bg-slate-50">Patient</th>
+														<th className="px-3 py-2 font-semibold bg-slate-50">Amount</th>
+														<th className="px-3 py-2 font-semibold bg-slate-50">Date</th>
+														<th className="px-3 py-2 text-right font-semibold bg-slate-50">
 															Action
 														</th>
 													</tr>
@@ -2055,7 +2056,6 @@ export default function Billing() {
 													})}
 												</tbody>
 											</table>
-										</div>
 									)}
 								</div>
 							</div>
@@ -2090,23 +2090,24 @@ export default function Billing() {
 										<i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
 									</div>
 								</div>
-								<div className="p-6 overflow-y-auto flex-1">
+								<div className="overflow-y-auto overflow-x-auto flex-1">
 									{filteredCompleted.length === 0 ? (
-										<p className="py-8 text-center text-sm text-slate-500">
-											{completedSearchQuery.trim() ? 'No completed payments match your search.' : 'No completed payments.'}
-										</p>
+										<div className="p-6">
+											<p className="py-8 text-center text-sm text-slate-500">
+												{completedSearchQuery.trim() ? 'No completed payments match your search.' : 'No completed payments.'}
+											</p>
+										</div>
 									) : (
-										<div className="overflow-x-auto">
-											<table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-												<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0">
-													<tr>
-														<th className="px-3 py-2 font-semibold">Bill ID</th>
-														<th className="px-3 py-2 font-semibold">Patient</th>
-														<th className="px-3 py-2 font-semibold">Amount</th>
-														<th className="px-3 py-2 font-semibold">Paid By</th>
-														<th className="px-3 py-2 font-semibold">Actions</th>
-													</tr>
-												</thead>
+										<table className="min-w-full divide-y divide-slate-200 text-left text-sm m-6">
+											<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0 z-10">
+												<tr>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Bill ID</th>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Patient</th>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Amount</th>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Paid By</th>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Actions</th>
+												</tr>
+											</thead>
 												<tbody className="divide-y divide-slate-100">
 													{filteredCompleted.map(bill => {
 														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
@@ -2158,7 +2159,6 @@ export default function Billing() {
 													})}
 												</tbody>
 											</table>
-										</div>
 									)}
 								</div>
 							</div>
