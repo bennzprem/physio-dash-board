@@ -54,7 +54,11 @@ export default function RatingApprovals() {
 					id: docSnap.id,
 					...docSnap.data(),
 				})) as StaffRating[];
-				setPendingRatings(mapped.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis()));
+				setPendingRatings([...mapped.sort((a, b) => {
+					const aTime = a.createdAt?.toMillis?.() || 0;
+					const bTime = b.createdAt?.toMillis?.() || 0;
+					return bTime - aTime;
+				})]);
 				setLoading(false);
 			},
 			(error) => {

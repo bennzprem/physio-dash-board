@@ -73,7 +73,7 @@ export default function ClinicalTeamActivities() {
 						role: data.role || '',
 					} as StaffMember;
 				});
-				setStaff(mapped);
+				setStaff([...mapped]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -107,7 +107,7 @@ export default function ClinicalTeamActivities() {
 						updatedAt: updated ? updated.toISOString() : undefined,
 					} as ActivityRecord;
 				});
-				setActivities(mapped);
+				setActivities([...mapped]);
 				setLoading(false);
 			},
 			error => {

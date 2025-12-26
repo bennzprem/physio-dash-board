@@ -241,7 +241,7 @@ export default function Transfer() {
 						status: (data.status as AdminPatientStatus) ?? 'pending',
 					} as PatientRecordTransfer;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 				
 				// Initialize selected therapists with current assignments
 				const initialSelections: Record<string, string> = {};
@@ -297,7 +297,7 @@ export default function Transfer() {
 						dateSpecificAvailability: staff.dateSpecificAvailability,
 					}));
 
-				setTherapists(mapped);
+				setTherapists([...mapped]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -390,7 +390,7 @@ export default function Transfer() {
 						reason: data.reason ? String(data.reason) : undefined,
 					} as TransferHistory;
 				});
-				setTransferHistory(mapped);
+				setTransferHistory([...mapped]);
 			},
 			error => {
 				console.error('Failed to load transfer history', error);
@@ -440,7 +440,7 @@ export default function Transfer() {
 						reason: data.reason ? String(data.reason) : undefined,
 					} as TransferRequest;
 				});
-				setPendingRequests(mapped);
+				setPendingRequests([...mapped]);
 			},
 			error => {
 				console.error('Failed to load transfer requests', error);

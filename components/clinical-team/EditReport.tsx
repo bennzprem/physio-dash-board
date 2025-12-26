@@ -782,7 +782,7 @@ export default function EditReport() {
 						nextFollowUpTime: data.nextFollowUpTime ? String(data.nextFollowUpTime) : undefined,
 					} as PatientRecordFull;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 				setLoading(false);
 			},
 			error => {

@@ -308,7 +308,7 @@ export default function LeaveManagement() {
 						return bDate.getTime() - aDate.getTime();
 					});
 
-				setLeaveRequests(mapped);
+				setLeaveRequests([...mapped]);
 			},
 			error => {
 				console.error('Failed to load leave requests', error);

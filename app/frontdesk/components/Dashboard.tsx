@@ -188,7 +188,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined),
 					};
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);
@@ -219,7 +219,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
 					} as AppointmentRecord;
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments', error);

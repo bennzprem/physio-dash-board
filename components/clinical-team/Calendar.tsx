@@ -175,7 +175,7 @@ export default function Calendar() {
 							registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined),
 						};
 					});
-					safeSetState(setPatients, mapped);
+					safeSetState(setPatients, [...mapped]);
 					patientsLoaded = true;
 					checkAllLoaded();
 				} catch (error) {
@@ -218,7 +218,7 @@ export default function Calendar() {
 							notes: data.notes ? String(data.notes) : undefined,
 						};
 					});
-					safeSetState(setAppointments, mapped);
+					safeSetState(setAppointments, [...mapped]);
 					appointmentsLoaded = true;
 					checkAllLoaded();
 				} catch (error) {
@@ -256,7 +256,7 @@ export default function Calendar() {
 							status: data.status ? String(data.status) : '',
 						};
 					});
-					safeSetState(setStaff, mapped);
+					safeSetState(setStaff, [...mapped]);
 					staffLoaded = true;
 					checkAllLoaded();
 				} catch (error) {
@@ -356,7 +356,7 @@ export default function Calendar() {
 								date: data.date || '',
 							};
 						});
-						safeSetState(setActivities, mapped);
+						safeSetState(setActivities, [...mapped]);
 					} catch (error) {
 						console.error('Error processing activities snapshot', error);
 						safeSetState(setActivities, []);
@@ -463,6 +463,12 @@ export default function Calendar() {
 					borderColor: '#65a30d',
 					textColor: '#ffffff',
 				};
+			case 'Sports/Events':
+				return {
+					backgroundColor: '#dc2626', // Red (distinct from all other colors)
+					borderColor: '#b91c1c',
+					textColor: '#ffffff',
+				};	
 			case 'Revenue Generation':
 				return {
 					backgroundColor: '#ea580c', // Deep Orange (distinct from all other colors)
@@ -1004,6 +1010,10 @@ export default function Calendar() {
 							<div className="flex items-center gap-2 text-xs">
 								<div className="h-3 w-3 rounded-full bg-lime-500" />
 								<span className="text-slate-600">Research/Study</span>
+							</div>
+							<div className="flex items-center gap-2 text-xs">
+								<div className="h-3 w-3 rounded-full bg-red-600" />
+								<span className="text-slate-600">Sports/Events</span>
 							</div>
 							<div className="flex items-center gap-2 text-xs">
 								<div className="h-3 w-3 rounded-full bg-orange-600" />
@@ -1628,6 +1638,7 @@ export default function Calendar() {
 									<option value="">Select activity type...</option>
 									<option value="Lecture">Lecture</option>
 									<option value="Research/Study">Research/Study</option>
+									<option value="Sports/Events">Sports/Events</option>
 									<option value="Revenue Generation">Revenue Generation</option>
 									<option value="FBA">FBA</option>
 									<option value="Other">Other</option>

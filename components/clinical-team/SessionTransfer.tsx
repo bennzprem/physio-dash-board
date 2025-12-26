@@ -86,7 +86,7 @@ export default function SessionTransfer() {
 						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
 					} as Appointment;
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 				setLoading(false);
 			},
 			error => {
@@ -113,7 +113,7 @@ export default function SessionTransfer() {
 						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
 					} as PatientRecord;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);
@@ -141,11 +141,11 @@ export default function SessionTransfer() {
 					} as StaffMember;
 				});
 				// Only include clinical roles (exclude FrontDesk and Admin), and exclude current user
-				setStaff(mapped.filter(s => 
+				setStaff([...mapped.filter(s => 
 					s.status === 'Active' && 
 					['Physiotherapist', 'StrengthAndConditioning', 'ClinicalTeam'].includes(s.role) &&
 					normalize(s.userName) !== clinicianName
-				));
+				)]);
 			},
 			error => {
 				console.error('Failed to load staff', error);

@@ -86,7 +86,7 @@ export default function StrengthConditioningReport() {
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined),
 					} as PatientRecordFull;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 
 				// Auto-select patient if patientId is provided
 				if (patientId) {
@@ -131,7 +131,7 @@ export default function StrengthConditioningReport() {
 						userEmail: s.userEmail,
 					}))
 					.sort((a, b) => a.userName.localeCompare(b.userName));
-				setClinicalTeamMembers(mapped);
+				setClinicalTeamMembers([...mapped]);
 			},
 			error => {
 				console.error('Failed to load clinical team members', error);

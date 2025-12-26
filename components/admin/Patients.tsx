@@ -307,7 +307,7 @@ export default function Patients() {
 						feedback: data.feedback ? String(data.feedback) : undefined,
 					} as AdminPatientRecord;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 				setLoading(false);
 			},
 			error => {
@@ -341,7 +341,7 @@ export default function Patients() {
 						} | undefined,
 					};
 				});
-				setStaff(mapped);
+				setStaff([...mapped]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -372,7 +372,7 @@ export default function Patients() {
 						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
 					} as AdminAppointmentRecord & { id?: string };
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments', error);
@@ -763,7 +763,7 @@ export default function Patients() {
 						status: data.status || 'Pending',
 					};
 				});
-				setPatientBilling(mapped);
+				setPatientBilling([...mapped]);
 			},
 			error => {
 				console.error('Failed to load billing', error);
@@ -784,7 +784,7 @@ export default function Patients() {
 						status: data.status || '',
 					};
 				});
-				setPatientAppointments(mapped);
+				setPatientAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments', error);

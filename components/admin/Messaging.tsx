@@ -81,7 +81,7 @@ export default function Messaging() {
 						userEmail: data.userEmail ? String(data.userEmail) : undefined,
 					} as StaffMember;
 				});
-				setStaff(mapped.filter(s => s.status === 'Active' && s.id !== user?.uid));
+				setStaff([...mapped.filter(s => s.status === 'Active' && s.id !== user?.uid)]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -115,7 +115,7 @@ export default function Messaging() {
 						unreadCount: data.unreadCount || {},
 					} as Conversation;
 				});
-				setConversations(mapped);
+				setConversations([...mapped]);
 			},
 			error => {
 				console.error('Failed to load conversations', error);
@@ -161,7 +161,7 @@ export default function Messaging() {
 						reactions: data.reactions || {},
 					} as Message;
 				});
-				setMessages(mapped);
+				setMessages([...mapped]);
 				
 				// Mark messages as read
 				if (mapped.length > 0) {

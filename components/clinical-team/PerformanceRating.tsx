@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, Timestamp, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
@@ -35,6 +35,18 @@ interface StaffRating {
 	rejectionReason?: string;
 }
 
+interface RatingRequest {
+	id: string;
+	requestedById: string;
+	requestedByName: string;
+	requestedByEmail: string;
+	requestMessage?: string;
+	status: 'Pending' | 'Processed';
+	createdAt: Timestamp;
+	processedAt?: Timestamp;
+	processedBy?: string;
+}
+
 // Rating schema definitions
 const RATING_SCHEMA = {
 	1: 'Punctuality, T-Shirt',
@@ -60,6 +72,10 @@ export default function PerformanceRating() {
 	const [submitting, setSubmitting] = useState(false);
 	const [submittedRatings, setSubmittedRatings] = useState<StaffRating[]>([]);
 	const [myRatings, setMyRatings] = useState<StaffRating[]>([]);
+	const [ratingRequests, setRatingRequests] = useState<RatingRequest[]>([]);
+	const [myRatingRequests, setMyRatingRequests] = useState<RatingRequest[]>([]);
+	const [requestMessage, setRequestMessage] = useState('');
+	const [submittingRequest, setSubmittingRequest] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
@@ -106,7 +122,7 @@ export default function PerformanceRating() {
 							s.status === 'Active' &&
 							['Physiotherapist', 'StrengthAndConditioning', 'ClinicalTeam'].includes(s.role)
 					);
-				setStaff(mapped);
+				setStaff([...mapped]);
 				setLoading(false);
 			},
 			(error) => {
@@ -130,7 +146,11 @@ export default function PerformanceRating() {
 					id: docSnap.id,
 					...docSnap.data(),
 				})) as StaffRating[];
-				setSubmittedRatings(mapped.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis()));
+				setSubmittedRatings([...mapped.sort((a, b) => {
+					const aTime = a.createdAt?.toMillis?.() || 0;
+					const bTime = b.createdAt?.toMillis?.() || 0;
+					return bTime - aTime;
+				})]);
 			},
 			(error) => {
 				console.error('Failed to load submitted ratings', error);
@@ -153,10 +173,64 @@ export default function PerformanceRating() {
 				})) as StaffRating[];
 				// Only show approved ratings
 				const approvedRatings = mapped.filter(r => r.status === 'Approved');
-				setMyRatings(approvedRatings.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis()));
+				setMyRatings([...approvedRatings.sort((a, b) => {
+					const aTime = a.createdAt?.toMillis?.() || 0;
+					const bTime = b.createdAt?.toMillis?.() || 0;
+					return bTime - aTime;
+				})]);
 			},
 			(error) => {
 				console.error('Failed to load my ratings', error);
+			}
+		);
+
+		return () => unsubscribe();
+	}, [user?.email, canRate]);
+
+	// Load rating requests for super admins
+	useEffect(() => {
+		if (!user?.email || !canRate) return;
+
+		const unsubscribe = onSnapshot(
+			query(collection(db, 'ratingRequests'), where('status', '==', 'Pending')),
+			(snapshot) => {
+				const mapped = snapshot.docs.map((docSnap) => ({
+					id: docSnap.id,
+					...docSnap.data(),
+				})) as RatingRequest[];
+				setRatingRequests([...mapped.sort((a, b) => {
+					const aTime = a.createdAt?.toMillis?.() || 0;
+					const bTime = b.createdAt?.toMillis?.() || 0;
+					return bTime - aTime;
+				})]);
+			},
+			(error) => {
+				console.error('Failed to load rating requests', error);
+			}
+		);
+
+		return () => unsubscribe();
+	}, [user?.email, canRate]);
+
+	// Load rating requests submitted by current user (for clinical team members)
+	useEffect(() => {
+		if (!user?.email || canRate) return;
+
+		const unsubscribe = onSnapshot(
+			query(collection(db, 'ratingRequests'), where('requestedByEmail', '==', user.email.toLowerCase())),
+			(snapshot) => {
+				const mapped = snapshot.docs.map((docSnap) => ({
+					id: docSnap.id,
+					...docSnap.data(),
+				})) as RatingRequest[];
+				setMyRatingRequests([...mapped.sort((a, b) => {
+					const aTime = a.createdAt?.toMillis?.() || 0;
+					const bTime = b.createdAt?.toMillis?.() || 0;
+					return bTime - aTime;
+				})]);
+			},
+			(error) => {
+				console.error('Failed to load my rating requests', error);
 			}
 		);
 
@@ -200,7 +274,8 @@ export default function PerformanceRating() {
 		setSuccess(null);
 
 		try {
-			const ratingData = {
+			const trimmedComments = comments.trim();
+			const ratingData: any = {
 				ratedStaffId: selectedStaff.id,
 				ratedStaffName: selectedStaff.userName,
 				ratedStaffEmail: selectedStaff.userEmail?.toLowerCase() || '',
@@ -209,10 +284,14 @@ export default function PerformanceRating() {
 				raterEmail: user.email.toLowerCase(),
 				rating,
 				criteria: RATING_SCHEMA[rating],
-				comments: comments.trim() || undefined,
 				status: 'Pending' as const,
 				createdAt: serverTimestamp(),
 			};
+
+			// Only include comments field if there's a value (Firestore doesn't allow undefined)
+			if (trimmedComments) {
+				ratingData.comments = trimmedComments;
+			}
 
 			await addDoc(collection(db, 'staffRatings'), ratingData);
 
@@ -225,6 +304,56 @@ export default function PerformanceRating() {
 			setError(`Failed to submit rating: ${err instanceof Error ? err.message : 'Unknown error'}`);
 		} finally {
 			setSubmitting(false);
+		}
+	};
+
+	const handleRequestRating = async () => {
+		if (!user?.email || !user?.displayName || !user?.uid) {
+			setError('User information is missing. Please try again.');
+			return;
+		}
+
+		setSubmittingRequest(true);
+		setError(null);
+		setSuccess(null);
+
+		try {
+			const trimmedMessage = requestMessage.trim();
+			const requestData: any = {
+				requestedById: user.uid,
+				requestedByName: user.displayName || user.email,
+				requestedByEmail: user.email.toLowerCase(),
+				status: 'Pending' as const,
+				createdAt: serverTimestamp(),
+			};
+
+			// Only include requestMessage field if there's a value (Firestore doesn't allow undefined)
+			if (trimmedMessage) {
+				requestData.requestMessage = trimmedMessage;
+			}
+
+			await addDoc(collection(db, 'ratingRequests'), requestData);
+
+			setSuccess('Rating request submitted successfully! Super admins will review your request.');
+			setRequestMessage('');
+		} catch (err) {
+			console.error('Failed to submit rating request', err);
+			setError(`Failed to submit request: ${err instanceof Error ? err.message : 'Unknown error'}`);
+		} finally {
+			setSubmittingRequest(false);
+		}
+	};
+
+	const handleProcessRequest = async (requestId: string) => {
+		if (!user?.email || !canRate) return;
+
+		try {
+			const requestRef = doc(db, 'ratingRequests', requestId);
+			await deleteDoc(requestRef);
+			setSuccess('Rating request processed. You can now create a rating for this user.');
+		} catch (err) {
+			console.error('Failed to process rating request', err);
+			setError(`Failed to process request: ${err instanceof Error ? err.message : 'Unknown error'}`);
 		}
 	};
 
@@ -249,6 +378,112 @@ export default function PerformanceRating() {
 			<div className="min-h-svh bg-purple-50 px-6 py-10">
 				<div className="mx-auto max-w-6xl space-y-8">
 					<PageHeader title="My Performance Ratings" />
+
+					{error && (
+						<div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+							<i className="fas fa-exclamation-circle mr-2"></i>
+							{error}
+						</div>
+					)}
+
+					{success && (
+						<div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+							<i className="fas fa-check-circle mr-2"></i>
+							{success}
+						</div>
+					)}
+
+					{/* Request Stars Section */}
+					<div className="rounded-2xl border border-sky-200 bg-white p-8 shadow-sm">
+						<h2 className="mb-4 text-xl font-semibold text-slate-900">
+							<i className="fas fa-star mr-2 text-yellow-400"></i>
+							Request Performance Rating
+						</h2>
+						<p className="mb-4 text-sm text-slate-600">
+							Request a performance rating from super admins (shajisp@css.com or dharanjaydubey@css.com). 
+							They will review your request and provide feedback.
+						</p>
+						
+						<div className="space-y-4">
+							<div>
+								<label className="mb-2 block text-sm font-medium text-slate-700">
+									Message (Optional)
+								</label>
+								<textarea
+									value={requestMessage}
+									onChange={(e) => setRequestMessage(e.target.value)}
+									rows={3}
+									className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+									placeholder="Add any additional context for your rating request..."
+								/>
+							</div>
+							
+							<div className="flex justify-end">
+								<button
+									onClick={handleRequestRating}
+									disabled={submittingRequest}
+									className="rounded-lg bg-sky-600 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									{submittingRequest ? (
+										<>
+											<i className="fas fa-spinner fa-spin mr-2"></i>
+											Submitting...
+										</>
+									) : (
+										<>
+											<i className="fas fa-paper-plane mr-2"></i>
+											Submit Request
+										</>
+									)}
+								</button>
+							</div>
+						</div>
+					</div>
+
+					{/* My Rating Requests */}
+					{myRatingRequests.length > 0 && (
+						<div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+							<h2 className="mb-6 text-xl font-semibold text-slate-900">My Rating Requests</h2>
+							<div className="space-y-4">
+								{myRatingRequests.map((request) => (
+									<div
+										key={request.id}
+										className={`rounded-lg border-2 p-4 ${
+											request.status === 'Pending'
+												? 'border-amber-200 bg-amber-50'
+												: 'border-green-200 bg-green-50'
+										}`}
+									>
+										<div className="flex items-start justify-between">
+											<div className="flex-1">
+												<div className="mb-2 flex items-center gap-3">
+													<span
+														className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+															request.status === 'Pending'
+																? 'bg-amber-100 text-amber-800'
+																: 'bg-green-100 text-green-800'
+														}`}
+													>
+														{request.status}
+													</span>
+												</div>
+												{request.requestMessage && (
+													<p className="mb-2 text-sm text-slate-700">
+														<strong>Message:</strong> {request.requestMessage}
+													</p>
+												)}
+												<p className="text-xs text-slate-500">
+													Requested on:{' '}
+													{request.createdAt?.toDate?.().toLocaleString() ||
+														(request.createdAt ? new Date(request.createdAt as any).toLocaleString() : 'N/A')}
+												</p>
+											</div>
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+					)}
 
 					{loading ? (
 						<div className="flex items-center justify-center py-20">
@@ -429,7 +664,7 @@ export default function PerformanceRating() {
 														<span>
 															<i className="fas fa-calendar mr-1"></i>
 															{ratingRecord.createdAt?.toDate?.().toLocaleDateString() ||
-																new Date(ratingRecord.createdAt as any).toLocaleDateString()}
+																(ratingRecord.createdAt ? new Date(ratingRecord.createdAt as any).toLocaleDateString() : 'N/A')}
 														</span>
 													</div>
 												</div>
@@ -461,6 +696,92 @@ export default function PerformanceRating() {
 					<div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
 						<i className="fas fa-check-circle mr-2"></i>
 						{success}
+					</div>
+				)}
+
+				{/* Rating Requests Section for Super Admins */}
+				{ratingRequests.length > 0 && (
+					<div className="rounded-2xl border border-amber-200 bg-white p-8 shadow-sm">
+						<h2 className="mb-6 text-xl font-semibold text-slate-900">
+							<i className="fas fa-inbox mr-2 text-amber-500"></i>
+							Pending Rating Requests ({ratingRequests.length})
+						</h2>
+						<p className="mb-4 text-sm text-slate-600">
+							The following users have requested performance ratings. Process the request and create a rating for them.
+						</p>
+						<div className="space-y-4">
+							{ratingRequests.map((request) => {
+								// Find the staff member who made the request
+								const requestingStaff = staff.find(
+									(s) => s.userEmail?.toLowerCase() === request.requestedByEmail.toLowerCase()
+								);
+								
+								return (
+									<div
+										key={request.id}
+										className="rounded-lg border-2 border-amber-200 bg-amber-50 p-6"
+									>
+										<div className="flex items-start justify-between">
+											<div className="flex-1">
+												<div className="mb-3 flex items-center gap-3">
+													<h3 className="text-lg font-semibold text-slate-900">
+														{request.requestedByName}
+													</h3>
+													<span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+														Pending
+													</span>
+												</div>
+												<div className="mb-2 text-sm text-slate-600">
+													<i className="fas fa-envelope mr-2"></i>
+													{request.requestedByEmail}
+												</div>
+												{requestingStaff && (
+													<div className="mb-2 text-sm text-slate-600">
+														<i className="fas fa-briefcase mr-2"></i>
+														{requestingStaff.role}
+													</div>
+												)}
+												{request.requestMessage && (
+													<div className="mb-3 rounded-lg border border-amber-200 bg-white p-3">
+														<p className="text-sm text-slate-700">
+															<strong>Message:</strong> {request.requestMessage}
+														</p>
+													</div>
+												)}
+												<p className="text-xs text-slate-500">
+													Requested on:{' '}
+													{request.createdAt?.toDate?.().toLocaleString() ||
+														(request.createdAt ? new Date(request.createdAt as any).toLocaleString() : 'N/A')}
+												</p>
+											</div>
+											<div className="ml-4 flex flex-col gap-2">
+												<button
+													onClick={() => {
+														if (requestingStaff) {
+															setSelectedStaff(requestingStaff);
+															handleProcessRequest(request.id);
+															// Scroll to rating form
+															window.scrollTo({ top: 0, behavior: 'smooth' });
+														}
+													}}
+													className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+												>
+													<i className="fas fa-star mr-2"></i>
+													Create Rating
+												</button>
+												<button
+													onClick={() => handleProcessRequest(request.id)}
+													className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+												>
+													<i className="fas fa-check mr-2"></i>
+													Mark Processed
+												</button>
+											</div>
+										</div>
+									</div>
+								);
+							})}
+						</div>
 					</div>
 				)}
 
@@ -627,7 +948,7 @@ export default function PerformanceRating() {
 											<p className="text-xs text-slate-500">
 												Submitted on:{' '}
 												{ratingRecord.createdAt?.toDate?.().toLocaleString() ||
-													new Date(ratingRecord.createdAt as any).toLocaleString()}
+													(ratingRecord.createdAt ? new Date(ratingRecord.createdAt as any).toLocaleString() : 'N/A')}
 											</p>
 										</div>
 									</div>

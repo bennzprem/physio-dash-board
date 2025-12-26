@@ -250,7 +250,7 @@ export default function AppointmentBookingModal({
 						})),
 					});
 				}
-				setAllClinicianAppointments(mapped);
+				setAllClinicianAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments for slot filtering', error);

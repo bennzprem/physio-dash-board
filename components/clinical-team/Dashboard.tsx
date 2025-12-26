@@ -252,7 +252,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined),
 					};
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load clinical dashboard patients', error);
@@ -276,7 +276,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						notes: data.notes ? String(data.notes) : undefined,
 					};
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load clinical dashboard appointments', error);

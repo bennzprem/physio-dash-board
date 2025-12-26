@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { generatePhysiotherapyReportPDF, generateStrengthConditioningPDF, type StrengthConditioningData, type ReportSection } from '@/lib/pdfGenerator';
 import type { PatientRecordFull } from '@/lib/types';
 import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
+import { createDYESBilling } from '@/lib/dyesBilling';
 import { getHeaderConfig, getDefaultHeaderConfig } from '@/lib/headerConfig';
 import type { HeaderConfig } from '@/components/admin/HeaderManagement';
 
@@ -176,6 +177,26 @@ async function markAppointmentCompletedForReport(
 				});
 			} catch (sessionError) {
 				console.error('Failed to record session usage after report save', sessionError);
+			}
+
+			// Automatically create billing for DYES patients
+			const patientType = (patient.patientType || '').toUpperCase();
+			if (patientType === 'DYES' || patientType === 'DYES') {
+				try {
+					const appointmentData = appointmentDoc.data();
+					await createDYESBilling({
+						appointmentId: appointmentData.appointmentId || appointmentDoc.id,
+						appointmentDocId: appointmentDoc.id,
+						patientId: patient.patientId,
+						patientName: patient.name || '',
+						doctorName: appointmentData.doctor || '',
+						appointmentDate: appointmentData.date || reportDate || '',
+						createdByUserId: null,
+						createdByUserName: null,
+					});
+				} catch (billingError) {
+					console.error('Failed to create automatic DYES billing:', billingError);
+				}
 			}
 		}
 
@@ -622,7 +643,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						userEmail: s.userEmail,
 					}))
 					.sort((a, b) => a.userName.localeCompare(b.userName));
-				setClinicalTeamMembers(mapped);
+				setClinicalTeamMembers([...mapped]);
 			},
 			error => {
 				console.error('Failed to load clinical team members', error);

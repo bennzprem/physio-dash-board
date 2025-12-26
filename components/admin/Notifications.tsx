@@ -119,7 +119,7 @@ export default function Notifications() {
 						metadata: data.metadata || {},
 					} as AppNotification;
 				});
-				setNotifications(mapped);
+				setNotifications([...mapped]);
 				setNotificationsLoading(false);
 			},
 			error => {
@@ -148,7 +148,7 @@ export default function Notifications() {
 						userEmail: data.userEmail ? String(data.userEmail) : undefined,
 					} as StaffMember;
 				});
-				setStaff(mapped.filter(s => s.status === 'Active' && s.id !== user?.uid));
+				setStaff([...mapped.filter(s => s.status === 'Active' && s.id !== user?.uid)]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -182,7 +182,7 @@ export default function Notifications() {
 						unreadCount: data.unreadCount || {},
 					} as Conversation;
 				});
-				setConversations(mapped);
+				setConversations([...mapped]);
 			},
 			error => {
 				console.error('Failed to load conversations', error);
@@ -228,7 +228,7 @@ export default function Notifications() {
 						attachments: data.attachments || [],
 					} as Message;
 				});
-				setMessages(mapped);
+				setMessages([...mapped]);
 				
 				if (mapped.length > 0) {
 					const unreadMessages = mapped.filter(m => m.receiverId === user.uid && !m.read);

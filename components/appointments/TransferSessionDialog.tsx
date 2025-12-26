@@ -150,7 +150,7 @@ export default function TransferSessionDialog({
 						duration: typeof data.duration === 'number' ? data.duration : undefined,
 					};
 				});
-				setTargetStaffAppointments(mapped);
+				setTargetStaffAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments for conflict checking', error);

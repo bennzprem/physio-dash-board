@@ -57,7 +57,7 @@ export default function AppNotifications() {
 						metadata: data.metadata || {},
 					} as AppNotification;
 				});
-				setNotifications(mapped);
+				setNotifications([...mapped]);
 				setLoading(false);
 			},
 			error => {

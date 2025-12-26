@@ -16,6 +16,7 @@ import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
 import type { RecordSessionUsageResult } from '@/lib/sessionAllowanceClient';
 import EditReportModal from '@/components/clinical-team/EditReportModal';
 import { createInitialSessionAllowance } from '@/lib/sessionAllowance';
+import { createDYESBilling } from '@/lib/dyesBilling';
 
 interface FrontdeskAppointment {
 	id: string;
@@ -264,7 +265,7 @@ export default function Appointments() {
 						packageName: data.packageName ? String(data.packageName) : undefined,
 					} as FrontdeskAppointment;
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 				setLoading(false);
 			},
 			error => {
@@ -358,7 +359,7 @@ export default function Appointments() {
 						}))
 					});
 				}
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);
@@ -387,10 +388,10 @@ export default function Appointments() {
 					} as StaffMember;
 				});
 				// Only include clinical roles (exclude FrontDesk and Admin)
-				setStaff(mapped.filter(s => 
+				setStaff([...mapped.filter(s => 
 					s.status === 'Active' && 
 					['Physiotherapist', 'StrengthAndConditioning', 'ClinicalTeam'].includes(s.role)
-				));
+				)]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -852,6 +853,25 @@ export default function Appointments() {
 					});
 				} catch (sessionError) {
 					console.error('Failed to record DYES session usage:', sessionError);
+				}
+
+				// Automatically create billing for DYES patients
+				const patientType = (patientDetails.patientType || '').toUpperCase();
+				if (patientType === 'DYES' || patientType === 'DYES') {
+					try {
+						await createDYESBilling({
+							appointmentId: appointment.appointmentId,
+							appointmentDocId: appointment.id,
+							patientId: appointment.patientId,
+							patientName: appointment.patient || '',
+							doctorName: appointment.doctor || '',
+							appointmentDate: appointment.date || '',
+							createdByUserId: user?.uid || null,
+							createdByUserName: user?.displayName || user?.email || null,
+						});
+					} catch (billingError) {
+						console.error('Failed to create automatic DYES billing:', billingError);
+					}
 				}
 			}
 

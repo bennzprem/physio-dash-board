@@ -29,6 +29,7 @@ import { checkAppointmentConflict, checkAvailabilityConflict } from '@/lib/appoi
 import { normalizeSessionAllowance } from '@/lib/sessionAllowance';
 import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
 import type { RecordSessionUsageResult } from '@/lib/sessionAllowanceClient';
+import { createDYESBilling } from '@/lib/dyesBilling';
 
 const statusLabels: Record<AdminAppointmentStatus, string> = {
 	pending: 'Pending',
@@ -124,7 +125,7 @@ export default function Appointments() {
 						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
 					} as FirestoreAppointmentRecord;
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments', error);
@@ -161,7 +162,7 @@ export default function Appointments() {
 							: undefined,
 					} as AdminPatientRecord & { id: string };
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);
@@ -188,7 +189,7 @@ export default function Appointments() {
 						dateSpecificAvailability: data.dateSpecificAvailability as DateSpecificAvailability | undefined,
 					} as StaffMember;
 				});
-				setStaff(mapped);
+				setStaff([...mapped]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -598,6 +599,27 @@ export default function Appointments() {
 					});
 				} catch (sessionError) {
 					console.error('Failed to record DYES session usage:', sessionError);
+				}
+
+				// Automatically create billing for DYES patients
+				const patientType = (patient.patientType || '').toUpperCase();
+				if (patientType === 'DYES' || patientType === 'DYES') {
+					try {
+						if (appointment.appointmentId && appointment.id && appointment.patientId) {
+							await createDYESBilling({
+								appointmentId: appointment.appointmentId,
+								appointmentDocId: appointment.id,
+								patientId: appointment.patientId,
+								patientName: appointment.patient || '',
+								doctorName: formData.doctor || appointment.doctor || '',
+								appointmentDate: formData.date || appointment.date || '',
+								createdByUserId: user?.uid || null,
+								createdByUserName: user?.displayName || user?.email || null,
+							});
+						}
+					} catch (billingError) {
+						console.error('Failed to create automatic DYES billing:', billingError);
+					}
 				}
 			}
 

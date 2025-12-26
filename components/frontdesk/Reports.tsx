@@ -217,7 +217,7 @@ export default function Reports() {
 									: undefined,
 					} as PatientRecord;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 				setLoading(false);
 			},
 			error => {

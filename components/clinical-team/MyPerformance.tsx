@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, where, getDocs, type QuerySnapshot, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDocs, updateDoc, doc, serverTimestamp, type QuerySnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import PageHeader from '@/components/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
@@ -131,7 +131,7 @@ export default function MyPerformance() {
 						status: data.status ? String(data.status) : 'pending',
 					} as AppointmentRecord;
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments:', error);
@@ -162,7 +162,7 @@ export default function MyPerformance() {
 						date: data.date ? String(data.date) : '',
 					} as ActivityRecord;
 				});
-				setActivities(mapped);
+				setActivities([...mapped]);
 			},
 			error => {
 				console.error('Failed to load activities:', error);
@@ -191,7 +191,7 @@ export default function MyPerformance() {
 						date: data.date ? String(data.date) : '',
 					} as BillingRecord;
 				});
-				setBilling(mapped);
+				setBilling([...mapped]);
 			},
 			error => {
 				console.error('Failed to load billing:', error);
@@ -218,7 +218,7 @@ export default function MyPerformance() {
 						patientType: data.patientType ? String(data.patientType) : '',
 					} as PatientRecord;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients:', error);
@@ -250,7 +250,7 @@ export default function MyPerformance() {
 						reason: data.reason ? String(data.reason) : '',
 					} as TransferRecord;
 				});
-				setTransfers(mapped);
+				setTransfers([...mapped]);
 			},
 			error => {
 				console.error('Failed to load transfers:', error);
@@ -284,7 +284,7 @@ export default function MyPerformance() {
 						reason: data.reason ? String(data.reason) : '',
 					} as SessionTransferRecord;
 				});
-				setSessionTransfers(mapped);
+				setSessionTransfers([...mapped]);
 			},
 			error => {
 				// Collection might not exist, that's okay
@@ -301,6 +301,49 @@ export default function MyPerformance() {
 			setLoading(false);
 		}
 	}, [staffName]);
+
+	// Update existing DYES bills to have status 'Completed' and amount 500
+	useEffect(() => {
+		if (!staffName || billing.length === 0 || patients.length === 0) return;
+
+		const updateDYESBills = async () => {
+			try {
+				// Find all DYES patients
+				const dyesPatients = patients.filter(p => (p.patientType || '').toUpperCase() === 'DYES');
+				const dyesPatientIds = new Set(dyesPatients.map(p => p.patientId).filter(Boolean));
+
+				// Find billing records for DYES patients that need updating
+				for (const bill of billing) {
+					if (!bill.patientId || !dyesPatientIds.has(bill.patientId)) continue;
+					if (bill.doctor !== staffName) continue;
+
+					// Update bills that are not in the correct format
+					if (bill.status !== 'Completed' || bill.amount !== 500) {
+						try {
+							await updateDoc(doc(db, 'billing', bill.id), {
+								amount: 500,
+								status: 'Completed',
+								paymentMode: 'Auto-Paid',
+								updatedAt: serverTimestamp(),
+							});
+							console.log(`Updated DYES bill ${bill.id} to status 'Completed' with amount 500`);
+						} catch (error) {
+							console.error(`Failed to update DYES bill ${bill.id}:`, error);
+						}
+					}
+				}
+			} catch (error) {
+				console.error('Failed to update DYES bills:', error);
+			}
+		};
+
+		// Run update once after a short delay to ensure data is loaded
+		const timer = setTimeout(() => {
+			updateDYESBills();
+		}, 2000);
+
+		return () => clearTimeout(timer);
+	}, [billing, patients, staffName]);
 
 	// Filter data by time period and staff
 	const filteredData = useMemo(() => {
@@ -430,9 +473,9 @@ export default function MyPerformance() {
 			return acc;
 		}, {} as Record<string, { count: number; hours: number; activities: ActivityRecord[] }>);
 
-		// Total revenue
+		// Total revenue (include both 'Completed' and 'Auto-Paid' statuses)
 		const totalRevenue = bills
-			.filter(bill => bill.status === 'Completed')
+			.filter(bill => bill.status === 'Completed' || bill.status === 'Auto-Paid')
 			.reduce((total, bill) => total + (bill.amount || 0), 0);
 
 		// Revenue by DYES vs non-DYES
@@ -443,7 +486,7 @@ export default function MyPerformance() {
 		};
 
 		bills
-			.filter(bill => bill.status === 'Completed')
+			.filter(bill => bill.status === 'Completed' || bill.status === 'Auto-Paid')
 			.forEach(bill => {
 				// Use full patients array instead of filtered pats to ensure we can find the patient
 				const patient = patients.find(p => p.patientId === bill.patientId);
@@ -451,7 +494,10 @@ export default function MyPerformance() {
 				if (isDYES) {
 					revenueByType.DYES += bill.amount || 0;
 				} else {
-					revenueByType.nonDYES += bill.amount || 0;
+					// Only count non-DYES bills with status 'Completed' (exclude 'Auto-Paid' for non-DYES)
+					if (bill.status === 'Completed') {
+						revenueByType.nonDYES += bill.amount || 0;
+					}
 				}
 			});
 
