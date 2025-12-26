@@ -879,9 +879,10 @@ export default function Billing() {
 						time: data.time ? String(data.time) : '',
 						status: (data.status as string) ?? 'pending',
 						billing: data.billing ? (data.billing as { amount?: string; date?: string }) : undefined,
+						billingDeleted: data.billingDeleted === true,
 						amount: data.amount ? Number(data.amount) : 1200,
 						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
-					} as AdminAppointmentRecord & { id: string; amount?: number };
+					} as AdminAppointmentRecord & { id: string; amount?: number; billingDeleted?: boolean };
 				});
 				setAppointments([...mapped]);
 				setLoading(false);
@@ -1081,7 +1082,10 @@ export default function Billing() {
 			setSyncing(true);
 			try {
 				const completedAppointments = appointments.filter(
-					appt => appt.status === 'completed' && !appt.billing
+					appt => {
+						const appointment = appt as AdminAppointmentRecord & { id: string; amount?: number; billingDeleted?: boolean };
+						return appointment.status === 'completed' && !appointment.billing && !appointment.billingDeleted;
+					}
 				);
 
 				if (completedAppointments.length === 0) {
@@ -1799,6 +1803,23 @@ export default function Billing() {
 		try {
 			const billingRef = doc(db, 'billing', bill.id);
 			await deleteDoc(billingRef);
+			
+			// If this billing record is associated with an appointment, mark the appointment
+			// to prevent it from being re-synced and creating a new billing record
+			if (bill.appointmentId) {
+				const appointmentQuery = query(collection(db, 'appointments'), where('appointmentId', '==', bill.appointmentId));
+				const appointmentSnapshot = await getDocs(appointmentQuery);
+				
+				if (!appointmentSnapshot.empty) {
+					const appointmentRef = appointmentSnapshot.docs[0].ref;
+					// Clear the billing field and set a flag to prevent re-syncing
+					await updateDoc(appointmentRef, {
+						billing: null,
+						billingDeleted: true, // Flag to prevent re-syncing
+					});
+				}
+			}
+			
 			// The record will automatically be removed from the view since we're using onSnapshot
 			// which will update the billing state when the document is deleted
 		} catch (error) {
