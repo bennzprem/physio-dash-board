@@ -1426,7 +1426,8 @@ export async function generateStrengthConditioningPDF(
 				
 				// Try to merge PDFs using pdf-lib if available
 				try {
-					const { PDFDocument } = await import('pdf-lib');
+					const pdfLibModule = await import('pdf-lib');
+					const { PDFDocument } = pdfLibModule as typeof import('pdf-lib');
 					
 					// Fetch the uploaded PDF
 					const response = await fetch(data.uploadedPdfUrl);
@@ -1440,8 +1441,8 @@ export async function generateStrengthConditioningPDF(
 					const currentPdfDoc = await PDFDocument.load(currentPdfBytes);
 					
 					// Copy all pages from uploaded PDF
-					const pagesToCopy = await currentPdfDoc.copyPages(uploadedPdfDoc, uploadedPages.map((_, i) => i));
-					pagesToCopy.forEach((page) => {
+					const pagesToCopy = await currentPdfDoc.copyPages(uploadedPdfDoc, uploadedPages.map((_: unknown, i: number) => i));
+					pagesToCopy.forEach((page: Awaited<ReturnType<typeof currentPdfDoc.copyPages>>[0]) => {
 						currentPdfDoc.addPage(page);
 					});
 					
