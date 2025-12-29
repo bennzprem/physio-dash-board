@@ -41,6 +41,7 @@ interface RatingRequest {
 	requestedByName: string;
 	requestedByEmail: string;
 	requestMessage?: string;
+	requestedRating?: 1 | 2 | 3 | 4 | 5;
 	status: 'Pending' | 'Processed';
 	createdAt: Timestamp;
 	processedAt?: Timestamp;
@@ -75,6 +76,7 @@ export default function PerformanceRating() {
 	const [ratingRequests, setRatingRequests] = useState<RatingRequest[]>([]);
 	const [myRatingRequests, setMyRatingRequests] = useState<RatingRequest[]>([]);
 	const [requestMessage, setRequestMessage] = useState('');
+	const [requestedRating, setRequestedRating] = useState<1 | 2 | 3 | 4 | 5 | null>(null);
 	const [submittingRequest, setSubmittingRequest] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -313,6 +315,11 @@ export default function PerformanceRating() {
 			return;
 		}
 
+		if (!requestedRating) {
+			setError('Please select a star rating before submitting your request.');
+			return;
+		}
+
 		setSubmittingRequest(true);
 		setError(null);
 		setSuccess(null);
@@ -323,6 +330,7 @@ export default function PerformanceRating() {
 				requestedById: user.uid,
 				requestedByName: user.displayName || user.email,
 				requestedByEmail: user.email.toLowerCase(),
+				requestedRating: requestedRating,
 				status: 'Pending' as const,
 				createdAt: serverTimestamp(),
 			};
@@ -336,6 +344,7 @@ export default function PerformanceRating() {
 
 			setSuccess('Rating request submitted successfully! Super admins will review your request.');
 			setRequestMessage('');
+			setRequestedRating(null);
 		} catch (err) {
 			console.error('Failed to submit rating request', err);
 			setError(`Failed to submit request: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -405,6 +414,46 @@ export default function PerformanceRating() {
 						</p>
 						
 						<div className="space-y-4">
+							{/* Star Rating Selection */}
+							<div>
+								<label className="mb-3 block text-sm font-medium text-slate-700">
+									Select Your Expected Rating <span className="text-red-500">*</span>
+								</label>
+								<div className="flex items-center gap-2">
+									{[1, 2, 3, 4, 5].map((star) => (
+										<button
+											key={star}
+											type="button"
+											onClick={() => setRequestedRating(star as 1 | 2 | 3 | 4 | 5)}
+											className={`transform transition-all duration-200 hover:scale-125 ${
+												requestedRating && star <= requestedRating
+													? 'text-yellow-400 scale-110'
+													: 'text-slate-300 hover:text-yellow-300'
+											}`}
+											aria-label={`${star} star${star > 1 ? 's' : ''}`}
+										>
+											<i
+												className={`fa-star text-4xl ${
+													requestedRating && star <= requestedRating
+														? 'fas'
+														: 'far'
+												}`}
+											></i>
+										</button>
+									))}
+									{requestedRating && (
+										<span className="ml-4 text-sm font-semibold text-slate-700">
+											{requestedRating} Star{requestedRating > 1 ? 's' : ''} - {RATING_SCHEMA[requestedRating]}
+										</span>
+									)}
+								</div>
+								{requestedRating && (
+									<p className="mt-2 text-xs text-slate-500">
+										{RATING_SCHEMA[requestedRating]}
+									</p>
+								)}
+							</div>
+
 							<div>
 								<label className="mb-2 block text-sm font-medium text-slate-700">
 									Message (Optional)
@@ -421,7 +470,7 @@ export default function PerformanceRating() {
 							<div className="flex justify-end">
 								<button
 									onClick={handleRequestRating}
-									disabled={submittingRequest}
+									disabled={submittingRequest || !requestedRating}
 									className="rounded-lg bg-sky-600 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 								>
 									{submittingRequest ? (
@@ -467,6 +516,22 @@ export default function PerformanceRating() {
 														{request.status}
 													</span>
 												</div>
+												{request.requestedRating && (
+													<div className="mb-2 flex items-center gap-2">
+														<span className="text-sm font-medium text-slate-700">Expected Rating:</span>
+														<div className="flex items-center">
+															{[...Array(request.requestedRating)].map((_, i) => (
+																<i key={i} className="fas fa-star text-yellow-400"></i>
+															))}
+															{[...Array(5 - request.requestedRating)].map((_, i) => (
+																<i key={i} className="far fa-star text-slate-300"></i>
+															))}
+															<span className="ml-2 text-sm text-slate-600">
+																({request.requestedRating} Star{request.requestedRating > 1 ? 's' : ''} - {RATING_SCHEMA[request.requestedRating]})
+															</span>
+														</div>
+													</div>
+												)}
 												{request.requestMessage && (
 													<p className="mb-2 text-sm text-slate-700">
 														<strong>Message:</strong> {request.requestMessage}
@@ -739,6 +804,22 @@ export default function PerformanceRating() {
 													<div className="mb-2 text-sm text-slate-600">
 														<i className="fas fa-briefcase mr-2"></i>
 														{requestingStaff.role}
+													</div>
+												)}
+												{request.requestedRating && (
+													<div className="mb-2 flex items-center gap-2">
+														<span className="text-sm font-medium text-slate-700">Expected Rating:</span>
+														<div className="flex items-center">
+															{[...Array(request.requestedRating)].map((_, i) => (
+																<i key={i} className="fas fa-star text-yellow-400"></i>
+															))}
+															{[...Array(5 - request.requestedRating)].map((_, i) => (
+																<i key={i} className="far fa-star text-slate-300"></i>
+															))}
+															<span className="ml-2 text-sm text-slate-600">
+																({request.requestedRating} Star{request.requestedRating > 1 ? 's' : ''} - {RATING_SCHEMA[request.requestedRating]})
+															</span>
+														</div>
 													</div>
 												)}
 												{request.requestMessage && (

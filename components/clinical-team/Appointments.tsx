@@ -237,6 +237,30 @@ export default function Appointments() {
 	const [registerNotice, setRegisterNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 	const [newlyRegisteredPatientId, setNewlyRegisteredPatientId] = useState<string | null>(null);
 	const [patientSearchTerm, setPatientSearchTerm] = useState('');
+	const [billingRecords, setBillingRecords] = useState<Array<{ appointmentId?: string; status: 'Pending' | 'Completed' | 'Auto-Paid' }>>([]);
+
+	// Load billing records from Firestore
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'billing'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						appointmentId: data.appointmentId ? String(data.appointmentId) : undefined,
+						status: (data.status as 'Pending' | 'Completed' | 'Auto-Paid') || 'Pending',
+					};
+				});
+				setBillingRecords([...mapped]);
+			},
+			error => {
+				console.error('Failed to load billing records', error);
+				setBillingRecords([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, []);
 
 	// Load appointments from Firestore
 	useEffect(() => {
@@ -2831,6 +2855,7 @@ export default function Appointments() {
 												<th className="px-4 py-3 font-semibold">Clinician</th>
 												<th className="px-4 py-3 font-semibold">When</th>
 												<th className="px-4 py-3 font-semibold">Status</th>
+												<th className="px-4 py-3 font-semibold">Amount</th>
 												<th className="px-4 py-3 font-semibold">Notes</th>
 												<th className="px-4 py-3 font-semibold text-right">Actions</th>
 											</tr>
@@ -2855,6 +2880,10 @@ export default function Appointments() {
 													doctorName = patientDetails.assignedDoctor;
 												}
 												const displayDoctorName = doctorName || 'Not assigned';
+
+												// Get billing status for this appointment
+												const billingRecord = billingRecords.find(b => b.appointmentId === appointment.appointmentId);
+												const paymentStatus = billingRecord?.status || null;
 
 												return (
 													<tr key={appointment.appointmentId}>
@@ -2942,6 +2971,23 @@ export default function Appointments() {
 																<option value="completed">Completed</option>
 																<option value="cancelled">Cancelled</option>
 															</select>
+														</td>
+														<td className="px-4 py-4">
+															{paymentStatus ? (
+																<span
+																	className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+																		paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid'
+																			? 'bg-green-100 text-green-800'
+																			: 'bg-amber-100 text-amber-800'
+																	}`}
+																>
+																	{paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid'
+																		? 'Completed'
+																		: 'Pending'}
+																</span>
+															) : (
+																<span className="text-xs text-slate-400">—</span>
+															)}
 														</td>
 														<td className="px-4 py-4">
 															{isEditing ? (

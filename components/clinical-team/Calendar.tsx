@@ -124,11 +124,32 @@ export default function Calendar() {
 	const [activityType, setActivityType] = useState<string>('');
 	const [activityDescription, setActivityDescription] = useState<string>('');
 	const [savingActivity, setSavingActivity] = useState(false);
+	const [activityAllDay, setActivityAllDay] = useState(false);
+	const [customStartTime, setCustomStartTime] = useState<string>('');
+	const [customEndTime, setCustomEndTime] = useState<string>('');
 	const [currentDate, setCurrentDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 	const calendarRef = useRef<FullCalendar>(null);
 
 	const clinicianName = useMemo(() => normalize(user?.displayName ?? ''), [user?.displayName]);
 	const isMountedRef = useRef(true);
+
+	// Initialize custom times when selectedSlot changes
+	useEffect(() => {
+		if (selectedSlot) {
+			const startHours = String(selectedSlot.start.getHours()).padStart(2, '0');
+			const startMinutes = String(selectedSlot.start.getMinutes()).padStart(2, '0');
+			const endHours = String(selectedSlot.end.getHours()).padStart(2, '0');
+			const endMinutes = String(selectedSlot.end.getMinutes()).padStart(2, '0');
+			
+			setCustomStartTime(prev => prev || `${startHours}:${startMinutes}`);
+			setCustomEndTime(prev => prev || `${endHours}:${endMinutes}`);
+		} else {
+			// Reset when modal closes
+			setCustomStartTime('');
+			setCustomEndTime('');
+			setActivityAllDay(false);
+		}
+	}, [selectedSlot]);
 
 	useEffect(() => {
 		isMountedRef.current = true;
@@ -1578,6 +1599,9 @@ export default function Calendar() {
 									setSelectedSlot(null);
 									setActivityType('');
 									setActivityDescription('');
+									setActivityAllDay(false);
+									setCustomStartTime('');
+									setCustomEndTime('');
 								}}
 								className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:bg-slate-100 focus-visible:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
 								aria-label="Close dialog"
@@ -1587,36 +1611,101 @@ export default function Calendar() {
 						</header>
 						<div className="space-y-4 px-6 py-6">
 							<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-								<p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Time Slot</p>
-								<p className="mt-1 text-sm font-semibold text-slate-900">
-									{new Intl.DateTimeFormat('en-US', {
-										month: 'short',
-										day: 'numeric',
-										year: 'numeric',
-										hour: 'numeric',
-										minute: '2-digit',
-									}).format(selectedSlot.start)}
-									{' - '}
-									{new Intl.DateTimeFormat('en-US', {
-										hour: 'numeric',
-										minute: '2-digit',
-									}).format(selectedSlot.end)}
-								</p>
-								{(() => {
-									const durationMs = selectedSlot.end.getTime() - selectedSlot.start.getTime();
-									const durationMinutes = Math.round(durationMs / 60000);
-									const hours = Math.floor(durationMinutes / 60);
-									const minutes = durationMinutes % 60;
-									const durationText = hours > 0 
-										? `${hours} hour${hours > 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} minute${minutes > 1 ? 's' : ''}` : ''}`
-										: `${minutes} minute${minutes > 1 ? 's' : ''}`;
-									return (
-										<p className="mt-2 text-xs text-slate-600">
-											<i className="fas fa-clock mr-1" aria-hidden="true" />
-											Duration: {durationText} ({durationMinutes} minutes)
+								<label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Time Slot</label>
+								<div className="mt-2 space-y-3">
+									<label className="flex items-center gap-2">
+										<input
+											type="checkbox"
+											checked={activityAllDay}
+											onChange={(e) => {
+												setActivityAllDay(e.target.checked);
+												if (e.target.checked) {
+													// When All Day is selected, set default times to cover full day
+													if (!customStartTime) {
+														setCustomStartTime('00:00');
+													}
+													if (!customEndTime) {
+														setCustomEndTime('23:59');
+													}
+												}
+											}}
+											className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-2 focus:ring-sky-500"
+										/>
+										<span className="text-sm font-medium text-slate-700">All Day</span>
+									</label>
+									<div className="grid grid-cols-2 gap-3">
+										<div>
+											<label className="mb-1 block text-xs font-medium text-slate-600">Start Time</label>
+											<input
+												type="time"
+												value={customStartTime}
+												onChange={(e) => setCustomStartTime(e.target.value)}
+												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+											/>
+										</div>
+										<div>
+											<label className="mb-1 block text-xs font-medium text-slate-600">End Time</label>
+											<input
+												type="time"
+												value={customEndTime}
+												onChange={(e) => setCustomEndTime(e.target.value)}
+												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+											/>
+										</div>
+									</div>
+									{(() => {
+										const startTime = customStartTime;
+										const endTime = customEndTime;
+										
+										if (!startTime || !endTime) {
+											return null;
+										}
+										
+										const [startHours, startMinutes] = startTime.split(':').map(Number);
+										const [endHours, endMinutes] = endTime.split(':').map(Number);
+										
+										if (isNaN(startHours) || isNaN(startMinutes) || isNaN(endHours) || isNaN(endMinutes)) {
+											return null;
+										}
+										
+										// Use the same base date for both start and end times
+										// This ensures accurate calculation within the same day
+										const baseDate = new Date(selectedSlot.start);
+										baseDate.setHours(0, 0, 0, 0); // Reset to start of day
+										
+										const startDate = new Date(baseDate);
+										startDate.setHours(startHours, startMinutes, 0, 0);
+										
+										const endDate = new Date(baseDate);
+										endDate.setHours(endHours, endMinutes, 0, 0);
+										
+										// If end time is before or equal to start time, assume it's the next day
+										if (endDate <= startDate) {
+											endDate.setDate(endDate.getDate() + 1);
+										}
+										
+										const durationMs = endDate.getTime() - startDate.getTime();
+										const durationMinutes = Math.round(durationMs / 60000);
+										const hours = Math.floor(durationMinutes / 60);
+										const minutes = durationMinutes % 60;
+										const durationText = hours > 0 
+											? `${hours} hour${hours > 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} minute${minutes > 1 ? 's' : ''}` : ''}`
+											: `${minutes} minute${minutes > 1 ? 's' : ''}`;
+										
+										return (
+											<p className="text-xs text-slate-600">
+												<i className="fas fa-clock mr-1" aria-hidden="true" />
+												Duration: {durationText} ({durationMinutes} minutes)
+											</p>
+										);
+									})()}
+									{activityAllDay && (
+										<p className="text-xs text-slate-500 italic">
+											<i className="fas fa-info-circle mr-1" aria-hidden="true" />
+											All Day is selected. You can customize the start and end times as needed.
 										</p>
-									);
-								})()}
+									)}
+								</div>
 							</div>
 							<div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
 								<p className="text-xs text-blue-800">
@@ -1667,6 +1756,9 @@ export default function Calendar() {
 									setSelectedSlot(null);
 									setActivityType('');
 									setActivityDescription('');
+									setActivityAllDay(false);
+									setCustomStartTime('');
+									setCustomEndTime('');
 								}}
 								className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus-visible:border-slate-400 focus-visible:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
 							>
@@ -1684,6 +1776,35 @@ export default function Calendar() {
 									if (!user?.email) {
 										alert('User not authenticated');
 										return;
+									}
+
+									if (!customStartTime || !customEndTime) {
+										alert('Please set both start and end times');
+										return;
+									}
+
+									// Get custom times
+									const startTime = customStartTime;
+									const endTime = customEndTime;
+
+									// Parse times and create date objects
+									const [startHours, startMinutes] = startTime.split(':').map(Number);
+									const [endHours, endMinutes] = endTime.split(':').map(Number);
+									
+									// Use the same base date for both start and end times
+									// This ensures accurate calculation within the same day
+									const baseDate = new Date(selectedSlot.start);
+									baseDate.setHours(0, 0, 0, 0); // Reset to start of day
+									
+									const startDate = new Date(baseDate);
+									startDate.setHours(startHours, startMinutes, 0, 0);
+									
+									const endDate = new Date(baseDate);
+									endDate.setHours(endHours, endMinutes, 0, 0);
+									
+									// If end time is before or equal to start time, assume it's the next day
+									if (endDate <= startDate) {
+										endDate.setDate(endDate.getDate() + 1);
 									}
 
 									setSavingActivity(true);
@@ -1707,9 +1828,10 @@ export default function Calendar() {
 											staffName: staffDoc.data().userName || user.displayName || '',
 											activityType: activityType,
 											description: activityDescription.trim() || null,
-											startTime: selectedSlot.start.toISOString(),
-											endTime: selectedSlot.end.toISOString(),
-											date: selectedSlot.start.toISOString().split('T')[0],
+											startTime: startDate.toISOString(),
+											endTime: endDate.toISOString(),
+											date: startDate.toISOString().split('T')[0],
+											allDay: activityAllDay,
 											createdAt: serverTimestamp(),
 										});
 
@@ -1717,6 +1839,9 @@ export default function Calendar() {
 										setSelectedSlot(null);
 										setActivityType('');
 										setActivityDescription('');
+										setActivityAllDay(false);
+										setCustomStartTime('');
+										setCustomEndTime('');
 									} catch (error) {
 										console.error('Failed to save activity:', error);
 										const errorMessage = error instanceof Error ? error.message : 'Unknown error';
