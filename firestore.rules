@@ -309,8 +309,11 @@ service cloud.firestore {
       // Clinical team, FrontDesk, and Admin can create report versions
       allow create: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
       
-      // Only admins can update or delete report versions
-      allow update, delete: if isAdmin();
+      // Only admins can update report versions
+      allow update: if isAdmin();
+      
+      // Clinical team, FrontDesk, and Admin can delete report versions
+      allow delete: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
     }
 
     // -------------------------------
@@ -325,6 +328,24 @@ service cloud.firestore {
       
       // Only admins can delete strength conditioning reports
       allow delete: if isAdmin();
+    }
+
+    // -------------------------------
+    // STRENGTH CONDITIONING REPORT VERSIONS COLLECTION
+    // -------------------------------
+    // Stores version history of strength and conditioning reports
+    match /strengthConditioningReportVersions/{versionId} {
+      // Clinical team, FrontDesk, and Admin can read strength conditioning report versions
+      allow read: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      
+      // Clinical team, FrontDesk, and Admin can create strength conditioning report versions
+      allow create: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      
+      // Only admins can update strength conditioning report versions
+      allow update: if isAdmin();
+      
+      // Clinical team, FrontDesk, and Admin can delete strength conditioning report versions
+      allow delete: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
     }
 
     // -------------------------------
