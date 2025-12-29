@@ -817,7 +817,7 @@ export default function Billing() {
 						invoiceGeneratedAt: data.invoiceGeneratedAt ? String(data.invoiceGeneratedAt) : undefined,
 					} as BillingRecord;
 				});
-				setBilling(mapped);
+				setBilling([...mapped]);
 				setLoading(false);
 			},
 			error => {
@@ -848,7 +848,7 @@ export default function Billing() {
 						amount: data.amount ? Number(data.amount) : 1200,
 					};
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments', error);
@@ -879,7 +879,7 @@ export default function Billing() {
 						closedAt: closed ? closed.toISOString() : undefined,
 					} as BillingCycle;
 				});
-				setBillingCycles(mapped);
+				setBillingCycles([...mapped]);
 			},
 			error => {
 				console.error('Failed to load billing cycles', error);
@@ -945,40 +945,9 @@ export default function Billing() {
 							billAmount = standardAmount;
 						}
 					} else if (patientType === 'Dyes' || patientType === 'DYES') {
-						// DYES: Conditional billing based on total sessions in current calendar year
+						// DYES: Automated billing - Rs. 500 per session, status 'Completed' (Paid)
 						shouldCreateBill = true;
-						
-						try {
-							// Get current calendar year dates
-							const { startDate, endDate } = getCurrentCalendarYear();
-							
-							// Query completed appointments for this patient in current calendar year
-							const completedSessionsQuery = query(
-								collection(db, 'appointments'),
-								where('patientId', '==', appt.patientId),
-								where('status', '==', 'completed'),
-								where('date', '>=', startDate),
-								where('date', '<=', endDate)
-							);
-							const completedSessionsSnapshot = await getDocs(completedSessionsQuery);
-							const totalSessionsThisYear = completedSessionsSnapshot.size;
-							
-							// Apply DYES billing rule:
-							// - If ≤ 500 sessions: amount = 0, status = 'Pending'
-							// - If ≥ 501 sessions: standard amount, status = 'Auto-Paid'
-							if (totalSessionsThisYear <= 500) {
-								billAmount = 0;
-								// Status will be set to 'Pending' below
-							} else {
-								// 501 or more sessions: charge standard rate
-								billAmount = standardAmount;
-								// Status will be set to 'Auto-Paid' below
-							}
-						} catch (error) {
-							console.error('Error calculating DYES billing:', error);
-							// Fallback to standard amount if query fails
-							billAmount = standardAmount;
-						}
+						billAmount = 500; // Fixed rate for DYES patients
 					} else if (patientType === 'Gethhma') {
 						// Gethhma: Treat as "Paid" without concession
 						shouldCreateBill = true;
@@ -991,14 +960,39 @@ export default function Billing() {
 
 					// Create billing record if rules allow
 					if (shouldCreateBill) {
-						const billingId = 'BILL-' + (appt.appointmentId || Date.now().toString());
+						// Check if billing record already exists
+						const existingQuery = query(collection(db, 'billing'), where('appointmentId', '==', appt.appointmentId));
+						const existingSnapshot = await getDocs(existingQuery);
 						
 						// Determine status based on patient type and billing rules
 						let billStatus: 'Pending' | 'Completed' | 'Auto-Paid' = 'Pending';
-						if ((patientType === 'Dyes' || patientType === 'DYES') && billAmount > 0) {
-							// DYES patients with 501+ sessions get Auto-Paid status
-							billStatus = 'Auto-Paid';
+						if (patientType === 'Dyes' || patientType === 'DYES') {
+							// DYES patients: Auto-Paid and marked as 'Completed' (bypasses Pending Payments)
+							billStatus = 'Completed';
+						} else if (billAmount > 0) {
+							billStatus = 'Pending';
 						}
+
+						if (!existingSnapshot.empty) {
+							// Billing record exists - update it if it's a DYES patient to ensure correct status and amount
+							const existingBill = existingSnapshot.docs[0];
+							const existingBillData = existingBill.data();
+							
+							if (patientType === 'Dyes' || patientType === 'DYES') {
+								// For DYES patients, update existing bills to ensure status is 'Completed' and amount is 500
+								if (existingBillData.status !== 'Completed' || existingBillData.amount !== 500) {
+									await updateDoc(doc(db, 'billing', existingBill.id), {
+										amount: 500,
+										status: 'Completed',
+										paymentMode: 'Auto-Paid',
+										updatedAt: serverTimestamp(),
+									});
+								}
+							}
+							continue;
+						}
+
+						const billingId = 'BILL-' + (appt.appointmentId || Date.now().toString());
 						
 						await addDoc(collection(db, 'billing'), {
 							billingId,
@@ -1009,7 +1003,7 @@ export default function Billing() {
 							amount: billAmount,
 							date: appt.date || new Date().toISOString().split('T')[0],
 							status: billStatus,
-							paymentMode: billStatus === 'Auto-Paid' ? 'Auto-Paid' : null,
+							paymentMode: billStatus === 'Completed' && (patientType === 'Dyes' || patientType === 'DYES') ? 'Auto-Paid' : null,
 							utr: null,
 							createdAt: serverTimestamp(),
 							updatedAt: serverTimestamp(),
@@ -1499,7 +1493,7 @@ export default function Billing() {
 						patientType: data.patientType ? String(data.patientType) : '',
 					};
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);

@@ -67,7 +67,7 @@ export default function ImportPatients({ onClose }: ImportPatientsProps) {
 				const e = validateLocal(r, idx);
 				if (e) errs.push({ index: idx, error: e });
 			});
-			setRows(mapped);
+			setRows([...mapped]);
 			setErrors(errs);
 			setShowPreview(true);
 		} catch (e) {

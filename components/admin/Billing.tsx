@@ -884,7 +884,7 @@ export default function Billing() {
 						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
 					} as AdminAppointmentRecord & { id: string; amount?: number; billingDeleted?: boolean };
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 				setLoading(false);
 			},
 			error => {
@@ -924,7 +924,7 @@ export default function Billing() {
 							: undefined,
 					} as AdminPatientRecord & { id: string; department?: string };
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);
@@ -950,7 +950,7 @@ export default function Billing() {
 						userEmail: data.userEmail ? String(data.userEmail) : undefined,
 					} as StaffMember;
 				});
-				setStaff(mapped);
+				setStaff([...mapped]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -981,7 +981,7 @@ export default function Billing() {
 						closedAt: closed ? closed.toISOString() : undefined,
 					} as BillingCycle;
 				});
-				setBillingCycles(mapped);
+				setBillingCycles([...mapped]);
 			},
 			error => {
 				console.error('Failed to load billing cycles', error);
@@ -1062,7 +1062,7 @@ export default function Billing() {
 						paymentRegisteredByFrontdeskName: data.paymentRegisteredByFrontdeskName ? String(data.paymentRegisteredByFrontdeskName) : undefined,
 					} as BillingRecord;
 				});
-				setBilling(mapped);
+				setBilling([...mapped]);
 			},
 			error => {
 				console.error('Failed to load billing', error);
@@ -1136,40 +1136,9 @@ export default function Billing() {
 							billAmount = standardAmount;
 						}
 					} else if (patientType === 'Dyes' || patientType === 'DYES') {
-						// DYES: Conditional billing based on total sessions in current calendar year
+						// DYES: Automated billing - Rs. 500 per session, status 'Completed' (Paid)
 						shouldCreateBill = true;
-						
-						try {
-							// Get current calendar year dates
-							const { startDate, endDate } = getCurrentCalendarYear();
-							
-							// Query completed appointments for this patient in current calendar year
-							const completedSessionsQuery = query(
-								collection(db, 'appointments'),
-								where('patientId', '==', appt.patientId),
-								where('status', '==', 'completed'),
-								where('date', '>=', startDate),
-								where('date', '<=', endDate)
-							);
-							const completedSessionsSnapshot = await getDocs(completedSessionsQuery);
-							const totalSessionsThisYear = completedSessionsSnapshot.size;
-							
-							// Apply DYES billing rule:
-							// - If ≤ 500 sessions: amount = 0, status = 'Pending'
-							// - If ≥ 501 sessions: standard amount, status = 'Auto-Paid'
-							if (totalSessionsThisYear <= 500) {
-								billAmount = 0;
-								// Status will be set to 'Pending' below
-							} else {
-								// 501 or more sessions: charge standard rate
-								billAmount = standardAmount;
-								// Status will be set to 'Auto-Paid' below
-							}
-						} catch (error) {
-							console.error('Error calculating DYES billing:', error);
-							// Fallback to standard amount if query fails
-							billAmount = standardAmount;
-						}
+						billAmount = 500; // Fixed rate for DYES patients
 					} else if (patientType === 'Gethhma') {
 						// Gethhma: Treat as "Paid" without concession
 						shouldCreateBill = true;
@@ -1185,16 +1154,44 @@ export default function Billing() {
 						// Check if billing record already exists
 						const existingQuery = query(collection(db, 'billing'), where('appointmentId', '==', appt.appointmentId));
 						const existingSnapshot = await getDocs(existingQuery);
-						if (!existingSnapshot.empty) continue;
-
-						const billingId = 'BILL-' + (appt.appointmentId || Date.now().toString());
 						
 						// Determine status based on patient type and billing rules
 						let billStatus: 'Pending' | 'Completed' | 'Auto-Paid' = 'Pending';
-						if ((patientType === 'Dyes' || patientType === 'DYES') && billAmount > 0) {
-							// DYES patients with 501+ sessions get Auto-Paid status
-							billStatus = 'Auto-Paid';
+						if (patientType === 'Dyes' || patientType === 'DYES') {
+							// DYES patients: Auto-Paid and marked as 'Completed' (bypasses Pending Payments)
+							billStatus = 'Completed';
+						} else if (billAmount > 0) {
+							billStatus = 'Pending';
 						}
+
+						if (!existingSnapshot.empty) {
+							// Billing record exists - update it if it's a DYES patient to ensure correct status and amount
+							const existingBill = existingSnapshot.docs[0];
+							const existingBillData = existingBill.data();
+							
+							if (patientType === 'Dyes' || patientType === 'DYES') {
+								// For DYES patients, update existing bills to ensure status is 'Completed' and amount is 500
+								if (existingBillData.status !== 'Completed' || existingBillData.amount !== 500) {
+									await updateDoc(doc(db, 'billing', existingBill.id), {
+										amount: 500,
+										status: 'Completed',
+										paymentMode: 'Auto-Paid',
+										updatedAt: serverTimestamp(),
+									});
+									
+									// Also update appointment with billing info
+									await updateDoc(doc(db, 'appointments', appt.id), {
+										billing: {
+											amount: '500.00',
+											date: defaultBillingDate,
+										},
+									});
+								}
+							}
+							continue;
+						}
+
+						const billingId = 'BILL-' + (appt.appointmentId || Date.now().toString());
 						
 						// Create billing record in billing collection
 						await addDoc(collection(db, 'billing'), {
@@ -1206,7 +1203,7 @@ export default function Billing() {
 							amount: billAmount,
 							date: appt.date || defaultBillingDate,
 							status: billStatus,
-							paymentMode: billStatus === 'Auto-Paid' ? 'Auto-Paid' : null,
+							paymentMode: billStatus === 'Completed' && (patientType === 'Dyes' || patientType === 'DYES') ? 'Auto-Paid' : null,
 							utr: null,
 							createdByFrontdesk: currentUser?.uid || null,
 							createdByFrontdeskName: currentUser?.displayName || currentUser?.email || null,

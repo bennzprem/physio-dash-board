@@ -232,7 +232,7 @@ export default function InventoryManagement() {
 					} as IssueRecord;
 				});
 
-				setIssueRecords(mapped);
+				setIssueRecords([...mapped]);
 			},
 			error => {
 				console.error('Failed to load issue records', error);
@@ -261,7 +261,7 @@ export default function InventoryManagement() {
 					};
 				});
 				// Filter to show only active staff members
-				setStaff(mapped.filter(s => s.status === 'Active'));
+				setStaff([...mapped.filter(s => s.status === 'Active')]);
 			},
 			error => {
 				console.error('Failed to load staff', error);

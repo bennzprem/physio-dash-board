@@ -158,7 +158,7 @@ export default function RescheduleDialog({
 						duration: typeof data.duration === 'number' ? data.duration : undefined,
 					};
 				});
-				setAllClinicianAppointments(mapped);
+				setAllClinicianAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments for slot filtering', error);

@@ -572,7 +572,7 @@ export default function Patients() {
 						registeredByEmail: data.registeredByEmail ? String(data.registeredByEmail) : undefined,
 					} as FrontdeskPatient & { deleted?: boolean; deletedAt?: string | null };
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 				setLoading(false);
 			},
 			error => {
@@ -604,7 +604,7 @@ export default function Patients() {
 						status: (data.status as AdminAppointmentStatus) ?? 'pending',
 					} as AppointmentRecord;
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments', error);
@@ -682,7 +682,7 @@ export default function Patients() {
 									: 0,
 					} as BillingRecord;
 				});
-				setBilling(mapped);
+				setBilling([...mapped]);
 			},
 			error => {
 				console.error('Failed to load billing', error);

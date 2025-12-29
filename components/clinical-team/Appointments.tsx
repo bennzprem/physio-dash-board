@@ -16,6 +16,7 @@ import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
 import type { RecordSessionUsageResult } from '@/lib/sessionAllowanceClient';
 import EditReportModal from '@/components/clinical-team/EditReportModal';
 import { createInitialSessionAllowance } from '@/lib/sessionAllowance';
+import { createDYESBilling } from '@/lib/dyesBilling';
 
 interface FrontdeskAppointment {
 	id: string;
@@ -236,6 +237,30 @@ export default function Appointments() {
 	const [registerNotice, setRegisterNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 	const [newlyRegisteredPatientId, setNewlyRegisteredPatientId] = useState<string | null>(null);
 	const [patientSearchTerm, setPatientSearchTerm] = useState('');
+	const [billingRecords, setBillingRecords] = useState<Array<{ appointmentId?: string; status: 'Pending' | 'Completed' | 'Auto-Paid' }>>([]);
+
+	// Load billing records from Firestore
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'billing'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						appointmentId: data.appointmentId ? String(data.appointmentId) : undefined,
+						status: (data.status as 'Pending' | 'Completed' | 'Auto-Paid') || 'Pending',
+					};
+				});
+				setBillingRecords([...mapped]);
+			},
+			error => {
+				console.error('Failed to load billing records', error);
+				setBillingRecords([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, []);
 
 	// Load appointments from Firestore
 	useEffect(() => {
@@ -264,7 +289,7 @@ export default function Appointments() {
 						packageName: data.packageName ? String(data.packageName) : undefined,
 					} as FrontdeskAppointment;
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 				setLoading(false);
 			},
 			error => {
@@ -358,7 +383,7 @@ export default function Appointments() {
 						}))
 					});
 				}
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);
@@ -387,10 +412,10 @@ export default function Appointments() {
 					} as StaffMember;
 				});
 				// Only include clinical roles (exclude FrontDesk and Admin)
-				setStaff(mapped.filter(s => 
+				setStaff([...mapped.filter(s => 
 					s.status === 'Active' && 
 					['Physiotherapist', 'StrengthAndConditioning', 'ClinicalTeam'].includes(s.role)
-				));
+				)]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -852,6 +877,25 @@ export default function Appointments() {
 					});
 				} catch (sessionError) {
 					console.error('Failed to record DYES session usage:', sessionError);
+				}
+
+				// Automatically create billing for DYES patients
+				const patientType = (patientDetails.patientType || '').toUpperCase();
+				if (patientType === 'DYES' || patientType === 'DYES') {
+					try {
+						await createDYESBilling({
+							appointmentId: appointment.appointmentId,
+							appointmentDocId: appointment.id,
+							patientId: appointment.patientId,
+							patientName: appointment.patient || '',
+							doctorName: appointment.doctor || '',
+							appointmentDate: appointment.date || '',
+							createdByUserId: user?.uid || null,
+							createdByUserName: user?.displayName || user?.email || null,
+						});
+					} catch (billingError) {
+						console.error('Failed to create automatic DYES billing:', billingError);
+					}
 				}
 			}
 
@@ -2340,7 +2384,6 @@ export default function Appointments() {
 													};
 												});
 											}}
-											min={new Date().toISOString().split('T')[0]}
 											className="input-base mt-2"
 											required
 										/>
@@ -2812,6 +2855,7 @@ export default function Appointments() {
 												<th className="px-4 py-3 font-semibold">Clinician</th>
 												<th className="px-4 py-3 font-semibold">When</th>
 												<th className="px-4 py-3 font-semibold">Status</th>
+												<th className="px-4 py-3 font-semibold">Amount</th>
 												<th className="px-4 py-3 font-semibold">Notes</th>
 												<th className="px-4 py-3 font-semibold text-right">Actions</th>
 											</tr>
@@ -2837,6 +2881,10 @@ export default function Appointments() {
 												}
 												const displayDoctorName = doctorName || 'Not assigned';
 
+												// Get billing status for this appointment
+												const billingRecord = billingRecords.find(b => b.appointmentId === appointment.appointmentId);
+												const paymentStatus = billingRecord?.status || null;
+
 												return (
 													<tr key={appointment.appointmentId}>
 														<td className="px-4 py-4">
@@ -2856,7 +2904,6 @@ export default function Appointments() {
 																			type="date"
 																			value={dateTimeDraft.date}
 																			onChange={e => setDateTimeDraft(prev => ({ ...prev, date: e.target.value }))}
-																			min={new Date().toISOString().split('T')[0]}
 																			className="input-base text-xs"
 																			required
 																		/>
@@ -2924,6 +2971,23 @@ export default function Appointments() {
 																<option value="completed">Completed</option>
 																<option value="cancelled">Cancelled</option>
 															</select>
+														</td>
+														<td className="px-4 py-4">
+															{paymentStatus ? (
+																<span
+																	className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+																		paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid'
+																			? 'bg-green-100 text-green-800'
+																			: 'bg-amber-100 text-amber-800'
+																	}`}
+																>
+																	{paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid'
+																		? 'Completed'
+																		: 'Pending'}
+																</span>
+															) : (
+																<span className="text-xs text-slate-400">—</span>
+															)}
 														</td>
 														<td className="px-4 py-4">
 															{isEditing ? (

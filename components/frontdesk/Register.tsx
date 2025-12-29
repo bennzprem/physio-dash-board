@@ -201,7 +201,7 @@ export default function Register() {
 							: null,
 					} as FrontdeskPatient;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 				setLoading(false);
 			},
 			error => {

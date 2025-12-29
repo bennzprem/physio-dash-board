@@ -130,7 +130,7 @@ export default function Calendar() {
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined),
 					};
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 				patientsLoaded = true;
 				checkAllLoaded();
 			},
@@ -158,7 +158,7 @@ export default function Calendar() {
 						notes: data.notes ? String(data.notes) : undefined,
 					};
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 				appointmentsLoaded = true;
 				console.log('Loaded appointments:', mapped.length);
 				if (mapped.length > 0) {
@@ -186,7 +186,7 @@ export default function Calendar() {
 						status: data.status ? String(data.status) : '',
 					};
 				});
-				setStaff(mapped);
+				setStaff([...mapped]);
 				staffLoaded = true;
 				checkAllLoaded();
 			},

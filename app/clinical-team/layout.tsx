@@ -15,14 +15,16 @@ import MyPerformance from '@/components/clinical-team/MyPerformance';
 import PerformanceRating from '@/components/clinical-team/PerformanceRating';
 import InventoryManagement from '@/components/InventoryManagement';
 import LeaveManagement from '@/components/LeaveManagement';
+import Billing from '@/components/clinical-team/Billing';
 import { useAuth } from '@/contexts/AuthContext';
 
-type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'availability' | 'transfer' | 'appointments' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'my-performance' | 'performance-rating';
+type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'availability' | 'transfer' | 'appointments' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'my-performance' | 'performance-rating' | 'billing';
 
 const clinicalTeamLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-dumbbell' },
 	{ href: '#calendar', label: 'Calendar', icon: 'fas fa-calendar-week' },
 	{ href: '#appointments', label: 'Patient Management', icon: 'fas fa-calendar-check' },
+	{ href: '#billing', label: 'Billing', icon: 'fas fa-file-invoice-dollar' },
 	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
 	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
 	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
@@ -83,6 +85,8 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 			setActivePage('calendar');
 		} else if (pathname?.includes('/appointments')) {
 			setActivePage('appointments');
+		} else if (pathname?.includes('/billing')) {
+			setActivePage('billing');
 		} else if (pathname?.includes('/notifications')) {
 			setActivePage('notifications');
 		} else if (pathname?.includes('/inventory')) {
@@ -141,6 +145,8 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 				return <Calendar />;
 			case 'appointments':
 				return <Appointments />;
+			case 'billing':
+				return <Billing />;
 		case 'notifications':
 			return <Notifications />;
 		case 'inventory':

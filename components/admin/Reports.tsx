@@ -162,7 +162,8 @@ export default function Reports() {
 						department: data.department ? String(data.department) : undefined,
 					} as AdminPatientRecord & { id: string; patientType?: string; department?: string };
 				});
-				setPatients(mapped);
+				// Force update by creating a new array reference
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);
@@ -194,7 +195,8 @@ export default function Reports() {
 						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
 					} as AdminAppointmentRecord & { id: string };
 				});
-				setAppointments(mapped);
+				// Force update by creating a new array reference
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments', error);
@@ -220,7 +222,8 @@ export default function Reports() {
 						profileImage: data.profileImage ? String(data.profileImage) : undefined,
 					} as StaffMember;
 				});
-				setStaff(mapped);
+				// Force update by creating a new array reference
+				setStaff([...mapped]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -250,7 +253,8 @@ export default function Reports() {
 						date: data.date ? String(data.date) : '',
 					} as BillingRecord;
 				});
-				setBilling(mapped);
+				// Force update by creating a new array reference
+				setBilling([...mapped]);
 			},
 			error => {
 				console.error('Failed to load billing', error);

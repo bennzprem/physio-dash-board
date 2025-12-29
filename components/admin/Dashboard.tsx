@@ -182,7 +182,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						status: (data.status as AdminPatientStatus) ?? 'pending',
 					} as PatientRecord;
 				});
-				setPatients(mapped);
+				setPatients([...mapped]);
 			},
 			error => {
 				console.error('Failed to load patients', error);
@@ -208,7 +208,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						status: (data.status as AdminAppointmentStatus) ?? 'pending',
 					} as AppointmentRecord;
 				});
-				setAppointments(mapped);
+				setAppointments([...mapped]);
 			},
 			error => {
 				console.error('Failed to load appointments', error);
@@ -232,7 +232,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						status: data.status ? String(data.status) : '',
 					} as StaffMember;
 				});
-				setStaff(mapped.filter(s => s.status === 'Active'));
+				setStaff([...mapped.filter(s => s.status === 'Active')]);
 			},
 			error => {
 				console.error('Failed to load staff', error);
@@ -256,7 +256,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						status: data.status ? String(data.status) : '',
 					} as UserRecord;
 				});
-				setUsers(mapped.filter(u => u.status === 'Active'));
+				setUsers([...mapped.filter(u => u.status === 'Active')]);
 			},
 			error => {
 				console.error('Failed to load users', error);
@@ -289,7 +289,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || '',
 					} as AuditLogEntry;
 				});
-				setRecentAuditLogs(mapped);
+				setRecentAuditLogs([...mapped]);
 			},
 			error => {
 				console.error('Failed to load recent audit logs', error);

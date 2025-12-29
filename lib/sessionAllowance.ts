@@ -1,6 +1,7 @@
 import type { SessionAllowance } from './types';
 
 export const DYES_ANNUAL_SESSION_CAP = 500;
+export const DYES_SESSION_RATE = 500; // Default session rate for DYES patients in rupees
 
 export interface AllowanceRefreshResult {
 	allowance: SessionAllowance;

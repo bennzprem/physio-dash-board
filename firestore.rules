@@ -465,6 +465,44 @@ service cloud.firestore {
     }
 
     // -------------------------------
+    // RATING REQUESTS COLLECTION
+    // -------------------------------
+    // Stores rating requests from clinical team members to super admins
+    match /ratingRequests/{requestId} {
+      // Helper function to check if user is an authorized rater (super admin)
+      function isAuthorizedRater() {
+        return isLoggedIn() && 
+               request.auth.token.email != null &&
+               (request.auth.token.email.toLowerCase() == 'dharanjaydubey@css.com' ||
+                request.auth.token.email.toLowerCase() == 'shajisp@css.com');
+      }
+      
+      // Users can read their own requests
+      // Authorized raters can read all pending requests
+      allow read: if isLoggedIn() && (
+        (resource != null && 
+         resource.data.requestedByEmail != null &&
+         request.auth.token.email != null &&
+         resource.data.requestedByEmail.toLowerCase() == request.auth.token.email.toLowerCase()) ||
+        (isAuthorizedRater() && 
+         resource != null &&
+         resource.data.status == 'Pending')
+      );
+      
+      // Logged in users can create their own rating requests
+      allow create: if isLoggedIn() && 
+                    request.resource.data.requestedById != null &&
+                    request.resource.data.requestedByName != null &&
+                    request.resource.data.requestedByEmail != null &&
+                    request.resource.data.status == 'Pending' &&
+                    request.auth.token.email != null &&
+                    request.resource.data.requestedByEmail.toLowerCase() == request.auth.token.email.toLowerCase();
+      
+      // Authorized raters can delete (process) rating requests
+      allow delete: if isLoggedIn() && isAuthorizedRater();
+    }
+
+    // -------------------------------
     // DENY EVERYTHING ELSE
     // -------------------------------
     match /{document=**} {

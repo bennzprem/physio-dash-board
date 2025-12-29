@@ -861,6 +861,7 @@ export async function generatePhysiotherapyReportPDF(
 export interface StrengthConditioningData {
 	therapistName?: string;
 	assessmentDate?: string; // Date of assessment
+	uploadedPdfUrl?: string | null; // URL of uploaded PDF document
 	// Athlete Profile
 	sports?: string;
 	trainingAge?: string;
@@ -949,6 +950,7 @@ export interface StrengthConditioningPDFData {
 		email?: string;
 	};
 	formData: StrengthConditioningData;
+	uploadedPdfUrl?: string | null;
 }
 
 export async function generateStrengthConditioningPDF(
@@ -1377,6 +1379,11 @@ export async function generateStrengthConditioningPDF(
 
 		// Summary
 		if (data.formData.summary) {
+			// Check if we need a new page
+			if (y > pageHeight - 30) {
+				doc.addPage();
+				y = 20;
+			}
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('Summary', pageMargin, y);
@@ -1386,6 +1393,96 @@ export async function generateStrengthConditioningPDF(
 			doc.setFont('helvetica', 'normal');
 			const summaryLines = doc.splitTextToSize(data.formData.summary, pageWidth - 2 * pageMargin);
 			doc.text(summaryLines, pageMargin, y);
+			y = (doc as any).lastAutoTable?.finalY || y + summaryLines.length * 5;
+		}
+
+		// Add uploaded PDF if available
+		if (data.uploadedPdfUrl) {
+			try {
+				// Check if we need a new page
+				if (y > pageHeight - 40) {
+					doc.addPage();
+					y = 20;
+				} else {
+					y += 10;
+				}
+				
+				doc.setFontSize(12);
+				doc.setFont('helvetica', 'bold');
+				doc.text('Attached Document', pageMargin, y);
+				y += 8;
+				
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal');
+				doc.text('An attached PDF document has been uploaded and is available at:', pageMargin, y);
+				y += 6;
+				
+				// Add the URL as a clickable link (will appear as text in PDF)
+				doc.setTextColor(0, 0, 255);
+				const urlLines = doc.splitTextToSize(data.uploadedPdfUrl, pageWidth - 2 * pageMargin);
+				doc.text(urlLines, pageMargin, y);
+				y += urlLines.length * 5 + 5;
+				doc.setTextColor(0, 0, 0);
+				
+				// Try to merge PDFs using pdf-lib if available
+				try {
+					const { PDFDocument } = await import('pdf-lib');
+					
+					// Fetch the uploaded PDF
+					const response = await fetch(data.uploadedPdfUrl);
+					const pdfBlob = await response.blob();
+					const arrayBuffer = await pdfBlob.arrayBuffer();
+					const uploadedPdfDoc = await PDFDocument.load(arrayBuffer);
+					const uploadedPages = uploadedPdfDoc.getPages();
+					
+					// Get current PDF as bytes
+					const currentPdfBytes = doc.output('arraybuffer');
+					const currentPdfDoc = await PDFDocument.load(currentPdfBytes);
+					
+					// Copy all pages from uploaded PDF
+					const pagesToCopy = await currentPdfDoc.copyPages(uploadedPdfDoc, uploadedPages.map((_, i) => i));
+					pagesToCopy.forEach((page) => {
+						currentPdfDoc.addPage(page);
+					});
+					
+					// Save the merged PDF
+					const mergedPdfBytes = await currentPdfDoc.save();
+					const mergedBlob = new Blob([mergedPdfBytes as BlobPart], { type: 'application/pdf' });
+					
+					if (options?.forPrint) {
+						const pdfUrl = URL.createObjectURL(mergedBlob);
+						const printWindow = window.open(pdfUrl, '_blank');
+						if (printWindow) {
+							setTimeout(() => {
+								try {
+									printWindow.print();
+								} catch (winError) {
+									console.error('Window print failed:', winError);
+								}
+							}, 1500);
+						}
+						return;
+					} else {
+						const fileName = `Strength_Conditioning_${data.patient.patientId || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`;
+						const url = URL.createObjectURL(mergedBlob);
+						const link = document.createElement('a');
+						link.href = url;
+						link.download = fileName;
+						document.body.appendChild(link);
+						link.click();
+						document.body.removeChild(link);
+						URL.revokeObjectURL(url);
+						return;
+					}
+				} catch (pdfLibError) {
+					// If pdf-lib is not available, continue with normal PDF generation
+					// The note about the attached document has already been added
+					console.warn('PDF merging library (pdf-lib) not available. Install it with: npm install pdf-lib', pdfLibError);
+				}
+			} catch (error) {
+				console.error('Error processing uploaded PDF:', error);
+				// Continue with normal PDF generation if processing fails
+			}
 		}
 
 		// Handle print or download
