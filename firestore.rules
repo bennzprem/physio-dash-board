@@ -3,14 +3,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // -------------------------------
-    // Helper Functions
-    // -------------------------------
+    // =========================================================
+    // 1. HELPER FUNCTIONS
+    // =========================================================
     function isLoggedIn() {
       return request.auth != null;
     }
 
-    // This looks up the role in your Database (checks staff collection first, then users collection)
+    // Role lookup logic
     function getRole() {
       return isLoggedIn() && exists(/databases/$(database)/documents/staff/$(request.auth.uid)) && 
              'role' in get(/databases/$(database)/documents/staff/$(request.auth.uid)).data
@@ -21,7 +21,6 @@ service cloud.firestore {
           : null);
     }
 
-    // Role Checks (Case insensitive just to be safe if you want)
     function isAdmin() {
       let role = getRole();
       return role == "admin" || role == "Admin" || role == "SuperAdmin" || role == "superadmin" || role == "Super Admin";
@@ -39,25 +38,21 @@ service cloud.firestore {
 
     function isClinic() {
       let role = getRole();
-      // Include all clinical team roles: ClinicalTeam, Physiotherapist, StrengthAndConditioning, and clinic
       return role == "clinic" || 
-             role == "Clinic" ||
+             role == "Clinic" || 
              role == "ClinicalTeam" || 
              role == "Physiotherapist" || 
              role == "StrengthAndConditioning";
     }
 
-    // Check if staff document belongs to the authenticated user
     function isOwnStaffDoc() {
       return isLoggedIn() && (
-        // For updates: check existing document (resource exists for updates, not for creates)
         (resource != null && (
           ('authUid' in resource.data && request.auth.uid == resource.data.authUid) ||
           (request.auth.token.email != null && 
            'userEmail' in resource.data &&
            request.auth.token.email == resource.data.userEmail)
         )) ||
-        // For creates/updates: check new data being written
         ('authUid' in request.resource.data && request.auth.uid == request.resource.data.authUid) ||
         (request.auth.token.email != null && 
          'userEmail' in request.resource.data &&
@@ -65,446 +60,221 @@ service cloud.firestore {
       );
     }
 
-    // -------------------------------
-    // USERS COLLECTION
-    // -------------------------------
+    // =========================================================
+    // 2. CORE COLLECTIONS
+    // =========================================================
+
+    // USERS
     match /users/{uid} {
-      // Users can view their own profile; admins can view all
-      allow read: if isLoggedIn() && 
-                  (request.auth.uid == uid || isAdmin());
-      
-      // Admin can edit any user; user can edit their own doc
+      allow read: if isLoggedIn() && (request.auth.uid == uid || isAdmin());
       allow write: if isAdmin() || request.auth.uid == uid;
     }
 
-    // -------------------------------
-    // PATIENTS COLLECTION
-    // -------------------------------
+    // PATIENTS
     match /patients/{id} {
       allow read: if isLoggedIn();
-      // Allow FrontDesk, Admin, and Clinical Team (including Physiotherapist, StrengthAndConditioning, ClinicalTeam) to create/update
-      // Also allow any logged-in user to update if they're updating report-related fields (fallback for cases where role lookup fails)
       allow create, update: if isFrontdesk() || isAdmin() || isClinic() || 
                             (isLoggedIn() && 
-                             // Fallback: allow if updating report fields (clinical team saving reports)
-                             // This handles cases where staff document ID doesn't match auth.uid
-                             (request.resource.data.keys().hasAny([
-                               'complaints', 'presentHistory', 'pastHistory', 'med_xray', 'med_mri', 
-                               'med_report', 'med_ct', 'surgicalHistory', 'per_smoking', 'per_drinking',
-                               'per_alcohol', 'per_drugs', 'sleepCycle', 'hydration', 'nutrition',
-                               'siteSide', 'onset', 'duration', 'natureOfInjury', 'typeOfPain',
-                               'vasScale', 'aggravatingFactor', 'relievingFactor', 'rom', 'mmt',
-                               'treatmentProvided', 'progressNotes', 'physioName', 'physioId',
-                               'dateOfConsultation', 'referredBy', 'chiefComplaint', 'clinicalDiagnosis',
-                               'treatmentPlan', 'followUpVisits', 'totalSessionsRequired', 'remainingSessions',
-                               'currentPainStatus', 'currentRom', 'currentStrength', 'currentFunctionalAbility',
-                               'complianceWithHEP', 'recommendations', 'physiotherapistRemarks',
-                               'packageAmount', 'packageName', 'packageDescription', 'concessionPercent', 'paymentType', 'paymentDescription'
-                             ])));
+                            (request.resource.data.keys().hasAny([
+                              'complaints', 'presentHistory', 'pastHistory', 'med_xray', 'med_mri', 
+                              'med_report', 'med_ct', 'surgicalHistory', 'per_smoking', 'per_drinking',
+                              'per_alcohol', 'per_drugs', 'sleepCycle', 'hydration', 'nutrition',
+                              'siteSide', 'onset', 'duration', 'natureOfInjury', 'typeOfPain',
+                              'vasScale', 'aggravatingFactor', 'relievingFactor', 'rom', 'mmt',
+                              'treatmentProvided', 'progressNotes', 'physioName', 'physioId',
+                              'dateOfConsultation', 'referredBy', 'chiefComplaint', 'clinicalDiagnosis',
+                              'treatmentPlan', 'followUpVisits', 'totalSessionsRequired', 'remainingSessions',
+                              'currentPainStatus', 'currentRom', 'currentStrength', 'currentFunctionalAbility',
+                              'complianceWithHEP', 'recommendations', 'physiotherapistRemarks',
+                              'packageAmount', 'packageName', 'packageDescription', 'concessionPercent', 'paymentType', 'paymentDescription'
+                            ])));
       allow delete: if isAdmin();
     }
 
-    // -------------------------------
-    // APPOINTMENTS COLLECTION
-    // -------------------------------
+    // APPOINTMENTS
     match /appointments/{id} {
       allow read: if isLoggedIn();
       allow create: if isFrontdesk() || isAdmin() || isClinic();
       allow update: if isFrontdesk() || isAdmin() || isClinic();
-      allow delete: if isAdmin() || isFrontdesk();
+      allow delete: if isAdmin() || isFrontdesk() || isClinic();
     }
 
-    // -------------------------------
-    // BILLING COLLECTION
-    // -------------------------------
+    // BILLING & CYCLES
     match /billing/{id} {
       allow read: if isLoggedIn();
       allow create, update: if isFrontdesk() || isAdmin() || isClinic();
       allow delete: if isAdmin();
     }
-
-    // -------------------------------
-    // BILLING CYCLES COLLECTION
-    // -------------------------------
     match /billingCycles/{id} {
-      // All logged-in users can read billing cycles
       allow read: if isLoggedIn();
-      // Only Admin and FrontDesk can create/update/delete billing cycles
       allow create, update, delete: if isFrontdesk() || isAdmin();
     }
 
-    // -------------------------------
-    // AUDIT LOGS COLLECTION
-    // -------------------------------
+    // AUDIT LOGS
     match /auditLogs/{id} {
-      // Admins and SuperAdmins can see all audit logs in the UI
       allow read: if isAdmin() || isSuperAdmin();
-
-      // Any logged-in user or system component can write audit entries
       allow create: if isLoggedIn();
-
-      // Only admins and super admins can modify or delete existing logs
       allow update, delete: if isAdmin() || isSuperAdmin();
     }
 
-    // -------------------------------
-    // STAFF COLLECTION
-    // -------------------------------
+    // STAFF & ADMIN
     match /staff/{id} {
       allow read: if isLoggedIn();
-      
-      // Admin can write anyone. 
-      // Staff/Doctors can only update their OWN profile (based on authUid or userEmail)
-      allow write: if isLoggedIn() && (
-        isAdmin() || 
-        isOwnStaffDoc()
-      );
+      allow write: if isLoggedIn() && (isAdmin() || isOwnStaffDoc());
+    }
+    match /adminUsers/{id} {
+      allow read: if isAdmin() || isSuperAdmin();
+      allow write: if isSuperAdmin();
     }
 
-    // -------------------------------
-    // LEAVE REQUESTS COLLECTION
-    // -------------------------------
+    // LEAVE REQUESTS
     match /leaveRequests/{id} {
-      // All logged-in users can read leave requests
       allow read: if isLoggedIn();
-      
-      // Any logged-in user can create leave requests
       allow create: if isLoggedIn();
-      
-      // Users can update their own requests, or admins can update any request
-      allow update: if isLoggedIn() && (
-        isAdmin() || 
-        (resource != null && resource.data.userId == request.auth.uid)
-      );
-      
-      // Only admins can delete leave requests, or users can delete their own
-      allow delete: if isLoggedIn() && (
-        isAdmin() || 
-        (resource != null && resource.data.userId == request.auth.uid)
-      );
+      allow update: if isLoggedIn() && (isAdmin() || (resource != null && resource.data.userId == request.auth.uid));
+      allow delete: if isLoggedIn() && (isAdmin() || (resource != null && resource.data.userId == request.auth.uid));
     }
 
-    // -------------------------------
-    // NOTIFICATIONS COLLECTION
-    // -------------------------------
+    // =========================================================
+    // 3. TRANSFERS
+    // =========================================================
+    match /transferRequests/{id} {
+      allow read: if isLoggedIn();
+      allow create, update: if isClinic() || isFrontdesk() || isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /transferHistory/{id} {
+      allow read: if isLoggedIn(); 
+      allow create, update: if isClinic() || isFrontdesk() || isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /sessionTransfers/{id} {
+      allow read: if isLoggedIn();
+      allow create, update: if isClinic() || isFrontdesk() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================
+    // 4. NOTIFICATIONS & PREFERENCES
+    // =========================================================
+    match /notificationPreferences/{uid} {
+      allow read, write: if isLoggedIn() && (request.auth.uid == uid || isAdmin());
+    }
     match /notifications/{notificationId} {
-      // Users can read their own notifications
-      allow read: if isLoggedIn() && 
-                  resource.data.userId == request.auth.uid;
-      
-      // Allow any logged-in user to create notifications
-      // (Business logic ensures only admins can create notifications for others)
-      // This avoids permission issues with role lookup in rules
-      allow create: if isLoggedIn() && 
-                    request.resource.data.userId != null &&
-                    request.resource.data.title != null &&
-                    request.resource.data.message != null;
-      
-      // Users can update their own notifications (e.g., mark as read)
-      allow update: if isLoggedIn() && 
-                    resource.data.userId == request.auth.uid;
-      
-      // Only admins can delete notifications
+      allow read: if isLoggedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isLoggedIn() && request.resource.data.userId != null && request.resource.data.title != null && request.resource.data.message != null;
+      allow update: if isLoggedIn() && resource.data.userId == request.auth.uid;
       allow delete: if isAdmin();
     }
-
-    // -------------------------------
-    // APP NOTIFICATIONS COLLECTION
-    // -------------------------------
     match /appNotifications/{notificationId} {
-      // All logged-in users can read app notifications
       allow read: if isLoggedIn();
-      
-      // Allow any logged-in user to create app notifications
-      allow create: if isLoggedIn() && 
-                    request.resource.data.type != null &&
-                    request.resource.data.title != null &&
-                    request.resource.data.message != null;
-      
-      // Users can update app notifications (e.g., mark as read)
+      allow create: if isLoggedIn() && request.resource.data.type != null && request.resource.data.title != null && request.resource.data.message != null;
       allow update: if isLoggedIn();
-      
-      // Only admins can delete app notifications
       allow delete: if isAdmin();
     }
 
-    // -------------------------------
-    // CONVERSATIONS COLLECTION
-    // -------------------------------
+    // =========================================================
+    // 5. MESSAGING
+    // =========================================================
     match /conversations/{conversationId} {
-      // Users can read conversations they're part of
-      allow read: if isLoggedIn() && 
-                  request.auth.uid in resource.data.participants;
-      
-      // Users can create conversations if they're a participant
-      allow create: if isLoggedIn() && 
-                    request.auth.uid in request.resource.data.participants;
-      
-      // Users can update conversations they're part of
-      allow update: if isLoggedIn() && 
-                    request.auth.uid in resource.data.participants;
-      
-      // Users can delete conversations they're part of
-      allow delete: if isLoggedIn() && 
-                    request.auth.uid in resource.data.participants;
+      allow read: if isLoggedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isLoggedIn() && request.auth.uid in request.resource.data.participants;
+      allow update: if isLoggedIn() && request.auth.uid in resource.data.participants;
+      allow delete: if isLoggedIn() && request.auth.uid in resource.data.participants;
     }
-
-    // -------------------------------
-    // MESSAGES COLLECTION
-    // -------------------------------
     match /messages/{messageId} {
-      // Helper function to check if user is part of the conversation (for reads/updates)
       function isConversationParticipantForRead() {
-        return isLoggedIn() && 
-               resource.data.conversationId != null &&
-               exists(/databases/$(database)/documents/conversations/$(resource.data.conversationId)) &&
-               request.auth.uid in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants;
+        return isLoggedIn() && resource.data.conversationId != null && exists(/databases/$(database)/documents/conversations/$(resource.data.conversationId)) && request.auth.uid in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants;
       }
-      
-      // Helper function to check if user is part of the conversation (for creates)
-      function isConversationParticipantForCreate() {
-        return isLoggedIn() && 
-               request.resource.data.conversationId != null &&
-               exists(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)) &&
-               request.auth.uid in get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participants;
-      }
-      
-      // Users can read messages in conversations they're part of
-      allow read: if isLoggedIn() && isConversationParticipantForRead();
-      
-      // Users can create messages if they're the sender
-      // Allow creation even if conversation doesn't exist yet (it will be created)
-      allow create: if isLoggedIn() && 
-                    request.resource.data.senderId == request.auth.uid &&
-                    request.resource.data.conversationId != null &&
-                    request.resource.data.text != null;
-      
-      // Users can update messages (e.g., reactions, read status) if they're part of conversation
-      allow update: if isLoggedIn() && isConversationParticipantForRead();
-      
-      // Only admins can delete messages
+      allow read, update: if isLoggedIn() && isConversationParticipantForRead();
+      allow create: if isLoggedIn() && request.resource.data.senderId == request.auth.uid && request.resource.data.conversationId != null && request.resource.data.text != null;
       allow delete: if isAdmin();
     }
 
-    // -------------------------------
-    // HEADER CONFIGS COLLECTION
-    // -------------------------------
-    // Stores configurable header/logo information for reports, billing, invoices, etc.
+    // =========================================================
+    // 6. OTHER COLLECTIONS
+    // =========================================================
     match /headerConfigs/{configId} {
-      // Any logged-in user can read header configs (used for printing, invoices, etc.)
       allow read: if isLoggedIn();
-
-      // Only admins can create or update header configurations
       allow write: if isAdmin();
     }
-
-    // -------------------------------
-    // REPORT VERSIONS COLLECTION
-    // -------------------------------
-    // Stores version history of patient reports
     match /reportVersions/{versionId} {
-      // Clinical team, FrontDesk, and Admin can read report versions
-      allow read: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
-      
-      // Clinical team, FrontDesk, and Admin can create report versions
-      allow create: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
-      
-      // Only admins can update report versions
-      allow update: if isAdmin();
-      
-      // Clinical team, FrontDesk, and Admin can delete report versions
-      allow delete: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      allow read, create: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      allow update, delete: if isAdmin();
     }
-
-    // -------------------------------
-    // STRENGTH CONDITIONING REPORTS COLLECTION
-    // -------------------------------
     match /strengthConditioningReports/{reportId} {
-      // Clinical team, FrontDesk, and Admin can read strength conditioning reports
-      allow read: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
-      
-      // Clinical team, FrontDesk, and Admin can create/update strength conditioning reports
-      allow create, update: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
-      
-      // Only admins can delete strength conditioning reports
+      allow read, create, update: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
       allow delete: if isAdmin();
     }
 
-    // -------------------------------
-    // STRENGTH CONDITIONING REPORT VERSIONS COLLECTION
-    // -------------------------------
-    // Stores version history of strength and conditioning reports
+    // FIXED RULE: Updated to allow Clinical Team and Front Desk to delete versions
     match /strengthConditioningReportVersions/{versionId} {
-      // Clinical team, FrontDesk, and Admin can read strength conditioning report versions
-      allow read: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
-      
-      // Clinical team, FrontDesk, and Admin can create strength conditioning report versions
-      allow create: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
-      
-      // Only admins can update strength conditioning report versions
-      allow update: if isAdmin();
-      
-      // Clinical team, FrontDesk, and Admin can delete strength conditioning report versions
-      allow delete: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      allow read, create: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
+      allow update, delete: if isLoggedIn() && (isClinic() || isFrontdesk() || isAdmin());
     }
 
-    // -------------------------------
-    // INVENTORY MANAGEMENT COLLECTIONS
-    // -------------------------------
-    match /inventoryItems/{id} {
-      // All logged-in users can read inventory items
+    match /inventory/{id} {
       allow read: if isLoggedIn();
-      
-      // FrontDesk, Admin, SuperAdmin, and Clinical Team can create/update/delete inventory items
+      allow write: if isFrontdesk() || isAdmin() || isSuperAdmin() || isClinic();
+    }
+    match /inventoryItems/{id} {
+      allow read: if isLoggedIn();
       allow create, update, delete: if isFrontdesk() || isAdmin() || isSuperAdmin() || isClinic();
     }
-
     match /inventoryIssues/{id} {
-      // All logged-in users can read inventory issue records
       allow read: if isLoggedIn();
-      
-      // FrontDesk, Admin, SuperAdmin, and Clinical Team can create/update inventory issue records
       allow create, update: if isFrontdesk() || isAdmin() || isSuperAdmin() || isClinic();
-      
-      // Only admins and super admins can delete inventory issue records
       allow delete: if isAdmin() || isSuperAdmin();
     }
 
-    // -------------------------------
-    // ACTIVITIES COLLECTION
-    // -------------------------------
-    // Stores activity logs for clinical team members (meetings, training, etc.)
+    // =========================================================
+    // 7. ACTIVITIES
+    // =========================================================
     match /activities/{activityId} {
-      // Clinical team members and admins can read activities
       allow read: if isLoggedIn() && (isClinic() || isAdmin());
-      
-      // Clinical team members can create activities
-      allow create: if isLoggedIn() && isClinic() &&
-                    request.resource.data.staffEmail != null &&
-                    request.resource.data.activityType != null &&
-                    request.resource.data.startTime != null &&
-                    request.resource.data.endTime != null;
-      
-      // Clinical team members can update their own activities, admins can update any
-      // Allow update if: admin, OR (clinical team AND activity has no staffEmail OR staffEmail matches user)
-      allow update: if isLoggedIn() && (
-        isAdmin() ||
-        (isClinic() && 
-         resource != null && 
-         request.auth.token.email != null &&
-         (resource.data.staffEmail == null ||
-          resource.data.staffEmail == '' ||
-          resource.data.staffEmail.toLowerCase() == request.auth.token.email.toLowerCase() ||
-          resource.data.staffEmail == request.auth.token.email))
-      );
-      
-      // Clinical team members can delete their own activities, admins can delete any
-      allow delete: if isLoggedIn() && (
-        isAdmin() ||
-        (isClinic() && 
-         resource != null && 
-         resource.data.staffEmail != null &&
-         request.auth.token.email != null &&
-         resource.data.staffEmail.toLowerCase() == request.auth.token.email.toLowerCase())
-      );
+      allow create: if isLoggedIn() && isClinic() && request.resource.data.staffEmail != null && request.resource.data.activityType != null && request.resource.data.startTime != null && request.resource.data.endTime != null;
+      allow update: if isLoggedIn() && (isAdmin() || (isClinic() && resource != null && request.auth.token.email != null && (resource.data.staffEmail == null || resource.data.staffEmail == '' || resource.data.staffEmail.lower() == request.auth.token.email.lower() || resource.data.staffEmail == request.auth.token.email)));
+      allow delete: if isLoggedIn() && (isAdmin() || (isClinic() && resource != null && resource.data.staffEmail != null && request.auth.token.email != null && resource.data.staffEmail.lower() == request.auth.token.email.lower()));
     }
 
-    // -------------------------------
-    // STAFF RATINGS COLLECTION
-    // -------------------------------
-    // Stores performance ratings for clinical team members
+    // =========================================================
+    // 8. STAFF RATINGS
+    // =========================================================
     match /staffRatings/{ratingId} {
-      // Helper function to check if user is an authorized rater
-      function isAuthorizedRater() {
-        return isLoggedIn() && 
-               request.auth.token.email != null &&
-               (request.auth.token.email.toLowerCase() == 'dharanjaydubey@css.com' ||
-                request.auth.token.email.toLowerCase() == 'shajisp@css.com');
+      function isSpecificRater() {
+        return isLoggedIn() && request.auth.token.email != null && (request.auth.token.email.lower() == 'dharanjaydubey@css.com' || request.auth.token.email.lower() == 'shajisp@css.com' || request.auth.token.email.lower() == 'nawazaman@css.com');
+      }
+      function isSpecificApprover() {
+        return isLoggedIn() && request.auth.token.email != null && request.auth.token.email.lower() == 'antonychacko@css.com';
       }
       
-      // Helper function to check if user is Super Admin
-      function isSuperAdminEmail() {
-        return isLoggedIn() && 
-               request.auth.token.email != null &&
-               request.auth.token.email.toLowerCase() == 'antonychacko@css.com';
-      }
-      
-      // Raters can read their own submitted ratings
-      // Super Admin can read all ratings (especially pending ones)
       allow read: if isLoggedIn() && (
-        (isAuthorizedRater() && 
-         resource != null && 
-         resource.data.raterEmail != null &&
-         request.auth.token.email != null &&
-         resource.data.raterEmail.toLowerCase() == request.auth.token.email.toLowerCase()) ||
-        isSuperAdminEmail()
+        (isAdmin() || isSuperAdmin() || isSpecificApprover()) || 
+        (resource != null && resource.data.raterEmail == request.auth.token.email) || 
+        (resource != null && resource.data.ratedStaffEmail != null && request.auth.token.email != null && resource.data.ratedStaffEmail.lower() == request.auth.token.email.lower())
       );
-      
-      // Authorized raters can create ratings with Pending status
-      allow create: if isLoggedIn() && 
-                    isAuthorizedRater() &&
-                    request.resource.data.ratedStaffId != null &&
-                    request.resource.data.ratedStaffName != null &&
-                    request.resource.data.raterId != null &&
-                    request.resource.data.raterName != null &&
-                    request.resource.data.raterEmail != null &&
-                    request.resource.data.rating != null &&
-                    request.resource.data.criteria != null &&
-                    request.resource.data.status == 'Pending';
-      
-      // Super Admin can update ratings (approve/reject)
-      allow update: if isLoggedIn() && 
-                    isSuperAdminEmail() &&
-                    resource != null &&
-                    resource.data.status == 'Pending' &&
-                    (request.resource.data.status == 'Approved' || 
-                     request.resource.data.status == 'Rejected');
-      
-      // Only Super Admin can delete ratings
-      allow delete: if isLoggedIn() && isSuperAdminEmail();
-    }
 
-    // -------------------------------
-    // RATING REQUESTS COLLECTION
-    // -------------------------------
-    // Stores rating requests from clinical team members to super admins
+      allow create: if isLoggedIn() && (isSpecificRater() || isAdmin()) && request.resource.data.status == 'Pending';
+      allow update: if isLoggedIn() && (isSuperAdmin() || isAdmin() || isSpecificApprover());
+      allow delete: if isSuperAdmin() || isSpecificApprover();
+    }
+    
+    // RATING REQUESTS
     match /ratingRequests/{requestId} {
-      // Helper function to check if user is an authorized rater (super admin)
-      function isAuthorizedRater() {
-        return isLoggedIn() && 
-               request.auth.token.email != null &&
-               (request.auth.token.email.toLowerCase() == 'dharanjaydubey@css.com' ||
-                request.auth.token.email.toLowerCase() == 'shajisp@css.com');
-      }
-      
-      // Users can read their own requests
-      // Authorized raters can read all pending requests
-      allow read: if isLoggedIn() && (
-        (resource != null && 
-         resource.data.requestedByEmail != null &&
-         request.auth.token.email != null &&
-         resource.data.requestedByEmail.toLowerCase() == request.auth.token.email.toLowerCase()) ||
-        (isAuthorizedRater() && 
-         resource != null &&
-         resource.data.status == 'Pending')
-      );
-      
-      // Logged in users can create their own rating requests
-      allow create: if isLoggedIn() && 
-                    request.resource.data.requestedById != null &&
-                    request.resource.data.requestedByName != null &&
-                    request.resource.data.requestedByEmail != null &&
-                    request.resource.data.status == 'Pending' &&
-                    request.auth.token.email != null &&
-                    request.resource.data.requestedByEmail.toLowerCase() == request.auth.token.email.toLowerCase();
-      
-      // Authorized raters can delete (process) rating requests
-      allow delete: if isLoggedIn() && isAuthorizedRater();
+       function isAuthorizedRater() {
+         return isLoggedIn() && request.auth.token.email != null && (request.auth.token.email.lower() == 'dharanjaydubey@css.com' || request.auth.token.email.lower() == 'shajisp@css.com');
+       }
+       allow read: if isLoggedIn() && (
+         (resource != null && resource.data.requestedByEmail != null && request.auth.token.email != null && resource.data.requestedByEmail.lower() == request.auth.token.email.lower()) || 
+         (isAuthorizedRater() && resource != null && resource.data.status == 'Pending')
+       );
+       allow create: if isLoggedIn() && request.resource.data.requestedById != null && request.resource.data.requestedByName != null && request.resource.data.requestedByEmail != null && request.resource.data.status == 'Pending' && request.auth.token.email != null && request.resource.data.requestedByEmail.lower() == request.auth.token.email.lower();
+       allow delete: if isLoggedIn() && isAuthorizedRater();
     }
 
-    // -------------------------------
-    // DENY EVERYTHING ELSE
-    // -------------------------------
+    // =========================================================
+    // 9. DEFAULT DENY
+    // =========================================================
     match /{document=**} {
       allow read, write: if false;
     }

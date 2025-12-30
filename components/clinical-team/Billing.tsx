@@ -374,9 +374,9 @@ export default function Billing() {
 					{filteredPending.length === 0 ? (
 						<div className="py-8 text-center text-sm text-slate-500">No pending payments found.</div>
 					) : (
-						<div className="overflow-x-auto">
+						<div className="max-h-96 overflow-y-auto overflow-x-auto border border-slate-200 rounded-lg">
 							<table className="min-w-full divide-y divide-slate-200">
-								<thead className="bg-slate-50">
+								<thead className="bg-slate-50 sticky top-0 z-10">
 									<tr>
 										<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
 											Billing ID
@@ -447,9 +447,9 @@ export default function Billing() {
 					{filteredCompleted.length === 0 ? (
 						<div className="py-8 text-center text-sm text-slate-500">No completed payments found.</div>
 					) : (
-						<div className="overflow-x-auto">
+						<div className="max-h-96 overflow-y-auto overflow-x-auto border border-slate-200 rounded-lg">
 							<table className="min-w-full divide-y divide-slate-200">
-								<thead className="bg-slate-50">
+								<thead className="bg-slate-50 sticky top-0 z-10">
 									<tr>
 										<th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
 											Billing ID

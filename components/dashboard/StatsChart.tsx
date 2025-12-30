@@ -13,6 +13,7 @@ import {
 	Title,
 	Tooltip,
 	Legend,
+	Filler,
 	type ChartEvent,
 	type ActiveElement,
 	type TooltipItem,
@@ -29,7 +30,8 @@ ChartJS.register(
 	ArcElement,
 	Title,
 	Tooltip,
-	Legend
+	Legend,
+	Filler
 );
 
 interface StatsChartProps {

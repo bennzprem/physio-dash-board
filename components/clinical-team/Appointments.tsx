@@ -237,7 +237,7 @@ export default function Appointments() {
 	const [registerNotice, setRegisterNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 	const [newlyRegisteredPatientId, setNewlyRegisteredPatientId] = useState<string | null>(null);
 	const [patientSearchTerm, setPatientSearchTerm] = useState('');
-	const [billingRecords, setBillingRecords] = useState<Array<{ appointmentId?: string; status: 'Pending' | 'Completed' | 'Auto-Paid' }>>([]);
+	const [billingRecords, setBillingRecords] = useState<Array<{ appointmentId?: string; status: 'Pending' | 'Completed' | 'Auto-Paid'; amount?: number }>>([]);
 
 	// Load billing records from Firestore
 	useEffect(() => {
@@ -249,6 +249,7 @@ export default function Appointments() {
 					return {
 						appointmentId: data.appointmentId ? String(data.appointmentId) : undefined,
 						status: (data.status as 'Pending' | 'Completed' | 'Auto-Paid') || 'Pending',
+						amount: typeof data.amount === 'number' ? data.amount : undefined,
 					};
 				});
 				setBillingRecords([...mapped]);
@@ -2974,17 +2975,24 @@ export default function Appointments() {
 														</td>
 														<td className="px-4 py-4">
 															{paymentStatus ? (
-																<span
-																	className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
-																		paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid'
-																			? 'bg-green-100 text-green-800'
-																			: 'bg-amber-100 text-amber-800'
-																	}`}
-																>
-																	{paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid'
-																		? 'Completed'
-																		: 'Pending'}
-																</span>
+																<div className="flex flex-col gap-1">
+																	<span
+																		className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
+																			paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid'
+																				? 'bg-green-100 text-green-800'
+																				: 'bg-amber-100 text-amber-800'
+																		}`}
+																	>
+																		{paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid'
+																			? 'Completed'
+																			: 'Pending'}
+																	</span>
+																	{(paymentStatus === 'Completed' || paymentStatus === 'Auto-Paid') && billingRecord?.amount !== undefined && (
+																		<span className="text-xs font-semibold text-slate-700">
+																			₹{billingRecord.amount.toFixed(2)}
+																		</span>
+																	)}
+																</div>
 															) : (
 																<span className="text-xs text-slate-400">—</span>
 															)}
