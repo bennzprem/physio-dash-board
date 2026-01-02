@@ -17,6 +17,7 @@ import AppointmentBookingModal from '@/components/appointments/AppointmentBookin
 import RescheduleDialog from '@/components/appointments/RescheduleDialog';
 import TransferSessionDialog from '@/components/appointments/TransferSessionDialog';
 import TransferConfirmationDialog from '@/components/transfers/TransferConfirmationDialog';
+import PatientProgressAnalytics from '@/components/patient/PatientProgressAnalytics';
 
 type PaymentTypeOption = 'with' | 'without';
 
@@ -518,6 +519,9 @@ export default function EditReport() {
 	const [headerConfig, setHeaderConfig] = useState<HeaderConfig | null>(null);
 	const [showReportModal, setShowReportModal] = useState(false);
 	const [reportModalPatientId, setReportModalPatientId] = useState<string | null>(null);
+	const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+	const [analyticsModalPatientId, setAnalyticsModalPatientId] = useState<string | null>(null);
+	const [analyticsModalPatientName, setAnalyticsModalPatientName] = useState<string | null>(null);
 	const [sessionCompleted, setSessionCompleted] = useState(false);
 	const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set());
 	const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
@@ -612,6 +616,13 @@ export default function EditReport() {
 			document.removeEventListener('mousedown', handleClickOutside);
 		};
 	}, [openDropdownId]);
+
+	// Debug: Log when analytics modal state changes
+	useEffect(() => {
+		if (showAnalyticsModal) {
+			console.log('Analytics modal should be visible. showAnalyticsModal:', showAnalyticsModal, 'patientId:', analyticsModalPatientId);
+		}
+	}, [showAnalyticsModal, analyticsModalPatientId]);
 
 	const [patientAppointments, setPatientAppointments] = useState<Record<string, Array<{
 		id: string;
@@ -3004,6 +3015,25 @@ export default function EditReport() {
 																				Setup Package
 															</button>
 														)}
+																		<button
+																			type="button"
+																			onClick={(e) => {
+																				e.stopPropagation();
+																				e.preventDefault();
+																				const patientId = patient.patientId;
+																				const patientName = patient.name;
+																				console.log('Opening Analytics modal for patient:', patientId, patientName);
+																				setAnalyticsModalPatientId(patientId);
+																				setAnalyticsModalPatientName(patientName);
+																				setShowAnalyticsModal(true);
+																				setOpenDropdownId(null);
+																				console.log('Analytics modal state set - showAnalyticsModal: true, patientId:', patientId);
+																			}}
+																			className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-700"
+																		>
+																			<i className="fas fa-chart-line text-xs" aria-hidden="true" />
+																			Analytics
+																		</button>
 																		<button
 																			type="button"
 																			onClick={(e) => {
@@ -5551,6 +5581,51 @@ export default function EditReport() {
 				initialTab="report"
 				onClose={handleCloseReportModal}
 			/>
+
+			{/* Analytics Modal */}
+			{showAnalyticsModal && analyticsModalPatientId && (
+				<div 
+					className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 px-4 py-6"
+					onClick={(e) => {
+						// Close modal when clicking outside
+						if (e.target === e.currentTarget) {
+							setShowAnalyticsModal(false);
+							setAnalyticsModalPatientId(null);
+							setAnalyticsModalPatientName(null);
+						}
+					}}
+				>
+					<div className="w-full max-w-6xl rounded-2xl border border-slate-200 bg-white shadow-2xl max-h-[90vh] flex flex-col">
+						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+							<div>
+								<h2 className="text-lg font-semibold text-slate-900">Progress Analytics</h2>
+								<p className="text-xs text-slate-500">
+									{analyticsModalPatientName && `Analytics for ${analyticsModalPatientName}`}
+									{analyticsModalPatientId && ` (${analyticsModalPatientId})`}
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={() => {
+									setShowAnalyticsModal(false);
+									setAnalyticsModalPatientId(null);
+									setAnalyticsModalPatientName(null);
+								}}
+								className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:bg-slate-100 focus-visible:text-slate-600 focus-visible:outline-none"
+								aria-label="Close dialog"
+							>
+								<i className="fas fa-times" aria-hidden="true" />
+							</button>
+						</header>
+						<div className="flex-1 overflow-y-auto px-6 py-4">
+							<PatientProgressAnalytics 
+								patientId={analyticsModalPatientId} 
+								patientName={analyticsModalPatientName || undefined}
+							/>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

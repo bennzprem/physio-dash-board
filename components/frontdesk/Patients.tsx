@@ -18,6 +18,7 @@ import { checkAppointmentConflict } from '@/lib/appointmentUtils';
 import { createInitialSessionAllowance } from '@/lib/sessionAllowance';
 import { useAuth } from '@/contexts/AuthContext';
 import ReportModal from '@/components/frontdesk/ReportModal';
+import PatientProgressAnalytics from '@/components/patient/PatientProgressAnalytics';
 
 type PaymentTypeOption = 'with' | 'without';
 type PatientTypeOption = 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'REFERRAL' | '';
@@ -3597,6 +3598,14 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 								<div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
 									{viewingPatient.complaint || 'No complaint recorded.'}
 								</div>
+							</section>
+
+							{/* Progress Analytics Section */}
+							<section>
+								<PatientProgressAnalytics 
+									patientId={viewingPatient.patientId} 
+									patientName={viewingPatient.name}
+								/>
 							</section>
 						</div>
 						<footer className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">

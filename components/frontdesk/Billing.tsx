@@ -104,6 +104,317 @@ function numberToWords(num: number): string {
 }
 
 /* --------------------------------------------------------
+	GENERATE DYES INVOICE HTML (UAS FIT PVT LTD FORMAT)
+---------------------------------------------------------- */
+async function generateDyesInvoiceHtml(invoiceData: {
+	invoiceNo: string;
+	invoiceDate: string;
+	totalSessions: number;
+	rate: number;
+	amount: number;
+	cgstRate: number;
+	cgstAmount: number;
+	sgstRate: number;
+	sgstAmount: number;
+	totalAmount: number;
+	dateRange: string;
+	sessionsCompleted: string;
+}) {
+	const invoiceNo = escapeHtml(invoiceData.invoiceNo);
+	const invoiceDate = invoiceData.invoiceDate || new Date().toISOString().split('T')[0];
+	const totalSessions = invoiceData.totalSessions;
+	const rate = invoiceData.rate;
+	const amount = invoiceData.amount;
+	const cgstRate = invoiceData.cgstRate;
+	const cgstAmount = invoiceData.cgstAmount;
+	const sgstRate = invoiceData.sgstRate;
+	const sgstAmount = invoiceData.sgstAmount;
+	const totalAmount = invoiceData.totalAmount;
+	const dateRange = escapeHtml(invoiceData.dateRange || '');
+	const sessionsCompleted = escapeHtml(invoiceData.sessionsCompleted || '');
+
+	const amountWords = numberToWords(totalAmount);
+	const taxWords = numberToWords(cgstAmount + sgstAmount);
+
+	const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Tax Invoice - ${invoiceNo}</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			font-family: Arial, sans-serif;
+			font-size: 12px;
+			color: #000;
+			background: #fff;
+			padding: 20px;
+		}
+		.invoice-container {
+			max-width: 800px;
+			margin: 0 auto;
+			border: 1px solid #000;
+			padding: 15px;
+		}
+		.header {
+			border: 2px solid #000;
+			padding: 10px;
+			margin-bottom: 15px;
+		}
+		.header-row {
+			display: flex;
+			justify-content: space-between;
+			margin-bottom: 10px;
+		}
+		.header-left {
+			flex: 1;
+		}
+		.header-right {
+			flex: 1;
+			text-align: right;
+		}
+		.company-name {
+			font-size: 16px;
+			font-weight: bold;
+			margin-bottom: 5px;
+		}
+		.label {
+			font-weight: bold;
+			margin-right: 5px;
+		}
+		.details-grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 15px;
+			margin-bottom: 15px;
+		}
+		.detail-section {
+			border: 1px solid #000;
+			padding: 8px;
+		}
+		.detail-title {
+			font-weight: bold;
+			margin-bottom: 5px;
+			border-bottom: 1px solid #000;
+			padding-bottom: 3px;
+		}
+		.service-table {
+			width: 100%;
+			border-collapse: collapse;
+			margin-bottom: 15px;
+		}
+		.service-table th,
+		.service-table td {
+			border: 1px solid #000;
+			padding: 6px;
+			text-align: left;
+		}
+		.service-table th {
+			background-color: #f0f0f0;
+			font-weight: bold;
+		}
+		.service-table td {
+			text-align: right;
+		}
+		.service-table td:first-child {
+			text-align: left;
+		}
+		.summary-section {
+			border: 1px solid #000;
+			padding: 10px;
+			margin-bottom: 15px;
+		}
+		.summary-row {
+			display: flex;
+			justify-content: space-between;
+			margin-bottom: 5px;
+		}
+		.tax-section {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 15px;
+			margin-bottom: 15px;
+		}
+		.tax-box {
+			border: 1px solid #000;
+			padding: 8px;
+		}
+		.tax-title {
+			font-weight: bold;
+			margin-bottom: 5px;
+			border-bottom: 1px solid #000;
+			padding-bottom: 3px;
+		}
+		.bank-details {
+			border: 1px solid #000;
+			padding: 8px;
+			margin-bottom: 15px;
+		}
+		.bank-title {
+			font-weight: bold;
+			margin-bottom: 5px;
+			border-bottom: 1px solid #000;
+			padding-bottom: 3px;
+		}
+		.remarks {
+			margin-bottom: 15px;
+		}
+		.declaration {
+			margin-bottom: 15px;
+			font-style: italic;
+		}
+		.footer {
+			text-align: center;
+			border-top: 1px solid #000;
+			padding-top: 10px;
+		}
+		.text-right {
+			text-align: right;
+		}
+		.text-center {
+			text-align: center;
+		}
+	</style>
+</head>
+<body>
+	<div class="invoice-container">
+		<div class="header">
+			<div class="header-row">
+				<div class="header-left">
+					<div class="company-name">TAX INVOICE</div>
+				</div>
+				<div class="header-right">
+					<div><span class="label">Invoice No.:</span> ${invoiceNo}</div>
+					<div><span class="label">Dated:</span> ${invoiceDate}</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="details-grid">
+			<div class="detail-section">
+				<div class="detail-title">Seller (UAS FIT PVT LTD)</div>
+				<div>NO166A, Shobha Malachite, Jakkur Plantation, Bengaluru-64</div>
+				<div><span class="label">GSTIN/UIN:</span>29AACCU3883A1ZB</div>
+				<div><span class="label">State Name:</span>Karnataka</div>
+				<div><span class="label">Code:</span>29</div>
+				<div><span class="label">Contact:</span>+91-9731128396</div>
+			</div>
+			<div class="detail-section">
+				<div class="detail-title">Buyer (Bill to)</div>
+				<div>THE COMMISSIONER</div>
+				<div>Department of Youth Empowerment and Sports</div>
+				<div>Nurpathunga Road, Bangalore</div>
+				<div><span class="label">GSTIN/UIN:</span>29BLRD00466E1DC</div>
+			</div>
+		</div>
+
+		<table class="service-table">
+			<thead>
+				<tr>
+					<th>S.No.</th>
+					<th>Description of Services</th>
+					<th>HSN/SAC</th>
+					<th>Quantity</th>
+					<th>Rate</th>
+					<th>Per</th>
+					<th>Amount</th>
+					<th>CGST @ ${cgstRate}%</th>
+					<th>SGST @ ${sgstRate}%</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td>1</td>
+					<td>Physiotherapy Treatment - GST (Total session-${totalSessions})</td>
+					<td>999294</td>
+					<td>${totalSessions} unit</td>
+					<td>${rate.toFixed(2)}</td>
+					<td>session</td>
+					<td>${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+					<td>${cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+					<td>${sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+				</tr>
+			</tbody>
+		</table>
+
+		<div class="summary-section">
+			<div class="summary-row">
+				<span><strong>Total Quantity:</strong></span>
+				<span>${totalSessions} unit</span>
+			</div>
+			<div class="summary-row">
+				<span><strong>Total Amount (excluding tax):</strong></span>
+				<span>₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+			</div>
+			<div class="summary-row">
+				<span><strong>Total Amount (including tax):</strong></span>
+				<span><strong>₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> (E. & O.E)</span>
+			</div>
+			<div class="summary-row">
+				<span><strong>Amount Chargeable (in words):</strong></span>
+				<span><strong>INR ${amountWords} Only</strong></span>
+			</div>
+		</div>
+
+		<div class="tax-section">
+			<div class="tax-box">
+				<div class="tax-title">Taxable Value</div>
+				<div>${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			</div>
+			<div class="tax-box">
+				<div class="tax-title">Total Tax Amount</div>
+				<div><strong>${(cgstAmount + sgstAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+				<div style="font-size: 10px; margin-top: 5px;">${taxWords} Only</div>
+			</div>
+		</div>
+
+		<div class="tax-section">
+			<div class="tax-box">
+				<div class="tax-title">CGST</div>
+				<div><strong>Rate:</strong> ${cgstRate}%</div>
+				<div><strong>Amount:</strong> ${cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			</div>
+			<div class="tax-box">
+				<div class="tax-title">SGST/UTGST</div>
+				<div><strong>Rate:</strong> ${sgstRate}%</div>
+				<div><strong>Amount:</strong> ${sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			</div>
+		</div>
+
+		<div class="bank-details">
+			<div class="bank-title">Company's Bank Details</div>
+			<div><strong>A/c Holder's Name:</strong> UAS FIT PVT LTD</div>
+			<div><strong>Bank Name:</strong> HDFC Bank</div>
+			<div><strong>A/C No:</strong> 50200038660623</div>
+			<div><strong>Branch & IFSCode:</strong> Hosakerehalli & HDFC0004132</div>
+		</div>
+
+		${sessionsCompleted ? `<div class="remarks"><strong>Remarks:</strong> ${sessionsCompleted}</div>` : ''}
+
+		<div class="declaration">
+			We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+		</div>
+
+		<div class="footer">
+			<div><strong>Jurisdiction:</strong> SUBJECT TO BANGALORE JURISDICTION</div>
+			<div style="margin-top: 10px;">This is a Computer Generated Invoice</div>
+			<div style="margin-top: 20px;">
+				<div style="border-top: 1px solid #000; width: 200px; margin: 0 auto; padding-top: 5px;">
+					for UAS FIT PVT LTD
+				</div>
+				<div style="margin-top: 5px;">Authorised Signatory</div>
+			</div>
+		</div>
+	</div>
+</body>
+</html>`;
+
+	return html;
+}
+
+/* --------------------------------------------------------
 	ESCAPE HTML FOR SAFE INJECTION INTO INVOICE HTML
 ---------------------------------------------------------- */
 function escapeHtml(unsafe: any) {
@@ -734,6 +1045,46 @@ async function generateReceiptHtml(bill: BillingRecord, receiptNo: string, optio
 	`;
 }
 
+// Helper function to parse date string and return Date object
+function parseDateString(dateStr: string): Date | null {
+	if (!dateStr) return null;
+	
+	// Try direct parsing first (works for YYYY-MM-DD and ISO formats)
+	let date = new Date(dateStr);
+	if (!isNaN(date.getTime())) {
+		return date;
+	}
+	
+	// Handle DD-MM-YYYY format
+	if (dateStr.includes('-')) {
+		const parts = dateStr.split('-');
+		if (parts.length === 3) {
+			// Check if it's DD-MM-YYYY (first part is 1-31, third part is 4 digits)
+			const firstPart = parseInt(parts[0], 10);
+			if (firstPart >= 1 && firstPart <= 31 && parts[2].length === 4) {
+				// DD-MM-YYYY format -> convert to YYYY-MM-DD
+				date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+				if (!isNaN(date.getTime())) {
+					return date;
+				}
+			}
+		}
+	}
+	
+	// Handle DD/MM/YYYY format
+	if (dateStr.includes('/')) {
+		const parts = dateStr.split('/');
+		if (parts.length === 3 && parts[2].length === 4) {
+			date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+			if (!isNaN(date.getTime())) {
+				return date;
+			}
+		}
+	}
+	
+	return null;
+}
+
 export default function Billing() {
 	const [billing, setBilling] = useState<BillingRecord[]>([]);
 	const [appointments, setAppointments] = useState<any[]>([]);
@@ -785,6 +1136,31 @@ export default function Billing() {
 		sgstRate: number;
 		companyBankDetails?: string;
 		patientType?: string;
+	} | null>(null);
+
+	// DYES Billing state
+	const [dyesBillingData, setDyesBillingData] = useState<{
+		totalCompletedSessions: number;
+		billableSessions: number;
+		patientCount: number;
+	}>({ totalCompletedSessions: 0, billableSessions: 0, patientCount: 0 });
+	const [dyesBillingRecords, setDyesBillingRecords] = useState<BillingRecord[]>([]);
+	const [dyesDateFilterFrom, setDyesDateFilterFrom] = useState<string>('');
+	const [dyesDateFilterTo, setDyesDateFilterTo] = useState<string>('');
+	const [showDyesInvoiceModal, setShowDyesInvoiceModal] = useState(false);
+	const [editableDyesInvoice, setEditableDyesInvoice] = useState<{
+		invoiceNo: string;
+		invoiceDate: string;
+		totalSessions: number;
+		rate: number;
+		amount: number;
+		cgstRate: number;
+		cgstAmount: number;
+		sgstRate: number;
+		sgstAmount: number;
+		totalAmount: number;
+		dateRange: string;
+		sessionsCompleted: string;
 	} | null>(null);
 
 	// Load billing records from Firestore (ordered by createdAt desc)
@@ -1051,6 +1427,42 @@ export default function Billing() {
 		);
 	}, [pending, pendingSearchQuery]);
 	const completed = useMemo(() => filteredBilling.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid'), [filteredBilling]);
+
+	// Filtered DYES billing records based on date range
+	const filteredDyesBillingRecords = useMemo(() => {
+		let filtered = dyesBillingRecords;
+
+		if (dyesDateFilterFrom) {
+			filtered = filtered.filter(record => {
+				if (!record.date) return false;
+				
+				const recordDate = parseDateString(record.date);
+				if (!recordDate) return false;
+				
+				const fromDate = new Date(dyesDateFilterFrom + 'T00:00:00');
+				recordDate.setHours(0, 0, 0, 0);
+				
+				return recordDate.getTime() >= fromDate.getTime();
+			});
+		}
+
+		if (dyesDateFilterTo) {
+			filtered = filtered.filter(record => {
+				if (!record.date) return false;
+				
+				const recordDate = parseDateString(record.date);
+				if (!recordDate) return false;
+				
+				const toDate = new Date(dyesDateFilterTo + 'T23:59:59.999');
+				recordDate.setHours(0, 0, 0, 0);
+				
+				return recordDate.getTime() <= toDate.getTime();
+			});
+		}
+
+		return filtered;
+	}, [dyesBillingRecords, dyesDateFilterFrom, dyesDateFilterTo]);
+
 	const filteredCompleted = useMemo(() => {
 		if (!completedSearchQuery.trim()) return completed;
 		const query = completedSearchQuery.toLowerCase().trim();
@@ -1504,6 +1916,129 @@ export default function Billing() {
 		return () => unsubscribe();
 	}, []);
 
+	// Load DYES billing data
+	useEffect(() => {
+		const loadDyesBillingData = async () => {
+			try {
+				// Get all DYES patients
+				const dyesPatientsQuery = query(
+					collection(db, 'patients'),
+					where('patientType', '==', 'DYES')
+				);
+				const dyesPatientsSnapshot = await getDocs(dyesPatientsQuery);
+				const dyesPatientIds = dyesPatientsSnapshot.docs.map(doc => doc.data().patientId as string);
+
+				if (dyesPatientIds.length === 0) {
+					setDyesBillingData({ totalCompletedSessions: 0, billableSessions: 0, patientCount: 0 });
+					setDyesBillingRecords([]);
+					return;
+				}
+
+				// Get all completed appointments for DYES patients
+				let totalCompletedSessions = 0;
+				for (const patientId of dyesPatientIds) {
+					const appointmentsQuery = query(
+						collection(db, 'appointments'),
+						where('patientId', '==', patientId),
+						where('status', '==', 'completed')
+					);
+					const appointmentsSnapshot = await getDocs(appointmentsQuery);
+					totalCompletedSessions += appointmentsSnapshot.size;
+				}
+
+				// Calculate billable sessions (excluding first 500)
+				const billableSessions = Math.max(0, totalCompletedSessions - 500);
+
+				setDyesBillingData({
+					totalCompletedSessions,
+					billableSessions,
+					patientCount: dyesPatientIds.length,
+				});
+
+				// Get all billing records for DYES patients
+				const dyesBillingRecordsList: BillingRecord[] = [];
+				for (const patientId of dyesPatientIds) {
+					const billingQuery = query(
+						collection(db, 'billing'),
+						where('patientId', '==', patientId),
+						orderBy('date', 'desc')
+					);
+					try {
+						const billingSnapshot = await getDocs(billingQuery);
+						billingSnapshot.docs.forEach(docSnap => {
+							const data = docSnap.data();
+							const created = (data.createdAt as Timestamp | undefined)?.toDate?.();
+							const updated = (data.updatedAt as Timestamp | undefined)?.toDate?.();
+							dyesBillingRecordsList.push({
+								id: docSnap.id,
+								billingId: data.billingId ? String(data.billingId) : '',
+								appointmentId: data.appointmentId ? String(data.appointmentId) : undefined,
+								patient: data.patient ? String(data.patient) : '',
+								patientId: data.patientId ? String(data.patientId) : '',
+								doctor: data.doctor ? String(data.doctor) : undefined,
+								amount: data.amount ? Number(data.amount) : 0,
+								date: data.date ? String(data.date) : '',
+								status: (data.status as 'Pending' | 'Completed' | 'Auto-Paid') || 'Pending',
+								paymentMode: data.paymentMode ? String(data.paymentMode) : undefined,
+								utr: data.utr ? String(data.utr) : undefined,
+								createdAt: created ? created.toISOString() : undefined,
+								updatedAt: updated ? updated.toISOString() : undefined,
+								invoiceNo: data.invoiceNo ? String(data.invoiceNo) : undefined,
+								invoiceGeneratedAt: data.invoiceGeneratedAt ? String(data.invoiceGeneratedAt) : undefined,
+							} as BillingRecord);
+						});
+					} catch (billingError: any) {
+						// If orderBy fails, try without it
+						if (billingError.code === 'failed-precondition' || billingError.message?.includes('index')) {
+							const billingQueryNoOrder = query(
+								collection(db, 'billing'),
+								where('patientId', '==', patientId)
+							);
+							const billingSnapshot = await getDocs(billingQueryNoOrder);
+							billingSnapshot.docs.forEach(docSnap => {
+								const data = docSnap.data();
+								const created = (data.createdAt as Timestamp | undefined)?.toDate?.();
+								const updated = (data.updatedAt as Timestamp | undefined)?.toDate?.();
+								dyesBillingRecordsList.push({
+									id: docSnap.id,
+									billingId: data.billingId ? String(data.billingId) : '',
+									appointmentId: data.appointmentId ? String(data.appointmentId) : undefined,
+									patient: data.patient ? String(data.patient) : '',
+									patientId: data.patientId ? String(data.patientId) : '',
+									doctor: data.doctor ? String(data.doctor) : undefined,
+									amount: data.amount ? Number(data.amount) : 0,
+									date: data.date ? String(data.date) : '',
+									status: (data.status as 'Pending' | 'Completed' | 'Auto-Paid') || 'Pending',
+									paymentMode: data.paymentMode ? String(data.paymentMode) : undefined,
+									utr: data.utr ? String(data.utr) : undefined,
+									createdAt: created ? created.toISOString() : undefined,
+									updatedAt: updated ? updated.toISOString() : undefined,
+									invoiceNo: data.invoiceNo ? String(data.invoiceNo) : undefined,
+									invoiceGeneratedAt: data.invoiceGeneratedAt ? String(data.invoiceGeneratedAt) : undefined,
+								} as BillingRecord);
+							});
+						}
+					}
+				}
+				// Sort all records by date descending
+				dyesBillingRecordsList.sort((a, b) => {
+					const dateA = new Date(a.date).getTime();
+					const dateB = new Date(b.date).getTime();
+					return dateB - dateA;
+				});
+				setDyesBillingRecords(dyesBillingRecordsList);
+			} catch (error) {
+				console.error('Failed to load DYES billing data', error);
+				setDyesBillingData({ totalCompletedSessions: 0, billableSessions: 0, patientCount: 0 });
+				setDyesBillingRecords([]);
+			}
+		};
+
+		if (patients.length > 0 && appointments.length >= 0) {
+			loadDyesBillingData();
+		}
+	}, [patients, appointments, billing]);
+
 	const handleExportBilling = (format: 'csv' | 'excel' = 'csv') => {
 		if (!filteredBilling.length) {
 			alert('No billing records to export.');
@@ -1650,6 +2185,55 @@ export default function Billing() {
 	};
 
 	// Show invoice preview with editable fields
+	const handleDyesInvoiceDownload = () => {
+		// Calculate invoice values
+		const billableSessions = dyesBillingData.billableSessions;
+		const rate = 500;
+		const amount = billableSessions * rate;
+		const cgstRate = 9;
+		const sgstRate = 9;
+		const cgstAmount = (amount * cgstRate) / 100;
+		const sgstAmount = (amount * sgstRate) / 100;
+		const totalAmount = amount + cgstAmount + sgstAmount;
+
+		// Generate invoice number (format: SS-019/25-26)
+		const now = new Date();
+		const currentYear = now.getFullYear();
+		const yearShort = currentYear.toString().slice(-2);
+		const nextYearShort = (currentYear + 1).toString().slice(-2);
+		const financialYear = `${yearShort}-${nextYearShort}`;
+		const invoiceNo = `SS-019/${financialYear}`;
+
+		// Format date as DD-MMM-YY (e.g., 06-Nov-25)
+		const day = now.getDate().toString().padStart(2, '0');
+		const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+		const month = monthNames[now.getMonth()];
+		const yearTwoDigit = yearShort;
+		const formattedDate = `${day}-${month}-${yearTwoDigit}`;
+
+		// Get date range for remarks (default to current date range)
+		const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+		const firstDayFormatted = `${firstDay.getDate().toString().padStart(2, '0')}/${(firstDay.getMonth() + 1).toString().padStart(2, '0')}/${firstDay.getFullYear()}`;
+		const lastDayFormatted = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+
+		setEditableDyesInvoice({
+			invoiceNo,
+			invoiceDate: formattedDate,
+			totalSessions: billableSessions,
+			rate,
+			amount,
+			cgstRate,
+			cgstAmount,
+			sgstRate,
+			sgstAmount,
+			totalAmount,
+			dateRange: `${firstDayFormatted} to ${lastDayFormatted}`,
+			sessionsCompleted: `Being Dated ${firstDayFormatted} to ${lastDayFormatted} ${dyesBillingData.totalCompletedSessions} Session Completed.`,
+		});
+
+		setShowDyesInvoiceModal(true);
+	};
+
 	const handleShowInvoicePreview = (bill: BillingRecord) => {
 		const patient = patients.find(p => p.patientId === bill.patientId);
 		const invoiceNo = bill.invoiceNo || bill.billingId || `INV-${bill.id?.slice(0, 8) || 'NA'}`;
@@ -1735,6 +2319,49 @@ export default function Billing() {
 
 	// Generate preview HTML for iframe (memoized to update when editableInvoice changes)
 	const [previewHtml, setPreviewHtml] = useState('');
+	const [dyesInvoicePreviewHtml, setDyesInvoicePreviewHtml] = useState('');
+
+	// Generate DYES invoice preview HTML
+	useEffect(() => {
+		if (!editableDyesInvoice) {
+			setDyesInvoicePreviewHtml('');
+			return;
+		}
+
+		const generatePreview = async () => {
+			const html = await generateDyesInvoiceHtml(editableDyesInvoice);
+			setDyesInvoicePreviewHtml(html);
+		};
+
+		generatePreview();
+	}, [editableDyesInvoice]);
+
+	// Handle DYES invoice PDF download
+	const handleDyesInvoicePdfDownload = async () => {
+		if (!editableDyesInvoice) return;
+
+		try {
+			const html = await generateDyesInvoiceHtml(editableDyesInvoice);
+			const printWindow = window.open('', '_blank');
+
+			if (!printWindow) {
+				alert('Please allow pop-ups to generate the invoice.');
+				return;
+			}
+
+			printWindow.document.write(html);
+			printWindow.document.close();
+
+			// Wait for content to load, then trigger print (which allows save as PDF)
+			setTimeout(() => {
+				printWindow.focus();
+				printWindow.print();
+			}, 500);
+		} catch (error) {
+			console.error('Failed to download DYES invoice PDF', error);
+			alert('Failed to download invoice. Please try again.');
+		}
+	};
 
 	useEffect(() => {
 		if (!editableInvoice || !selectedBill) {
@@ -2154,6 +2781,140 @@ export default function Billing() {
 												</tbody>
 											</table>
 									)}
+								</div>
+							</div>
+						</section>
+
+						{/* DYES Billing Section */}
+						<section className="section-card mx-auto mt-8 flex max-w-6xl flex-col gap-6">
+							<div className="rounded-2xl border border-blue-200 bg-white shadow-sm flex flex-col" style={{ maxHeight: '700px' }}>
+								<div className="border-b border-blue-200 bg-blue-50 px-6 py-4 flex-shrink-0">
+									<h2 className="text-lg font-semibold text-slate-900">
+										DYES Billing
+									</h2>
+								</div>
+								<div className="p-6 flex-1 overflow-y-auto overflow-x-hidden">
+									<div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+										<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+											<p className="text-sm font-medium text-slate-600">Total DYES Patients</p>
+											<p className="mt-1 text-2xl font-bold text-slate-900">{dyesBillingData.patientCount}</p>
+										</div>
+										<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+											<p className="text-sm font-medium text-slate-600">Total Completed Sessions</p>
+											<p className="mt-1 text-2xl font-bold text-slate-900">{dyesBillingData.totalCompletedSessions}</p>
+										</div>
+										<div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+											<p className="text-sm font-medium text-blue-700">Billable Sessions</p>
+											<p className="mt-1 text-2xl font-bold text-blue-900">{dyesBillingData.billableSessions}</p>
+										</div>
+									</div>
+									<div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+										<div className="flex flex-wrap items-center gap-4">
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">From Date</label>
+												<input
+													type="date"
+													value={dyesDateFilterFrom}
+													onChange={e => setDyesDateFilterFrom(e.target.value)}
+													className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+												/>
+											</div>
+											<div>
+												<label className="block text-sm font-medium text-slate-700 mb-1">To Date</label>
+												<input
+													type="date"
+													value={dyesDateFilterTo}
+													onChange={e => setDyesDateFilterTo(e.target.value)}
+													className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+												/>
+											</div>
+											{(dyesDateFilterFrom || dyesDateFilterTo) && (
+												<div className="flex items-end">
+													<button
+														type="button"
+														onClick={() => {
+															setDyesDateFilterFrom('');
+															setDyesDateFilterTo('');
+														}}
+														className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+													>
+														Clear Filters
+													</button>
+												</div>
+											)}
+										</div>
+										<button
+											type="button"
+											onClick={(e) => {
+												e.preventDefault();
+												e.stopPropagation();
+												handleDyesInvoiceDownload();
+											}}
+											className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline-none"
+										>
+											<i className="fas fa-download mr-2" aria-hidden="true" />
+											Download Invoice
+										</button>
+									</div>
+									<div className="border-t border-slate-200 pt-4">
+										<div className="mb-3 flex items-center justify-between">
+											<h3 className="text-sm font-semibold text-slate-900">
+												Billing Records ({filteredDyesBillingRecords.length})
+											</h3>
+										</div>
+										{filteredDyesBillingRecords.length === 0 ? (
+											<div className="py-8 text-center text-sm text-slate-500">
+												No DYES billing records found{dyesDateFilterFrom || dyesDateFilterTo ? ' for the selected date range' : ''}.
+											</div>
+										) : (
+											<div className="overflow-x-auto">
+												<table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+													<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+														<tr>
+															<th className="px-3 py-2 font-semibold">Bill ID</th>
+															<th className="px-3 py-2 font-semibold">Patient</th>
+															<th className="px-3 py-2 font-semibold">Date</th>
+															<th className="px-3 py-2 font-semibold">Amount</th>
+															<th className="px-3 py-2 font-semibold">Status</th>
+															<th className="px-3 py-2 font-semibold">Payment Mode</th>
+														</tr>
+													</thead>
+													<tbody className="divide-y divide-slate-100 bg-white">
+														{filteredDyesBillingRecords.map(bill => (
+															<tr key={bill.id || bill.billingId} className="hover:bg-slate-50">
+																<td className="px-3 py-3 text-sm font-medium text-slate-800">
+																	{bill.billingId}
+																</td>
+																<td className="px-3 py-3 text-sm text-slate-600">
+																	{bill.patient}
+																</td>
+																<td className="px-3 py-3 text-sm text-slate-600">
+																	{bill.date}
+																</td>
+																<td className="px-3 py-3 text-sm font-semibold text-slate-900">
+																	₹{bill.amount.toFixed(2)}
+																</td>
+																<td className="px-3 py-3">
+																	<span
+																		className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+																			bill.status === 'Completed' || bill.status === 'Auto-Paid'
+																				? 'bg-emerald-100 text-emerald-800'
+																				: 'bg-amber-100 text-amber-800'
+																		}`}
+																	>
+																		{bill.status}
+																	</span>
+																</td>
+																<td className="px-3 py-3 text-sm text-slate-600">
+																	{bill.paymentMode || '--'}
+																</td>
+															</tr>
+														))}
+													</tbody>
+												</table>
+											</div>
+										)}
+									</div>
 								</div>
 							</div>
 						</section>
@@ -2908,6 +3669,237 @@ export default function Billing() {
 					</div>
 				)}
 			</div>
+
+			{/* DYES Invoice Modal */}
+			{showDyesInvoiceModal && editableDyesInvoice && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+					<div className="w-full max-w-6xl rounded-2xl border border-slate-200 bg-white shadow-2xl max-h-[90vh] flex flex-col">
+						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+							<h2 className="text-lg font-semibold text-slate-900">DYES Invoice - Edit & Download</h2>
+							<button
+								type="button"
+								onClick={() => {
+									setShowDyesInvoiceModal(false);
+									setEditableDyesInvoice(null);
+								}}
+								className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none"
+								aria-label="Close"
+							>
+								<i className="fas fa-times" aria-hidden="true" />
+							</button>
+						</header>
+						<div className="flex-1 overflow-y-auto px-6 py-6">
+							<div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+								{/* Editable Fields */}
+								<div className="space-y-4">
+									<h3 className="text-md font-semibold text-slate-900 mb-4">Edit Invoice Details</h3>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">Invoice No.</label>
+										<input
+											type="text"
+											value={editableDyesInvoice.invoiceNo}
+											onChange={e => setEditableDyesInvoice({ ...editableDyesInvoice, invoiceNo: e.target.value })}
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">Invoice Date</label>
+										<input
+											type="text"
+											value={editableDyesInvoice.invoiceDate}
+											onChange={e => setEditableDyesInvoice({ ...editableDyesInvoice, invoiceDate: e.target.value })}
+											placeholder="e.g., 06-Nov-25"
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">Total Sessions</label>
+										<input
+											type="number"
+											value={editableDyesInvoice.totalSessions}
+											onChange={e => {
+												const sessions = parseInt(e.target.value) || 0;
+												const rate = editableDyesInvoice.rate;
+												const amount = sessions * rate;
+												const cgstAmount = (amount * editableDyesInvoice.cgstRate) / 100;
+												const sgstAmount = (amount * editableDyesInvoice.sgstRate) / 100;
+												const totalAmount = amount + cgstAmount + sgstAmount;
+												setEditableDyesInvoice({
+													...editableDyesInvoice,
+													totalSessions: sessions,
+													amount,
+													cgstAmount,
+													sgstAmount,
+													totalAmount,
+												});
+											}}
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">Rate per Session (₹)</label>
+										<input
+											type="number"
+											step="0.01"
+											value={editableDyesInvoice.rate}
+											onChange={e => {
+												const rate = parseFloat(e.target.value) || 0;
+												const amount = editableDyesInvoice.totalSessions * rate;
+												const cgstAmount = (amount * editableDyesInvoice.cgstRate) / 100;
+												const sgstAmount = (amount * editableDyesInvoice.sgstRate) / 100;
+												const totalAmount = amount + cgstAmount + sgstAmount;
+												setEditableDyesInvoice({
+													...editableDyesInvoice,
+													rate,
+													amount,
+													cgstAmount,
+													sgstAmount,
+													totalAmount,
+												});
+											}}
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">Amount (₹)</label>
+										<input
+											type="number"
+											step="0.01"
+											value={editableDyesInvoice.amount.toFixed(2)}
+											onChange={e => {
+												const amount = parseFloat(e.target.value) || 0;
+												const cgstAmount = (amount * editableDyesInvoice.cgstRate) / 100;
+												const sgstAmount = (amount * editableDyesInvoice.sgstRate) / 100;
+												const totalAmount = amount + cgstAmount + sgstAmount;
+												setEditableDyesInvoice({
+													...editableDyesInvoice,
+													amount,
+													cgstAmount,
+													sgstAmount,
+													totalAmount,
+												});
+											}}
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">CGST Rate (%)</label>
+										<input
+											type="number"
+											step="0.01"
+											value={editableDyesInvoice.cgstRate}
+											onChange={e => {
+												const cgstRate = parseFloat(e.target.value) || 0;
+												const cgstAmount = (editableDyesInvoice.amount * cgstRate) / 100;
+												const sgstAmount = (editableDyesInvoice.amount * editableDyesInvoice.sgstRate) / 100;
+												const totalAmount = editableDyesInvoice.amount + cgstAmount + sgstAmount;
+												setEditableDyesInvoice({
+													...editableDyesInvoice,
+													cgstRate,
+													cgstAmount,
+													totalAmount,
+												});
+											}}
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">SGST Rate (%)</label>
+										<input
+											type="number"
+											step="0.01"
+											value={editableDyesInvoice.sgstRate}
+											onChange={e => {
+												const sgstRate = parseFloat(e.target.value) || 0;
+												const cgstAmount = (editableDyesInvoice.amount * editableDyesInvoice.cgstRate) / 100;
+												const sgstAmount = (editableDyesInvoice.amount * sgstRate) / 100;
+												const totalAmount = editableDyesInvoice.amount + cgstAmount + sgstAmount;
+												setEditableDyesInvoice({
+													...editableDyesInvoice,
+													sgstRate,
+													sgstAmount,
+													totalAmount,
+												});
+											}}
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">Date Range</label>
+										<input
+											type="text"
+											value={editableDyesInvoice.dateRange}
+											onChange={e => setEditableDyesInvoice({ ...editableDyesInvoice, dateRange: e.target.value })}
+											placeholder="e.g., 11/06/2025 to 30/10/2025"
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-slate-700 mb-1">Sessions Completed Remark</label>
+										<textarea
+											value={editableDyesInvoice.sessionsCompleted}
+											onChange={e => setEditableDyesInvoice({ ...editableDyesInvoice, sessionsCompleted: e.target.value })}
+											rows={3}
+											className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										/>
+									</div>
+									<div className="rounded-lg bg-slate-50 p-4 border border-slate-200">
+										<div className="text-sm text-slate-600 mb-2">Calculated Values:</div>
+										<div className="space-y-1 text-sm">
+											<div className="flex justify-between">
+												<span className="text-slate-700">CGST Amount:</span>
+												<span className="font-semibold">₹{editableDyesInvoice.cgstAmount.toFixed(2)}</span>
+											</div>
+											<div className="flex justify-between">
+												<span className="text-slate-700">SGST Amount:</span>
+												<span className="font-semibold">₹{editableDyesInvoice.sgstAmount.toFixed(2)}</span>
+											</div>
+											<div className="flex justify-between border-t border-slate-300 pt-1 mt-1">
+												<span className="text-slate-900 font-semibold">Total Amount:</span>
+												<span className="font-bold text-slate-900">₹{editableDyesInvoice.totalAmount.toFixed(2)}</span>
+											</div>
+										</div>
+									</div>
+								</div>
+
+								{/* Preview */}
+								<div className="space-y-4">
+									<h3 className="text-md font-semibold text-slate-900 mb-4">Invoice Preview</h3>
+									<div className="border border-slate-300 rounded-lg overflow-hidden bg-white" style={{ height: '800px' }}>
+										<iframe
+											title="DYES Invoice Preview"
+											srcDoc={dyesInvoicePreviewHtml}
+											key={dyesInvoicePreviewHtml}
+											className="w-full h-full border-0"
+											style={{ transform: 'scale(0.7)', transformOrigin: 'top left', width: '142.86%', height: '142.86%' }}
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+						<footer className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
+							<button
+								type="button"
+								onClick={() => {
+									setShowDyesInvoiceModal(false);
+									setEditableDyesInvoice(null);
+								}}
+								className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-800 focus-visible:outline-none"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleDyesInvoicePdfDownload}
+								className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+							>
+								<i className="fas fa-download mr-2 text-sm" aria-hidden="true" />
+								Download as PDF
+							</button>
+						</footer>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
