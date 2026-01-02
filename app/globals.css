@@ -25,6 +25,34 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Prevent background scrolling when modal is open */
+/* Use :has() selector for modern browsers */
+body:has([class*="fixed"][class*="inset-0"][class*="z-50"]),
+body:has([class*="fixed"][class*="inset-0"][class*="z-60"]) {
+  overflow: hidden !important;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+}
+
+/* Alternative: Prevent scrolling on body when modal backdrop exists */
+body.modal-open {
+  overflow: hidden !important;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+}
+
+/* Prevent scroll chaining - only for modals, not main page */
+/* Don't prevent scrolling on html/body for regular pages */
+
+/* Ensure modal backdrop prevents background scroll */
+.fixed[class*="inset-0"][class*="z-50"],
+.fixed[class*="inset-0"][class*="z-60"] {
+  overscroll-behavior: contain !important;
+  overflow: hidden !important;
+}
+
 /* Reusable component classes */
 @layer components {
   .card-base {
@@ -58,6 +86,218 @@ body {
   .card-container {
     @apply flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between md:gap-6;
   }
+}
+
+/* Ensure all scrollable containers have visible vertical scrollbars */
+/* Global scrollbar styling for all elements */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184) rgb(241 245 249);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgb(241 245 249);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(100 116 139);
+}
+
+/* Ensure all containers with overflow classes have visible scrollbars */
+.overflow-y-auto,
+.overflow-y-scroll,
+.overflow-auto,
+.overflow-scroll,
+[class*="overflow-y-auto"],
+[class*="overflow-y-scroll"],
+[class*="overflow-auto"],
+[class*="overflow-scroll"] {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184) rgb(241 245 249);
+}
+
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-y-scroll::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar,
+.overflow-scroll::-webkit-scrollbar,
+[class*="overflow-y-auto"]::-webkit-scrollbar,
+[class*="overflow-y-scroll"]::-webkit-scrollbar,
+[class*="overflow-auto"]::-webkit-scrollbar,
+[class*="overflow-scroll"]::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-y-scroll::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track,
+.overflow-scroll::-webkit-scrollbar-track,
+[class*="overflow-y-auto"]::-webkit-scrollbar-track,
+[class*="overflow-y-scroll"]::-webkit-scrollbar-track,
+[class*="overflow-auto"]::-webkit-scrollbar-track,
+[class*="overflow-scroll"]::-webkit-scrollbar-track {
+  background: rgb(241 245 249);
+  border-radius: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-y-scroll::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb,
+.overflow-scroll::-webkit-scrollbar-thumb,
+[class*="overflow-y-auto"]::-webkit-scrollbar-thumb,
+[class*="overflow-y-scroll"]::-webkit-scrollbar-thumb,
+[class*="overflow-auto"]::-webkit-scrollbar-thumb,
+[class*="overflow-scroll"]::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184);
+  border-radius: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.overflow-y-scroll::-webkit-scrollbar-thumb:hover,
+.overflow-auto::-webkit-scrollbar-thumb:hover,
+.overflow-scroll::-webkit-scrollbar-thumb:hover,
+[class*="overflow-y-auto"]::-webkit-scrollbar-thumb:hover,
+[class*="overflow-y-scroll"]::-webkit-scrollbar-thumb:hover,
+[class*="overflow-auto"]::-webkit-scrollbar-thumb:hover,
+[class*="overflow-scroll"]::-webkit-scrollbar-thumb:hover {
+  background: rgb(100 116 139);
+}
+
+/* Fix for containers that get cut off when zoomed in */
+/* CRITICAL: Ensure flex containers with max-height allow scrolling */
+/* ONLY apply to modals, not regular page content */
+.fixed[class*="inset-0"] .flex.flex-col[class*="max-h-"] {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* CRITICAL: Fix flex children to allow proper scrolling - essential for zoom issues */
+.flex.flex-col [class*="flex-1"],
+.flex.flex-col .flex-1 {
+  min-height: 0 !important;
+  flex-shrink: 1;
+}
+
+/* Ensure flex-1 children that should scroll have overflow */
+.flex.flex-col [class*="flex-1"][class*="overflow-y-auto"],
+.flex.flex-col [class*="flex-1"][class*="overflow-y-scroll"],
+.flex.flex-col .flex-1[class*="overflow-y-auto"],
+.flex.flex-col .flex-1[class*="overflow-y-scroll"] {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* CRITICAL: Override overflow-hidden on modals with max-height - MUST allow scrolling */
+/* ONLY apply to modals inside fixed overlays */
+.fixed[class*="inset-0"] [class*="overflow-hidden"][class*="max-h-\[90vh\]"],
+.fixed[class*="inset-0"] [class*="overflow-hidden"][class*="max-h-\[85vh\]"],
+.fixed[class*="inset-0"] [class*="overflow-hidden"][class*="max-h-\[95vh\]"],
+.fixed[class*="inset-0"] [class*="overflow-hidden"][class*="max-h-\[70vh\]"],
+.fixed[class*="inset-0"] [class*="overflow-hidden"][class*="max-h-"] {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Ensure modal/dialog containers with viewport heights are scrollable when zoomed */
+/* ONLY apply to modals inside fixed overlays, not regular page content */
+.fixed[class*="inset-0"] [class*="max-h-\[90vh\]"],
+.fixed[class*="inset-0"] [class*="max-h-\[85vh\]"],
+.fixed[class*="inset-0"] [class*="max-h-\[95vh\]"],
+.fixed[class*="inset-0"] [class*="max-h-\[70vh\]"] {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* CRITICAL: Ensure content areas inside modals with flex-1 can scroll */
+.flex.flex-col[class*="max-h-"] > [class*="flex-1"],
+.flex.flex-col[class*="max-h-"] > .flex-1 {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Fix for modals inside fixed containers - ensure they can scroll */
+.fixed[class*="inset-0"] > [class*="max-h-"] {
+  max-height: 90vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* CRITICAL: Prevent background scroll when modal is open */
+/* Target the modal backdrop/overlay - prevent it from scrolling */
+.fixed[class*="inset-0"][class*="z-50"],
+.fixed[class*="inset-0"][class*="z-60"] {
+  overscroll-behavior: contain !important;
+  overflow: hidden !important;
+  touch-action: none !important;
+}
+
+/* CRITICAL: Ensure modal content containers capture scroll events and prevent chaining */
+.fixed[class*="inset-0"] [class*="max-h-"],
+.fixed[class*="inset-0"] [class*="max-h-\[90vh\]"],
+.fixed[class*="inset-0"] [class*="max-h-\[85vh\]"],
+.fixed[class*="inset-0"] [class*="max-h-\[95vh\]"] {
+  overscroll-behavior: contain !important;
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* CRITICAL: Ensure flex-1 content areas in modals capture scroll and prevent background scroll */
+.fixed[class*="inset-0"] [class*="flex-1"][class*="overflow-y-auto"],
+.fixed[class*="inset-0"] [class*="flex-1"][class*="overflow-y-scroll"],
+.fixed[class*="inset-0"] .flex-1[class*="overflow-y-auto"],
+.fixed[class*="inset-0"] .flex-1[class*="overflow-y-scroll"] {
+  overscroll-behavior: contain !important;
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+  will-change: scroll-position;
+}
+
+/* Prevent scroll chaining from modal content to background */
+/* ONLY apply to modals */
+.fixed[class*="inset-0"] [class*="max-h-\[90vh\]"] [class*="overflow-y-auto"],
+.fixed[class*="inset-0"] [class*="max-h-\[85vh\]"] [class*="overflow-y-auto"],
+.fixed[class*="inset-0"] [class*="max-h-\[95vh\]"] [class*="overflow-y-auto"] {
+  overscroll-behavior: contain !important;
+  touch-action: pan-y !important;
+}
+
+/* Ensure all modal content areas are scrollable - ONLY for modals */
+.fixed[class*="inset-0"] [class*="max-h-\[90vh\"]"] [class*="flex-1"],
+.fixed[class*="inset-0"] [class*="max-h-\[85vh\"]"] [class*="flex-1"],
+.fixed[class*="inset-0"] [class*="max-h-\[95vh\"]"] [class*="flex-1"] {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Ensure main page content can scroll normally - override any accidental restrictions */
+main,
+[role="main"],
+.min-h-svh:not(.fixed) {
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+}
+
+/* Ensure page containers are scrollable */
+.bg-purple-50,
+.bg-slate-50,
+.min-h-svh:not(.fixed) {
+  overflow-y: visible !important;
 }
 
 /* Custom utility classes */

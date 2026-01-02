@@ -488,6 +488,27 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		'signature',
 	]);
 
+	// Subsequent date detection state
+	const [isSubsequentDatePhysio, setIsSubsequentDatePhysio] = useState(false);
+	const [isSubsequentDateStrength, setIsSubsequentDateStrength] = useState(false);
+
+	// Helper function to check if a date is on a different day than today
+	const isDateOnDifferentDay = (reportDate: Date | string | null | undefined): boolean => {
+		if (!reportDate) return false;
+		
+		const report = typeof reportDate === 'string' ? new Date(reportDate) : reportDate;
+		const today = new Date();
+		
+		if (isNaN(report.getTime())) return false;
+		
+		// Set both to start of day for comparison
+		report.setHours(0, 0, 0, 0);
+		today.setHours(0, 0, 0, 0);
+		
+		// Return true if report date is after today (subsequent date scenario)
+		return report.getTime() > today.getTime();
+	};
+
 	// Computed values
 	const displayedRemainingSessions = useMemo(() => {
 		const baseRemaining = 
@@ -515,6 +536,9 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setStrengthConditioningData(null);
 			setViewingVersionData(null);
 			setActiveReportTab(initialTab);
+			setIsSubsequentDatePhysio(false);
+			setIsSubsequentDateStrength(false);
+			setSessionCompleted(false);
 			if (strengthConditioningUnsubscribeRef.current) {
 				strengthConditioningUnsubscribeRef.current();
 				strengthConditioningUnsubscribeRef.current = null;
@@ -542,9 +566,30 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					setReportPatientData(patientData);
 					setPatientDocId(patientDoc.id);
 					
+					// Check if it's a subsequent date for Physiotherapy report
+					// Compare dateOfConsultation or updatedAt with today
+					if (patientData.dateOfConsultation) {
+						setIsSubsequentDatePhysio(isDateOnDifferentDay(patientData.dateOfConsultation));
+					} else if (patientData.updatedAt) {
+						// If no consultation date, check updatedAt timestamp
+						const updatedDate = (patientData.updatedAt as any)?.toDate ? (patientData.updatedAt as any).toDate() : new Date(patientData.updatedAt);
+						if (!isNaN(updatedDate.getTime())) {
+							setIsSubsequentDatePhysio(isDateOnDifferentDay(updatedDate));
+						} else {
+							setIsSubsequentDatePhysio(false);
+						}
+					} else {
+						setIsSubsequentDatePhysio(false);
+					}
+					
 					// Initialize formData with patient data if editable
 					if (editable) {
-						setFormData(applyCurrentSessionAdjustments(patientData));
+						const adjustedData = applyCurrentSessionAdjustments(patientData);
+						// Set dateOfConsultation to today's date if it's not already set
+						if (!adjustedData.dateOfConsultation) {
+							adjustedData.dateOfConsultation = new Date().toISOString().split('T')[0];
+						}
+						setFormData(adjustedData);
 					}
 					
 					// Load header config
@@ -593,9 +638,30 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						if (docSnap.exists()) {
 							const data = docSnap.data() as StrengthConditioningData;
 							setStrengthConditioningData(data);
+							
+							// Check if it's a subsequent date for Strength & Conditioning report
+							if (data.assessmentDate) {
+								setIsSubsequentDateStrength(isDateOnDifferentDay(data.assessmentDate));
+							} else if ((data as any).updatedAt) {
+								// If no assessment date, check updatedAt
+								const updatedDate = typeof (data as any).updatedAt === 'string' ? new Date((data as any).updatedAt) : ((data as any).updatedAt as any)?.toDate ? ((data as any).updatedAt as any).toDate() : new Date();
+								if (!isNaN(updatedDate.getTime())) {
+									setIsSubsequentDateStrength(isDateOnDifferentDay(updatedDate));
+								} else {
+									setIsSubsequentDateStrength(false);
+								}
+							} else {
+								setIsSubsequentDateStrength(false);
+							}
+							
 							// Initialize formData with strength conditioning data if editable
 							if (editable) {
-								setStrengthConditioningFormData(data);
+								const formDataWithDate = { ...data };
+								// Set assessmentDate to today's date if it's not already set
+								if (!formDataWithDate.assessmentDate) {
+									formDataWithDate.assessmentDate = new Date().toISOString().split('T')[0];
+								}
+								setStrengthConditioningFormData(formDataWithDate);
 								// Set uploaded PDF URL if it exists
 								if (data.uploadedPdfUrl) {
 									setUploadedPdfUrl(data.uploadedPdfUrl);
@@ -603,8 +669,12 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							}
 						} else {
 							setStrengthConditioningData(null);
+							setIsSubsequentDateStrength(false);
 							if (editable) {
-								setStrengthConditioningFormData({});
+								// Set assessmentDate to today's date for new reports
+								setStrengthConditioningFormData({
+									assessmentDate: new Date().toISOString().split('T')[0]
+								});
 								setUploadedPdfUrl(null);
 							}
 						}
@@ -612,6 +682,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					}, (error) => {
 						console.error('Error loading strength and conditioning report:', error);
 						setStrengthConditioningData(null);
+						setIsSubsequentDateStrength(false);
 						setLoadingStrengthConditioning(false);
 					});
 					
@@ -752,6 +823,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			nextFollowUpDate: displayData.nextFollowUpDate || '',
 			nextFollowUpTime: displayData.nextFollowUpTime || '',
 			followUpVisits: displayData.followUpVisits || [],
+			followUpAssessment: displayData.followUpAssessment || '',
 			currentPainStatus: displayData.currentPainStatus || '',
 			currentRom: displayData.currentRom || '',
 			currentStrength: displayData.currentStrength || '',
@@ -1306,6 +1378,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		} else {
 			setStrengthConditioningFormData(prev => ({ ...prev, [field]: value }));
 		}
+		
+		// Update subsequent date state when assessmentDate changes
+		if (field === 'assessmentDate') {
+			setIsSubsequentDateStrength(isDateOnDifferentDay(value));
+		}
 	};
 
 	// Handle save for strength conditioning
@@ -1409,6 +1486,63 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			// This prevents any timing issues with onSnapshot
 			setStrengthConditioningFormData(dataToSave);
 
+			// Handle session completion if checkbox is checked
+			if (sessionCompleted && reportPatientData) {
+				try {
+					const patientRef = doc(db, 'patients', patientDocId || patientId);
+					const totalSessionsValue =
+						typeof reportPatientData.totalSessionsRequired === 'number'
+							? reportPatientData.totalSessionsRequired
+							: null;
+
+					// Calculate remaining sessions
+					const baseRemaining = 
+						typeof reportPatientData.remainingSessions === 'number'
+							? reportPatientData.remainingSessions
+							: totalSessionsValue !== null
+								? totalSessionsValue
+								: null;
+
+					if (baseRemaining !== null && baseRemaining > 0) {
+						const newRemainingSessions = Math.max(0, baseRemaining - 1);
+
+						// Update patient's remaining sessions
+						await updateDoc(patientRef, {
+							remainingSessions: newRemainingSessions,
+							updatedAt: serverTimestamp(),
+						});
+
+						// Update reportPatientData state
+						setReportPatientData((prev: any) => prev ? { ...prev, remainingSessions: newRemainingSessions } : null);
+
+						// Mark appointment as completed
+						const patientForProgress: PatientRecordFull = {
+							...reportPatientData,
+							id: patientDocId || patientId,
+							totalSessionsRequired: totalSessionsValue ?? reportPatientData.totalSessionsRequired,
+							remainingSessions: newRemainingSessions,
+						};
+
+						const consultationDate = strengthConditioningFormData.assessmentDate || reportPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
+						await markAppointmentCompletedForReport(patientForProgress, consultationDate);
+
+						// Refresh patient session progress
+						const sessionProgress = await refreshPatientSessionProgress(
+							patientForProgress,
+							totalSessionsValue ?? null
+						);
+
+						if (sessionProgress) {
+							setReportPatientData((prev: any) => (prev ? { ...prev, ...sessionProgress } : null));
+						}
+					}
+				} catch (sessionError) {
+					console.error('Failed to handle session completion for strength conditioning report', sessionError);
+					// Don't block the save if session completion fails
+				}
+			}
+
+			setSessionCompleted(false);
 			setSavedStrengthConditioningMessage(true);
 			setTimeout(() => setSavedStrengthConditioningMessage(false), 3000);
 		} catch (error) {
@@ -1563,6 +1697,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				clinicalDiagnosis: formData.clinicalDiagnosis || '',
 				treatmentPlan: formData.treatmentPlan || [],
 				followUpVisits: formData.followUpVisits || [],
+				followUpAssessment: formData.followUpAssessment || '',
 				currentPainStatus: formData.currentPainStatus || '',
 				currentRom: formData.currentRom || '',
 				currentStrength: formData.currentStrength || '',
@@ -1685,6 +1820,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				clinicalDiagnosis: reportPatientData.clinicalDiagnosis,
 				treatmentPlan: reportPatientData.treatmentPlan,
 				followUpVisits: reportPatientData.followUpVisits,
+				followUpAssessment: reportPatientData.followUpAssessment,
 				currentPainStatus: reportPatientData.currentPainStatus,
 				currentRom: reportPatientData.currentRom,
 				currentStrength: reportPatientData.currentStrength,
@@ -2058,6 +2194,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				clinicalDiagnosis: reportPatientData.clinicalDiagnosis,
 				treatmentPlan: reportPatientData.treatmentPlan,
 				followUpVisits: reportPatientData.followUpVisits,
+				followUpAssessment: reportPatientData.followUpAssessment,
 				currentPainStatus: reportPatientData.currentPainStatus,
 				currentRom: reportPatientData.currentRom,
 				currentStrength: reportPatientData.currentStrength,
@@ -2196,6 +2333,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const handleFieldChange = (field: keyof PatientRecordFull, value: any) => {
 		if (!editable) return;
 		setFormData(prev => ({ ...prev, [field]: value }));
+		
+		// Update subsequent date state when dateOfConsultation changes
+		if (field === 'dateOfConsultation') {
+			setIsSubsequentDatePhysio(isDateOnDifferentDay(value));
+		}
 	};
 
 	const handleCheckboxChange = (field: keyof PatientRecordFull, checked: boolean) => {
@@ -2241,7 +2383,10 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					<nav className="flex gap-4" aria-label="Report tabs">
 						<button
 							type="button"
-							onClick={() => setActiveReportTab('report')}
+							onClick={() => {
+								setActiveReportTab('report');
+								setSessionCompleted(false);
+							}}
 							className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
 								activeReportTab === 'report'
 									? 'border-sky-600 text-sky-600'
@@ -2253,7 +2398,10 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						</button>
 						<button
 							type="button"
-							onClick={() => setActiveReportTab('strength-conditioning')}
+							onClick={() => {
+								setActiveReportTab('strength-conditioning');
+								setSessionCompleted(false);
+							}}
 							className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
 								activeReportTab === 'strength-conditioning'
 									? 'border-sky-600 text-sky-600'
@@ -2467,19 +2615,76 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								)}
 							</div>
 
-							{/* Assessment Section */}
-							<div className="mb-8">
-								<h3 className="mb-4 text-sm font-semibold text-sky-600">Assessment</h3>
+							{/* Date of Consultation - Always visible */}
+							<div className="mb-8 border-b border-slate-200 pb-4">
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">Report Date</h3>
 								<div className="grid gap-4 sm:grid-cols-2">
 									<div>
 										<label className="block text-xs font-medium text-slate-500">Date of Consultation</label>
 										<input
 											type="date"
-											value={formData.dateOfConsultation || ''}
+											value={formData.dateOfConsultation || new Date().toISOString().split('T')[0]}
 											onChange={e => handleFieldChange('dateOfConsultation', e.target.value)}
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 										/>
 									</div>
+								</div>
+							</div>
+
+							{isSubsequentDatePhysio ? (
+								<>
+									{/* Simplified Follow-Up Form for Subsequent Dates */}
+									<div className="mb-8">
+										<div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+											<p className="text-sm text-blue-800">
+												<i className="fas fa-info-circle mr-2" aria-hidden="true" />
+												This is a follow-up visit. Please update the follow-up assessment, progress, and treatment details.
+											</p>
+										</div>
+
+										{/* Follow-up Assessment */}
+										<div className="mb-8">
+											<h3 className="mb-4 text-sm font-semibold text-sky-600">Follow-up Assessment</h3>
+											<textarea
+												value={formData.followUpAssessment || ''}
+												onChange={e => handleFieldChange('followUpAssessment', e.target.value)}
+												className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												rows={5}
+												placeholder="Enter follow-up assessment details..."
+											/>
+										</div>
+
+										{/* Progress */}
+										<div className="mb-8">
+											<h3 className="mb-4 text-sm font-semibold text-sky-600">Progress</h3>
+											<textarea
+												value={formData.progressNotes || ''}
+												onChange={e => handleFieldChange('progressNotes', e.target.value)}
+												className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												rows={5}
+												placeholder="Enter progress notes..."
+											/>
+										</div>
+
+										{/* Treatment */}
+										<div className="mb-8">
+											<h3 className="mb-4 text-sm font-semibold text-sky-600">Treatment</h3>
+											<textarea
+												value={formData.treatmentProvided || ''}
+												onChange={e => handleFieldChange('treatmentProvided', e.target.value)}
+												className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												rows={5}
+												placeholder="Enter treatment provided..."
+											/>
+										</div>
+									</div>
+								</>
+							) : (
+								<>
+							{/* Assessment Section */}
+							<div className="mb-8">
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">Assessment</h3>
+								<div className="grid gap-4 sm:grid-cols-2">
 									<div>
 										<label className="block text-xs font-medium text-slate-500">Referred By</label>
 										<input
@@ -3467,6 +3672,9 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</div>
 							</div>
 
+								</>
+							)}
+
 							{/* Save Section */}
 							<div className="flex items-center justify-between border-t border-slate-200 pt-6 mt-8">
 								<label className="flex items-center gap-2 cursor-pointer">
@@ -3541,14 +3749,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									</div>
 
-									{/* Date */}
-									<div className="mb-6">
+									{/* Date - Always visible and editable */}
+									<div className="mb-6 border-b border-slate-200 pb-4">
 										<label className="block text-sm font-semibold text-slate-700 mb-2">
-											Date
+											Report Date
 										</label>
 										<input
 											type="date"
-											value={strengthConditioningFormData.assessmentDate || ''}
+											value={strengthConditioningFormData.assessmentDate || new Date().toISOString().split('T')[0]}
 											onChange={e => handleFieldChangeStrengthConditioning('assessmentDate', e.target.value)}
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 										/>
@@ -3777,7 +3985,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									</div>
 
-									{/* Skill Training */}
+									{/* Skill Training - Hidden on subsequent dates */}
+									{!isSubsequentDateStrength && (
 									<div className="mb-8 border-t border-slate-200 pt-6">
 										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
 											1. Skill Training
@@ -3870,6 +4079,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</div>
 										</div>
 									</div>
+									)}
 
 									{/* Strength & Conditioning */}
 									<div className="mb-8 border-t border-slate-200 pt-6">
@@ -4446,7 +4656,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									</div>
 
-									{/* Injury Risk Screening */}
+									{/* Injury Risk Screening - Hidden on subsequent dates */}
+									{!isSubsequentDateStrength && (
 									<div className="mb-8">
 										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
 											Injury Risk Screening
@@ -4892,6 +5103,25 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</div>
 										</div>
 									</div>
+									)}
+
+									{/* Save Section with Session Completion Checkbox */}
+									{activeReportTab === 'strength-conditioning' && (
+										<div className="flex items-center justify-between border-t border-slate-200 pt-6 mt-8">
+											<label className="flex items-center gap-2 cursor-pointer">
+												<input
+													type="checkbox"
+													checked={sessionCompleted}
+													onChange={e => setSessionCompleted(e.target.checked)}
+													disabled={savingStrengthConditioning || !reportPatientData}
+													className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200 disabled:opacity-50 disabled:cursor-not-allowed"
+												/>
+												<span className="text-sm font-medium text-slate-700">
+													Completion of one session
+												</span>
+											</label>
+										</div>
+									)}
 								</>
 							)}
 						</div>
@@ -5266,6 +5496,26 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 															>
 																<i className="fas fa-download mr-1.5" aria-hidden="true" />
 																Download Report
+															</button>
+															<button
+																type="button"
+																onClick={() => {
+																	// Load version data into form for editing
+																	if (version.isStrengthConditioning || activeReportTab === 'strength-conditioning') {
+																		setStrengthConditioningFormData(version.data as StrengthConditioningData);
+																		setActiveReportTab('strength-conditioning');
+																	} else {
+																		setFormData(version.data as Partial<PatientRecordFull>);
+																		setActiveReportTab('report');
+																	}
+																	setShowVersionHistory(false);
+																	setViewingVersionData(null);
+																}}
+																className="inline-flex items-center rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 focus-visible:outline-none"
+																title="Edit this version"
+															>
+																<i className="fas fa-edit mr-1.5" aria-hidden="true" />
+																Edit
 															</button>
 															<button
 																type="button"

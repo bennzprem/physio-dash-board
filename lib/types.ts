@@ -159,6 +159,8 @@ export interface PatientRecordFull {
 		painLevel: string;
 		findings: string;
 	}>;
+	// Follow-up Assessment (text field for subsequent visits)
+	followUpAssessment?: string;
 	// Current Status
 	currentPainStatus?: 'Improved' | 'Same' | 'Worsened';
 	currentRom?: string; // "Improved by _*"
