@@ -7,7 +7,8 @@ export type EmailTemplate =
 	| 'appointment-status-changed'
 	| 'billing-pending'
 	| 'session-balance'
-	| 'password-reset';
+	| 'password-reset'
+	| 'rating-submitted';
 
 export interface EmailData {
 	to: string;
@@ -58,6 +59,8 @@ export function getEmailSubject(template: EmailTemplate, data: Record<string, un
 		}
 		case 'password-reset':
 			return 'Reset Your Password - Centre For Sports Science';
+		case 'rating-submitted':
+			return `New Performance Rating Submitted - ${data.ratedStaffName as string}`;
 		default:
 			return 'Notification from Centre For Sports Science';
 	}
@@ -545,6 +548,68 @@ export function generateEmailBody(template: EmailTemplate, data: Record<string, 
 							<p>If you did not request a password reset, please ignore this email. Your password will remain unchanged.</p>
 							
 							<p>For security reasons, if you continue to receive these emails, please contact our support team.</p>
+							
+							<p>Best regards,<br>The ${clinicName} Team</p>
+						</div>
+						<div class="footer">
+							<p><strong>${clinicName}</strong></p>
+							${clinicEmail ? `<p>Email: ${clinicEmail}</p>` : ''}
+							${clinicPhone ? `<p>Phone: ${clinicPhone}</p>` : ''}
+						</div>
+					</div>
+				</body>
+				</html>
+			`;
+		}
+
+		case 'rating-submitted': {
+			const ratedStaffName = (data.ratedStaffName as string) || 'Staff Member';
+			const ratedStaffEmail = (data.ratedStaffEmail as string) || '';
+			const raterName = (data.raterName as string) || 'Unknown';
+			const raterEmail = (data.raterEmail as string) || '';
+			const rating = (data.rating as number) || 0;
+			const criteria = (data.criteria as string) || '';
+			const comments = (data.comments as string) || '';
+
+			return `
+				<!DOCTYPE html>
+				<html>
+				<head>
+					<meta charset="utf-8">
+					<meta name="viewport" content="width=device-width, initial-scale=1.0">
+					${baseStyles}
+				</head>
+				<body>
+					<div class="container">
+						<div class="header">
+							<h1>New Performance Rating Submitted</h1>
+						</div>
+						<div class="content">
+							<p>Dear Admin,</p>
+							
+							<p>A new performance rating has been submitted and is pending your approval.</p>
+							
+							<div class="info-box">
+								<div class="detail-row">
+									<span class="detail-label">Rated Staff:</span> ${ratedStaffName}${ratedStaffEmail ? ` (${ratedStaffEmail})` : ''}
+								</div>
+								<div class="detail-row">
+									<span class="detail-label">Rated By:</span> ${raterName}${raterEmail ? ` (${raterEmail})` : ''}
+								</div>
+								<div class="detail-row">
+									<span class="detail-label">Rating:</span> ${rating} Star${rating > 1 ? 's' : ''}
+								</div>
+								<div class="detail-row">
+									<span class="detail-label">Criteria:</span> ${criteria}
+								</div>
+								${comments ? `
+								<div class="detail-row">
+									<span class="detail-label">Comments:</span> ${comments}
+								</div>
+								` : ''}
+							</div>
+							
+							<p>Please review and approve or reject this rating in the admin panel.</p>
 							
 							<p>Best regards,<br>The ${clinicName} Team</p>
 						</div>

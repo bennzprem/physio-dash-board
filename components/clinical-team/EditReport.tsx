@@ -155,6 +155,7 @@ const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
 };
 
 const ROM_HAS_SIDE: Record<string, boolean> = {
+	Hip: true,
 	Shoulder: true,
 	Elbow: true,
 	Forearm: true,
@@ -489,6 +490,10 @@ export default function EditReport() {
 	const [selectedRomJoint, setSelectedRomJoint] = useState('');
 	const [selectedMmtJoint, setSelectedMmtJoint] = useState('');
 	const [formData, setFormData] = useState<Partial<PatientRecordFull>>({});
+	const romFileInputRef = useRef<HTMLInputElement>(null);
+	const mmtFileInputRef = useRef<HTMLInputElement>(null);
+	const [romImages, setRomImages] = useState<Record<string, { data: string; fileName: string }>>({});
+	const [mmtImages, setMmtImages] = useState<Record<string, { data: string; fileName: string }>>({});
 	const [showVersionHistory, setShowVersionHistory] = useState(false);
 	const [versionHistory, setVersionHistory] = useState<Array<{
 		id: string;
@@ -1061,6 +1066,66 @@ export default function EditReport() {
 			const result = event.target?.result;
 			if (typeof result === 'string') {
 				setFormData(prev => ({ ...prev, [dataField]: result, [nameField]: file.name }));
+			}
+		};
+		reader.readAsDataURL(file);
+	};
+
+	const handleRomImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+
+		// Validate file type
+		if (!file.type.startsWith('image/') && !file.type.includes('pdf')) {
+			alert('Please select an image or PDF file');
+			return;
+		}
+
+		// Validate file size (max 5MB)
+		if (file.size > 5 * 1024 * 1024) {
+			alert('File size should be less than 5MB');
+			return;
+		}
+
+		const joint = selectedRomJoint || 'general';
+		const reader = new FileReader();
+		reader.onload = event => {
+			const result = event.target?.result;
+			if (typeof result === 'string') {
+				setRomImages(prev => ({
+					...prev,
+					[joint]: { data: result, fileName: file.name }
+				}));
+			}
+		};
+		reader.readAsDataURL(file);
+	};
+
+	const handleMmtImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+
+		// Validate file type
+		if (!file.type.startsWith('image/') && !file.type.includes('pdf')) {
+			alert('Please select an image or PDF file');
+			return;
+		}
+
+		// Validate file size (max 5MB)
+		if (file.size > 5 * 1024 * 1024) {
+			alert('File size should be less than 5MB');
+			return;
+		}
+
+		const joint = selectedMmtJoint || 'general';
+		const reader = new FileReader();
+		reader.onload = event => {
+			const result = event.target?.result;
+			if (typeof result === 'string') {
+				setMmtImages(prev => ({
+					...prev,
+					[joint]: { data: result, fileName: file.name }
+				}));
 			}
 		};
 		reader.readAsDataURL(file);
@@ -2603,8 +2668,9 @@ export default function EditReport() {
 											type="text"
 											value={data?.[motion] || ''}
 											onChange={e => handleRomChange(joint, motion, 'none', e.target.value)}
-											className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+											className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 											placeholder="Enter value"
+											style={{ color: '#1e293b' }}
 										/>
 									</td>
 								</tr>
@@ -2648,7 +2714,7 @@ export default function EditReport() {
 													type="text"
 													value={data?.[side]?.[baseMotion] || ''}
 													onChange={e => handleRomChange(joint, baseMotion, side, e.target.value)}
-													className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+													className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
 													placeholder="Enter value"
 												/>
 											</td>
@@ -2663,7 +2729,7 @@ export default function EditReport() {
 													type="text"
 													value={data?.[motion] || ''}
 													onChange={e => handleRomChange(joint, motion, 'none', e.target.value)}
-													className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+													className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
 													placeholder="Enter value"
 												/>
 											</td>
@@ -2714,8 +2780,9 @@ export default function EditReport() {
 										type="text"
 										value={data?.left?.[motion] || ''}
 										onChange={e => handleRomChange(joint, motion, 'left', e.target.value)}
-										className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+										className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 										placeholder="Left"
+										style={{ color: '#1e293b' }}
 									/>
 								</td>
 								<td className="px-3 py-2 text-slate-700">{motion}</td>
@@ -2724,8 +2791,9 @@ export default function EditReport() {
 										type="text"
 										value={data?.right?.[motion] || ''}
 										onChange={e => handleRomChange(joint, motion, 'right', e.target.value)}
-										className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+										className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 										placeholder="Right"
+										style={{ color: '#1e293b' }}
 									/>
 								</td>
 							</tr>
@@ -2769,8 +2837,9 @@ export default function EditReport() {
 												type="text"
 												value={data?.[motion] || ''}
 												onChange={e => handleMmtChange(joint, motion, 'none', e.target.value)}
-												className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+												className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 												placeholder="Grade"
+												style={{ color: '#1e293b' }}
 											/>
 										</td>
 									</tr>
@@ -2821,7 +2890,7 @@ export default function EditReport() {
 											type="text"
 											value={data?.left?.[motion] || ''}
 											onChange={e => handleMmtChange(joint, motion, 'left', e.target.value)}
-											className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+											className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
 											placeholder="Grade"
 										/>
 									</td>
@@ -2831,7 +2900,7 @@ export default function EditReport() {
 											type="text"
 											value={data?.right?.[motion] || ''}
 											onChange={e => handleMmtChange(joint, motion, 'right', e.target.value)}
-											className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+											className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
 											placeholder="Grade"
 										/>
 									</td>
@@ -4448,7 +4517,7 @@ export default function EditReport() {
 											onChange={e => handleFieldChange('posture', e.target.value)}
 											className="text-sky-600"
 										/>
-										<span className="text-sm">Manual</span>
+										<span className="text-sm text-slate-800">Manual</span>
 									</label>
 									<label className="flex items-center gap-2">
 										<input
@@ -4459,7 +4528,7 @@ export default function EditReport() {
 											onChange={e => handleFieldChange('posture', e.target.value)}
 											className="text-sky-600"
 										/>
-										<span className="text-sm">Kinetisense</span>
+										<span className="text-sm text-slate-800">Kinetisense</span>
 									</label>
 								</div>
 								{formData.posture === 'Manual' && (
@@ -4528,7 +4597,7 @@ export default function EditReport() {
 											onChange={e => handleFieldChange('gaitAnalysis', e.target.value)}
 											className="text-sky-600"
 										/>
-										<span className="text-sm">Manual</span>
+										<span className="text-sm text-slate-800">Manual</span>
 									</label>
 									<label className="flex items-center gap-2">
 										<input
@@ -4539,7 +4608,7 @@ export default function EditReport() {
 											onChange={e => handleFieldChange('gaitAnalysis', e.target.value)}
 											className="text-sky-600"
 										/>
-										<span className="text-sm">OptaGAIT</span>
+										<span className="text-sm text-slate-800">OptaGAIT</span>
 									</label>
 								</div>
 								{formData.gaitAnalysis === 'Manual' && (
@@ -4715,6 +4784,22 @@ export default function EditReport() {
 									<i className="fas fa-plus text-xs" aria-hidden="true" />
 									Add Joint
 								</button>
+								<button
+									type="button"
+									onClick={() => romFileInputRef.current?.click()}
+									className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-green-700 focus-visible:outline-none"
+									title="Upload image or file"
+								>
+									<i className="fas fa-upload text-xs" aria-hidden="true" />
+									Upload
+								</button>
+								<input
+									ref={romFileInputRef}
+									type="file"
+									accept="image/*,.pdf"
+									onChange={handleRomImageUpload}
+									className="hidden"
+								/>
 							</div>
 							{formData.rom && Object.keys(formData.rom).length > 0 ? (
 								<div>
@@ -4749,6 +4834,22 @@ export default function EditReport() {
 									<i className="fas fa-plus text-xs" aria-hidden="true" />
 									Add Joint
 								</button>
+								<button
+									type="button"
+									onClick={() => mmtFileInputRef.current?.click()}
+									className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-green-700 focus-visible:outline-none"
+									title="Upload image or file"
+								>
+									<i className="fas fa-upload text-xs" aria-hidden="true" />
+									Upload
+								</button>
+								<input
+									ref={mmtFileInputRef}
+									type="file"
+									accept="image/*,.pdf"
+									onChange={handleMmtImageUpload}
+									className="hidden"
+								/>
 							</div>
 							{formData.mmt && Object.keys(formData.mmt).length > 0 ? (
 								<div>
@@ -4871,7 +4972,8 @@ export default function EditReport() {
 														newVisits[index - 1] = { ...visit, visitDate: e.target.value };
 														handleFieldChange('followUpVisits', newVisits);
 													}}
-													className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+													className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													style={{ color: '#1e293b' }}
 												/>
 											</td>
 											<td className="px-3 py-2">
@@ -4883,7 +4985,8 @@ export default function EditReport() {
 														newVisits[index - 1] = { ...visit, painLevel: e.target.value };
 														handleFieldChange('followUpVisits', newVisits);
 													}}
-													className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+													className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													style={{ color: '#1e293b' }}
 												/>
 											</td>
 											<td className="px-3 py-2">
@@ -4895,7 +4998,8 @@ export default function EditReport() {
 														newVisits[index - 1] = { ...visit, findings: e.target.value };
 														handleFieldChange('followUpVisits', newVisits);
 													}}
-													className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+													className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													style={{ color: '#1e293b' }}
 												/>
 											</td>
 										</tr>

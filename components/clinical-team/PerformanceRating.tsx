@@ -297,6 +297,38 @@ export default function PerformanceRating() {
 
 			await addDoc(collection(db, 'staffRatings'), ratingData);
 
+			// Send email notification only to dharanjaydubey@css.com
+			try {
+				const emailResponse = await fetch('/api/email', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						to: 'dharanjaydubey@css.com',
+						subject: `New Performance Rating Submitted - ${selectedStaff.userName}`,
+						template: 'rating-submitted',
+						data: {
+							ratedStaffName: selectedStaff.userName,
+							ratedStaffEmail: selectedStaff.userEmail || '',
+							raterName: user.displayName || user.email,
+							raterEmail: user.email.toLowerCase(),
+							rating,
+							criteria: RATING_SCHEMA[rating],
+							comments: trimmedComments || '',
+						},
+					}),
+				});
+
+				if (!emailResponse.ok) {
+					const errorData = await emailResponse.json();
+					console.error('Failed to send rating notification email:', errorData.error);
+				}
+			} catch (emailError) {
+				console.error('Failed to send rating notification email:', emailError);
+				// Don't fail the rating submission if email fails
+			}
+
 			setSuccess(`Rating submitted successfully! The rating is pending approval.`);
 			setSelectedStaff(null);
 			setRating(null);
