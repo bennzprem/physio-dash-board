@@ -481,6 +481,12 @@ export default function EditReport() {
 	}, []);
 
 	const [patients, setPatients] = useState<PatientRecordFull[]>([]);
+	const [appointments, setAppointments] = useState<Array<{
+		id: string;
+		patientId: string;
+		doctor: string;
+		status: string;
+	}>>([]);
 	const [selectedPatient, setSelectedPatient] = useState<PatientRecordFull | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
@@ -825,6 +831,31 @@ export default function EditReport() {
 		return () => unsubscribe();
 	}, []);
 
+	// Load appointments from Firestore
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'appointments'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						id: docSnap.id,
+						patientId: data.patientId ? String(data.patientId) : '',
+						doctor: data.doctor ? String(data.doctor) : '',
+						status: data.status ? String(data.status) : 'pending',
+					};
+				});
+				setAppointments([...mapped]);
+			},
+			error => {
+				console.error('Failed to load appointments', error);
+				setAppointments([]);
+			}
+		);
+
+		return () => unsubscribe();
+	}, []);
+
 	// Load staff from Firestore
 	useEffect(() => {
 		if (!user?.displayName) return;
@@ -925,6 +956,7 @@ export default function EditReport() {
 		if (process.env.NODE_ENV === 'development') {
 			console.log('EditReport - Filtering patients:', {
 				totalPatients: patients.length,
+				totalAppointments: appointments.length,
 				clinicianName,
 				userDisplayName: user?.displayName,
 				sampleAssignedDoctors: patients.slice(0, 5).map(p => ({
@@ -941,7 +973,17 @@ export default function EditReport() {
 			// Show all patients when "View All Patients" is enabled
 			assignedPatients = patients;
 		} else if (clinicianName) {
-			// Only show patients assigned to the current clinician OR have report access
+			// Get patient IDs who have appointments with the current clinician
+			const patientIdsWithAppointments = new Set(
+				appointments
+					.filter(apt => normalize(apt.doctor) === clinicianName)
+					.map(apt => apt.patientId)
+			);
+
+			// Show patients who:
+			// 1. Are assigned to the current clinician, OR
+			// 2. Have report access for the current clinician, OR
+			// 3. Have appointments with the current clinician (to match Appointments page behavior)
 			assignedPatients = patients.filter(patient => {
 				// Check if assigned to current clinician
 				if (normalize(patient.assignedDoctor) === clinicianName) {
@@ -951,7 +993,14 @@ export default function EditReport() {
 				// Check if current clinician has report access
 				const reportAccessDoctors = (patient as any).reportAccessDoctors || [];
 				if (Array.isArray(reportAccessDoctors)) {
-					return reportAccessDoctors.some((doctor: string) => normalize(doctor) === clinicianName);
+					if (reportAccessDoctors.some((doctor: string) => normalize(doctor) === clinicianName)) {
+						return true;
+					}
+				}
+				
+				// Check if patient has appointments with current clinician (to match Appointments page)
+				if (patientIdsWithAppointments.has(patient.patientId)) {
+					return true;
 				}
 				
 				return false;
@@ -969,7 +1018,7 @@ export default function EditReport() {
 				(patient.phone || '').toLowerCase().includes(query)
 			);
 		});
-	}, [patients, searchTerm, clinicianName, user?.displayName, showAllPatients]);
+	}, [patients, appointments, searchTerm, clinicianName, user?.displayName, showAllPatients]);
 
 	const handleSelectPatient = (patient: PatientRecordFull) => {
 		setSelectedPatient(patient);
