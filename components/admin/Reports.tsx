@@ -98,7 +98,7 @@ interface BillingRecord {
 	patientId: string;
 	doctor?: string;
 	amount: number;
-	status: 'Pending' | 'Completed';
+	status: 'Pending' | 'Completed' | 'Auto-Paid';
 	date: string;
 }
 
@@ -112,6 +112,7 @@ export default function Reports() {
 	const [doctorFilter, setDoctorFilter] = useState<'all' | string>('all');
 	const [dateFilter, setDateFilter] = useState<DateFilter>('all');
 	const [searchTerm, setSearchTerm] = useState('');
+	const [organizationTimeFilter, setOrganizationTimeFilter] = useState<'today' | 'weekly' | 'monthly' | 'overall'>('overall');
 	const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 	const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -160,7 +161,8 @@ export default function Reports() {
 									: undefined,
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined) || new Date().toISOString(),
 						department: data.department ? String(data.department) : undefined,
-					} as AdminPatientRecord & { id: string; patientType?: string; department?: string };
+						typeOfOrganization: data.typeOfOrganization ? String(data.typeOfOrganization) : undefined,
+					} as AdminPatientRecord & { id: string; patientType?: string; department?: string; typeOfOrganization?: string };
 				});
 				// Force update by creating a new array reference
 				setPatients([...mapped]);
@@ -249,7 +251,7 @@ export default function Reports() {
 						patientId: data.patientId ? String(data.patientId) : '',
 						doctor: data.doctor ? String(data.doctor) : undefined,
 						amount: typeof data.amount === 'number' ? data.amount : Number(data.amount) || 0,
-						status: (data.status as 'Pending' | 'Completed') ?? 'Pending',
+						status: (data.status as 'Pending' | 'Completed' | 'Auto-Paid') ?? 'Pending',
 						date: data.date ? String(data.date) : '',
 					} as BillingRecord;
 				});
@@ -497,44 +499,69 @@ export default function Reports() {
 		};
 	}, [staff, appointments]);
 
-	// Department-based Graph Data
-	const departmentData = useMemo(() => {
-		const departmentCounts = new Map<string, number>();
-		
+	// Organization-based Graph Data with time filters
+	const organizationData = useMemo(() => {
+		const organizationCounts = new Map<string, number>();
+		const now = new Date();
+		let startDate: Date | null = null;
+
+		// Calculate start date based on filter
+		if (organizationTimeFilter === 'today') {
+			startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		} else if (organizationTimeFilter === 'weekly') {
+			startDate = new Date(now);
+			startDate.setDate(now.getDate() - 7);
+		} else if (organizationTimeFilter === 'monthly') {
+			startDate = new Date(now);
+			startDate.setMonth(now.getMonth() - 1);
+		}
+		// 'overall' means no date filter
+
 		patients.forEach(patient => {
-			const dept = (patient as { department?: string }).department || 'Unassigned';
-			departmentCounts.set(dept, (departmentCounts.get(dept) || 0) + 1);
+			// Check date filter if applicable
+			if (startDate && patient.registeredAt) {
+				const registeredDate = new Date(patient.registeredAt);
+				if (registeredDate < startDate) {
+					return; // Skip patients registered before the filter date
+				}
+			}
+
+			// Get organization from typeOfOrganization or patientType
+			const org = (patient as { typeOfOrganization?: string; patientType?: string }).typeOfOrganization || 
+				(patient as { typeOfOrganization?: string; patientType?: string }).patientType || 
+				'Unassigned';
+			organizationCounts.set(org, (organizationCounts.get(org) || 0) + 1);
 		});
 
-		const sortedDepts = Array.from(departmentCounts.entries())
-			.map(([dept, count]) => ({ dept, count }))
+		const sortedOrgs = Array.from(organizationCounts.entries())
+			.map(([org, count]) => ({ org, count }))
 			.sort((a, b) => b.count - a.count);
 
-		// Generate gradient colors for each department (offset hue for variety)
-		const gradientColors = sortedDepts.map((_, index) => {
+		// Generate gradient colors for each organization (offset hue for variety)
+		const gradientColors = sortedOrgs.map((_, index) => {
 			const hue = (index * 137.508 + 180) % 360; // Offset hue for variety
 			return `hsl(${hue}, 65%, 55%)`;
 		});
 
 		// Generate lighter colors for gradient effect
-		const lighterColors = sortedDepts.map((_, index) => {
+		const lighterColors = sortedOrgs.map((_, index) => {
 			const hue = (index * 137.508 + 180) % 360;
 			return `hsl(${hue}, 65%, 65%)`;
 		});
 
 		return {
-			labels: sortedDepts.map(item => item.dept),
+			labels: sortedOrgs.map(item => item.org),
 			datasets: [
 				{
-					label: 'Patients by Department',
-					data: sortedDepts.map(item => item.count),
+					label: 'Patients by Organization',
+					data: sortedOrgs.map(item => item.count),
 					backgroundColor: gradientColors,
 					borderColor: lighterColors,
 					borderWidth: 2,
 				},
 			],
 		};
-	}, [patients]);
+	}, [patients, organizationTimeFilter]);
 
 	// Revenue vs Clinical Team Graph Data (based on billing totals)
 	const revenueTeamData = useMemo(() => {
@@ -546,12 +573,17 @@ export default function Reports() {
 
 		const teamRevenue = clinicalTeamMembers.map(member => {
 			// Calculate total revenue from billing records for this member
-			const memberBilling = billing.filter(
-				bill => bill.doctor?.toLowerCase() === member.userName.toLowerCase() && bill.status === 'Completed'
-			);
+			// Include both 'Completed' and 'Auto-Paid' statuses as they represent actual revenue
+			const memberBilling = billing.filter(bill => {
+				const doctorMatch = bill.doctor?.toLowerCase().trim() === member.userName.toLowerCase().trim() ||
+					bill.doctor?.toLowerCase().trim() === member.userName?.toLowerCase().trim();
+				const statusMatch = bill.status === 'Completed' || bill.status === 'Auto-Paid';
+				return doctorMatch && statusMatch;
+			});
 			
 			const totalRevenue = memberBilling.reduce((sum, bill) => {
-				return sum + (Number.isFinite(bill.amount) ? bill.amount : 0);
+				const amount = Number.isFinite(bill.amount) ? bill.amount : 0;
+				return sum + (amount > 0 ? amount : 0);
 			}, 0);
 
 			return {
@@ -559,7 +591,7 @@ export default function Reports() {
 				revenue: totalRevenue,
 				profileImage: member.profileImage,
 			};
-		}).filter(item => item.revenue > 0).sort((a, b) => b.revenue - a.revenue);
+		}).sort((a, b) => b.revenue - a.revenue); // Show all members, even with 0 revenue
 
 		// Generate gradient colors for each bar (offset hue for variety)
 		const gradientColors = teamRevenue.map((_, index) => {
@@ -583,6 +615,11 @@ export default function Reports() {
 					backgroundColor: gradientColors,
 					borderColor: lighterColors,
 					borderWidth: 2,
+					// Increase bar thickness and spacing for better visibility
+					barThickness: 'flex' as const,
+					maxBarThickness: 60, // Maximum bar height in pixels (thicker bars)
+					categoryPercentage: 0.85, // 85% of available space for categories (more spacing between bars)
+					barPercentage: 0.9, // 90% of category space for bars (thicker bars)
 				},
 			],
 		};
@@ -1149,14 +1186,64 @@ export default function Reports() {
 					</div>
 				</div>
 				<div className="grid gap-6 lg:grid-cols-1">
-					{/* Patients by Department */}
+					{/* Patients by Organization */}
 					<div className="group rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all duration-300 hover:shadow-[0_25px_50px_rgba(15,23,42,0.15)] hover:scale-[1.01]">
-						<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Patients by Department</h3>
-						<p className="mb-4 text-sm text-slate-500">Patient distribution across different departments</p>
+						<div className="mb-4 flex items-center justify-between">
+							<div>
+								<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Patients by Organization</h3>
+								<p className="text-sm text-slate-500">Patient distribution across different organizations</p>
+							</div>
+							<div className="flex gap-2">
+								<button
+									type="button"
+									onClick={() => setOrganizationTimeFilter('today')}
+									className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+										organizationTimeFilter === 'today'
+											? 'bg-sky-600 text-white'
+											: 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+									}`}
+								>
+									Today
+								</button>
+								<button
+									type="button"
+									onClick={() => setOrganizationTimeFilter('weekly')}
+									className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+										organizationTimeFilter === 'weekly'
+											? 'bg-sky-600 text-white'
+											: 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+									}`}
+								>
+									Weekly
+								</button>
+								<button
+									type="button"
+									onClick={() => setOrganizationTimeFilter('monthly')}
+									className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+										organizationTimeFilter === 'monthly'
+											? 'bg-sky-600 text-white'
+											: 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+									}`}
+								>
+									Monthly
+								</button>
+								<button
+									type="button"
+									onClick={() => setOrganizationTimeFilter('overall')}
+									className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+										organizationTimeFilter === 'overall'
+											? 'bg-sky-600 text-white'
+											: 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+									}`}
+								>
+									Overall
+								</button>
+							</div>
+						</div>
 						<div className="h-[350px]">
 							<StatsChart 
 								type="bar" 
-								data={departmentData} 
+								data={organizationData} 
 								height={350}
 							/>
 						</div>

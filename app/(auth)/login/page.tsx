@@ -106,18 +106,23 @@ export default function LoginPage() {
 			setLoading(false);
 
 			// Handle specific Firebase Auth errors
-			if (error.code === 'auth/invalid-credential') {
-				setError('Invalid email or password. Please check your credentials and try again.');
-			} else if (error.code === 'auth/user-not-found') {
-				setError('No account found with this email address.');
-			} else if (error.code === 'auth/invalid-email') {
-				setError('Invalid email address format.');
-			} else if (error.code === 'auth/user-disabled') {
+			const errorCode = error?.code || error?.error?.code || '';
+			const errorMessage = error?.message || error?.error?.message || 'Unknown error';
+
+			if (errorCode === 'auth/invalid-credential' || errorCode === 'auth/wrong-password' || errorMessage.includes('invalid-credential')) {
+				setError('Invalid email or password. Please check your credentials and try again.\n\nIf you continue to have issues, please contact your administrator.');
+			} else if (errorCode === 'auth/user-not-found' || errorMessage.includes('user-not-found')) {
+				setError('No account found with this email address. Please contact your administrator to create an account.');
+			} else if (errorCode === 'auth/invalid-email' || errorMessage.includes('invalid-email')) {
+				setError('Invalid email address format. Please enter a valid email address.');
+			} else if (errorCode === 'auth/user-disabled' || errorMessage.includes('user-disabled')) {
 				setError('This account has been disabled. Please contact your administrator.');
-			} else if (error.code === 'auth/too-many-requests') {
-				setError('Too many failed login attempts. Please try again later.');
+			} else if (errorCode === 'auth/too-many-requests' || errorMessage.includes('too-many-requests')) {
+				setError('Too many failed login attempts. Please wait a few minutes and try again.');
+			} else if (errorCode === 'auth/network-request-failed' || errorMessage.includes('network')) {
+				setError('Network error. Please check your internet connection and try again.');
 			} else {
-				setError(error.message || 'Unable to sign in. Please try again.');
+				setError(`Unable to sign in: ${errorMessage}\n\nPlease check your credentials or contact your administrator if the problem persists.`);
 			}
 		}
 	};

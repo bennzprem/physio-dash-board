@@ -115,7 +115,22 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 						if (label) {
 							label += ': ';
 						}
-						const value = context.parsed.y !== undefined ? context.parsed.y : context.parsed.x;
+						// For horizontal bar charts (indexAxis="y"), the value is in parsed.x
+						// For vertical bar/line charts, the value is in parsed.y
+						// Check both and use the one that's a valid number
+						let value: number | undefined;
+						if (indexAxis === 'y') {
+							// Horizontal bar chart - value is in x
+							value = typeof context.parsed.x === 'number' ? context.parsed.x : undefined;
+						} else {
+							// Vertical bar/line chart - value is in y
+							value = typeof context.parsed.y === 'number' ? context.parsed.y : undefined;
+						}
+						// Fallback: try the other axis if primary is undefined
+						if (value === undefined) {
+							value = typeof context.parsed.y === 'number' ? context.parsed.y : 
+								(typeof context.parsed.x === 'number' ? context.parsed.x : undefined);
+						}
 						if (typeof value === 'number') {
 							if (label.includes('Revenue')) {
 								label += `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -126,7 +141,35 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 						return label;
 					},
 					title: function(context: TooltipItem<'line' | 'bar' | 'doughnut'>[]) {
-						return context[0]?.label || '';
+						// Get the team member name (category label) from the chart data
+						if (context && context.length > 0) {
+							const item = context[0];
+							
+							// Method 1: Try to get label from chart's data.labels array using dataIndex
+							if (item && typeof item.dataIndex === 'number' && item.chart) {
+								const chart = item.chart;
+								if (chart.data && chart.data.labels && Array.isArray(chart.data.labels)) {
+									const label = chart.data.labels[item.dataIndex];
+									if (label !== null && label !== undefined) {
+										return String(label);
+									}
+								}
+							}
+							
+							// Method 2: Try the label property (works for most chart types)
+							if (item?.label) {
+								return String(item.label);
+							}
+							
+							// Method 3: Try to get from parsed values (for some chart configurations)
+							if (item && item.chart && item.chart.data && item.chart.data.labels) {
+								const labels = item.chart.data.labels;
+								if (Array.isArray(labels) && typeof item.dataIndex === 'number' && labels[item.dataIndex]) {
+									return String(labels[item.dataIndex]);
+								}
+							}
+						}
+						return '';
 					},
 				},
 				animation: {
@@ -150,6 +193,7 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 		indexAxis: type === 'bar' ? indexAxis : undefined,
 		scales: type === 'line' || type === 'bar' ? {
 			x: {
+				type: indexAxis === 'y' ? 'linear' : 'category',
 				grid: {
 					display: true,
 					color: 'rgba(148, 163, 184, 0.1)',
@@ -166,7 +210,15 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 							return `₹${value.toLocaleString('en-IN')}`;
 						}
 						return value;
-					} : undefined,
+					} : function(value: string | number, index: number) {
+						// For vertical bar charts (indexAxis='x' or default), use the label from the data
+						if (indexAxis === 'x' && data.labels && Array.isArray(data.labels) && typeof index === 'number' && index >= 0 && index < data.labels.length) {
+							const label = data.labels[index];
+							return label || String(value);
+						}
+						// Fallback: if labels exist but index is out of range, return the value as string
+						return String(value);
+					},
 				},
 			},
 			y: {
@@ -189,10 +241,10 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 		} : undefined,
 		elements: type === 'bar' ? {
 			bar: {
-				borderRadius: 8,
+				borderRadius: indexAxis === 'y' ? 6 : 8, // Slightly larger radius for horizontal bars
 				borderSkipped: false,
-				hoverBorderWidth: 3,
-				hoverBorderRadius: 10,
+				hoverBorderWidth: 4, // Increased hover border width for better visibility
+				hoverBorderRadius: indexAxis === 'y' ? 8 : 10,
 			},
 		} : type === 'line' ? {
 			point: {
