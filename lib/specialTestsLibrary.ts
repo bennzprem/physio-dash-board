@@ -212,7 +212,7 @@ export const CONDITION_TEST_BUNDLES: ConditionTestBundle[] = [
 	{
 		id: 'cervical-myelopathy',
 		name: 'Cervical Myelopathy (RED FLAG)',
-		description: '⚠️ Immediate referral required',
+		description: '',
 		warning: 'RED FLAG - Immediate referral',
 		primaryTests: [
 			{ id: 'hoffmanns', name: 'Hoffmann\'s Sign', category: 'Primary' },
@@ -224,7 +224,7 @@ export const CONDITION_TEST_BUNDLES: ConditionTestBundle[] = [
 			{ id: 'bilateral-symptoms', name: 'Bilateral symptoms', category: 'Supporting' },
 			{ id: 'fine-motor-loss', name: 'Loss of fine motor control', category: 'Supporting' },
 		],
-		diagnosticLogic: '⚠️ Immediate referral required',
+		diagnosticLogic: '',
 	},
 	{
 		id: 'rotator-cuff-tendinopathy',
