@@ -305,7 +305,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	const today = useMemo(() => new Date(), []);
 
 	const caseload = useMemo(
-		() => assignedPatients.filter(p => (p.status ?? 'pending') !== 'completed'),
+		() => assignedPatients.filter(p => {
+			const status = (p.status ?? 'pending').toLowerCase();
+			return status !== 'completed' && status !== 'cancelled';
+		}),
 		[assignedPatients]
 	);
 

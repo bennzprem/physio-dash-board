@@ -12,6 +12,7 @@ import { createDYESBilling } from '@/lib/dyesBilling';
 import { getHeaderConfig, getDefaultHeaderConfig } from '@/lib/headerConfig';
 import type { HeaderConfig } from '@/components/admin/HeaderManagement';
 import ExerciseLibrarySelector from '@/components/clinical-team/ExerciseLibrarySelector';
+import SpecialTestsLibrarySelector from '@/components/clinical-team/SpecialTestsLibrarySelector';
 
 // Constants
 const VAS_EMOJIS = ['😀','😁','🙂','😊','😌','😟','😣','😢','😭','😱'];
@@ -3587,13 +3588,22 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</div>
 								<div className="mt-8 grid gap-4">
 									<div>
-										<h4 className="mb-2 text-sm font-semibold text-slate-700">iii) Special Tests</h4>
+										<div className="flex items-center justify-between mb-2">
+											<h4 className="text-sm font-semibold text-slate-700">iii) Special Tests</h4>
+											<SpecialTestsLibrarySelector
+												onSelectTests={(tests) => {
+													const currentValue = formData.specialTest || '';
+													handleFieldChange('specialTest', currentValue ? `${currentValue}\n\n${tests}` : tests);
+												}}
+												currentValue={formData.specialTest}
+											/>
+										</div>
 										<textarea
 											value={formData.specialTest || ''}
 											onChange={e => handleFieldChange('specialTest', e.target.value)}
 											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={3}
-											placeholder="Describe special test findings"
+											rows={6}
+											placeholder="Describe special test findings or use Special Tests Library to select tests..."
 										/>
 									</div>
 									<div>
