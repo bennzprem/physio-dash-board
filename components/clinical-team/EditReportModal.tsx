@@ -455,6 +455,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const [selectedRomJoint, setSelectedRomJoint] = useState('');
 	const [selectedMmtJoint, setSelectedMmtJoint] = useState('');
 	const [sessionCompleted, setSessionCompleted] = useState(false);
+	const [isPhysioNameEditable, setIsPhysioNameEditable] = useState(false);
 	const romFileInputRef = useRef<HTMLInputElement>(null);
 	const mmtFileInputRef = useRef<HTMLInputElement>(null);
 	const [romImages, setRomImages] = useState<Record<string, { data: string; fileName: string }>>({});
@@ -595,7 +596,13 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						if (!adjustedData.dateOfConsultation) {
 							adjustedData.dateOfConsultation = new Date().toISOString().split('T')[0];
 						}
+						// Auto-populate physio name if not already set
+						if (!adjustedData.physioName && clinicalTeamMembers.length > 0) {
+							const currentUserStaff = clinicalTeamMembers.find(m => m.userEmail === user?.email);
+							adjustedData.physioName = currentUserStaff?.userName || user?.displayName || user?.email || '';
+						}
 						setFormData(adjustedData);
+						setIsPhysioNameEditable(false); // Reset edit state when loading new patient
 					}
 					
 					// Load header config
@@ -753,6 +760,18 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [reportPatientData?.patientId, clinicalTeamMembers.length]); // Only on initial patient/clinical team load
+
+	// Auto-populate physio name when clinical team members are loaded and formData is empty or physioName is not set
+	useEffect(() => {
+		if (editable && clinicalTeamMembers.length > 0 && reportPatientData && (!formData.physioName || formData.physioName === '')) {
+			const currentUserStaff = clinicalTeamMembers.find(m => m.userEmail === user?.email);
+			const physioName = currentUserStaff?.userName || user?.displayName || user?.email || '';
+			if (physioName) {
+				setFormData(prev => ({ ...prev, physioName }));
+			}
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [clinicalTeamMembers.length, user?.email, user?.displayName, reportPatientData?.patientId]);
 
 	// Handle PDF download for report
 	// Helper function to build report data
@@ -3737,12 +3756,41 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								<h3 className="mb-4 text-sm font-semibold text-sky-600">Physiotherapist Signature</h3>
 								<div className="grid gap-4 sm:grid-cols-2">
 									<div>
-										<label className="block text-xs font-medium text-slate-500">Physio Name</label>
+										<div className="flex items-center justify-between mb-1">
+											<label className="block text-xs font-medium text-slate-500">Physio Name</label>
+											{!isPhysioNameEditable && (
+												<button
+													type="button"
+													onClick={() => setIsPhysioNameEditable(true)}
+													className="text-xs text-sky-600 hover:text-sky-700 font-medium flex items-center gap-1"
+												>
+													<svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+													</svg>
+													Edit
+												</button>
+											)}
+											{isPhysioNameEditable && (
+												<button
+													type="button"
+													onClick={() => setIsPhysioNameEditable(false)}
+													className="text-xs text-slate-600 hover:text-slate-700 font-medium flex items-center gap-1"
+												>
+													<svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+													</svg>
+													Cancel
+												</button>
+											)}
+										</div>
 										<input
 											type="text"
 											value={formData.physioName || ''}
 											onChange={e => handleFieldChange('physioName', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											readOnly={!isPhysioNameEditable}
+											className={`mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 ${
+												isPhysioNameEditable ? 'bg-white' : 'bg-slate-50 cursor-not-allowed'
+											}`}
 										/>
 									</div>
 								</div>
