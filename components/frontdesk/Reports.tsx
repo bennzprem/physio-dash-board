@@ -482,9 +482,7 @@ export default function Reports() {
 			email: selectedPatient.email || '',
 			totalSessionsRequired: selectedPatient.totalSessionsRequired,
 			remainingSessions: selectedPatient.remainingSessions,
-			complaints: selectedPatient.complaints || '',
-			presentHistory: selectedPatient.presentHistory || '',
-			pastHistory: selectedPatient.pastHistory || '',
+			history: (selectedPatient as any).history || ((selectedPatient as any).presentHistory || '') + ((selectedPatient as any).pastHistory ? '\n' + (selectedPatient as any).pastHistory : ''),
 			surgicalHistory: selectedPatient.surgicalHistory || '',
 			medicalHistory: getMedicalHistoryText(selectedPatient),
 			sleepCycle: selectedPatient.sleepCycle || '',
@@ -523,7 +521,7 @@ export default function Reports() {
 			finalDiagnosis: selectedPatient.finalDiagnosis || '',
 			shortTermGoals: selectedPatient.shortTermGoals || '',
 			longTermGoals: selectedPatient.longTermGoals || '',
-			rehabProtocol: selectedPatient.rehabProtocol || '',
+			treatment: (selectedPatient as any).treatment || (selectedPatient as any).rehabProtocol || '',
 			advice: selectedPatient.advice || '',
 			managementRemarks: selectedPatient.managementRemarks || '',
 			nextFollowUpDate: selectedPatient.nextFollowUpDate || '',
@@ -694,9 +692,7 @@ export default function Reports() {
 			email: '',
 			totalSessionsRequired: patient.totalSessionsRequired,
 			remainingSessions: patient.remainingSessions,
-			complaints: patient.complaints || '',
-			presentHistory: patient.presentHistory || '',
-			pastHistory: patient.pastHistory || '',
+			history: (patient as any).history || ((patient as any).presentHistory || '') + ((patient as any).pastHistory ? '\n' + (patient as any).pastHistory : ''),
 			surgicalHistory: patient.surgicalHistory || '',
 			medicalHistory: getMedicalHistoryText(patient),
 			sleepCycle: patient.sleepCycle || '',
@@ -735,7 +731,7 @@ export default function Reports() {
 			finalDiagnosis: patient.finalDiagnosis || '',
 			shortTermGoals: patient.shortTermGoals || '',
 			longTermGoals: patient.longTermGoals || '',
-			rehabProtocol: patient.rehabProtocol || '',
+			treatment: (patient as any).treatment || (patient as any).rehabProtocol || '',
 			advice: patient.advice || '',
 			managementRemarks: patient.managementRemarks || '',
 			nextFollowUpDate: patient.nextFollowUpDate || '',
@@ -961,29 +957,11 @@ export default function Reports() {
 									<p className="text-sm font-semibold text-sky-600">Assessment</p>
 									<div className="mt-4 grid gap-4 sm:grid-cols-2">
 										<div>
-											<label className="block text-xs font-medium text-slate-500">Complaints</label>
-											<input
-												type="text"
-												value={selectedPatient.complaints || ''}
+											<label className="block text-xs font-medium text-slate-500">History</label>
+											<textarea
+												value={(selectedPatient as any).history || ((selectedPatient as any).presentHistory || '') + ((selectedPatient as any).pastHistory ? '\n' + (selectedPatient as any).pastHistory : '')}
 												readOnly
-												className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-											/>
-										</div>
-										<div>
-											<label className="block text-xs font-medium text-slate-500">Present History</label>
-											<input
-												type="text"
-												value={selectedPatient.presentHistory || ''}
-												readOnly
-												className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-											/>
-										</div>
-										<div>
-											<label className="block text-xs font-medium text-slate-500">Past History</label>
-											<input
-												type="text"
-												value={selectedPatient.pastHistory || ''}
-												readOnly
+												rows={3}
 												className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
 											/>
 										</div>

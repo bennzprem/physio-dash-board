@@ -772,9 +772,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			email: displayData.email || '',
 			totalSessionsRequired: displayData.totalSessionsRequired,
 			remainingSessions: displayData.remainingSessions,
-			complaints: displayData.complaints || '',
-			presentHistory: displayData.presentHistory || '',
-			pastHistory: displayData.pastHistory || '',
+			history: displayData.history || (displayData.presentHistory || '') + (displayData.pastHistory ? '\n' + displayData.pastHistory : ''),
 			surgicalHistory: displayData.surgicalHistory || '',
 			medicalHistory: getMedicalHistoryText(displayData),
 			sleepCycle: displayData.sleepCycle || '',
@@ -810,11 +808,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			crepitus: displayData.crepitus || '',
 			odema: displayData.odema || '',
 			specialTest: displayData.specialTest || '',
-			clinicalDiagnosis: displayData.clinicalDiagnosis || '',
+			differentialDiagnosis: displayData.differentialDiagnosis || displayData.clinicalDiagnosis || '',
 			finalDiagnosis: displayData.finalDiagnosis || '',
 			shortTermGoals: displayData.shortTermGoals || '',
 			longTermGoals: displayData.longTermGoals || '',
-			rehabProtocol: displayData.rehabProtocol || '',
+			treatment: displayData.treatment || displayData.treatmentProvided || '',
 			treatmentProvided: displayData.treatmentProvided || '',
 			advice: displayData.advice || '',
 			nextFollowUpDate: displayData.nextFollowUpDate || '',
@@ -1732,9 +1730,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						: undefined;
 			
 			const reportData: Record<string, any> = {
-				complaints: formData.complaints || '',
-				presentHistory: formData.presentHistory || '',
-				pastHistory: formData.pastHistory || '',
+				history: formData.history || '',
 				med_xray: formData.med_xray || false,
 				med_mri: formData.med_mri || false,
 				med_report: formData.med_report || false,
@@ -1763,7 +1759,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				chiefComplaint: formData.chiefComplaint || '',
 				mechanismOfInjury: formData.mechanismOfInjury || '',
 				painIntensity: formData.painIntensity || '',
-				clinicalDiagnosis: formData.clinicalDiagnosis || '',
+				differentialDiagnosis: formData.differentialDiagnosis || formData.clinicalDiagnosis || '',
 				followUpVisits: formData.followUpVisits || [],
 				followUpAssessment: formData.followUpAssessment || '',
 				currentPainStatus: formData.currentPainStatus || '',
@@ -1794,7 +1790,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				finalDiagnosis: formData.finalDiagnosis || '',
 				shortTermGoals: formData.shortTermGoals || '',
 				longTermGoals: formData.longTermGoals || '',
-				rehabProtocol: formData.rehabProtocol || '',
+				treatment: formData.treatment || formData.treatmentProvided || '',
 				advice: formData.advice || '',
 				managementRemarks: formData.managementRemarks || '',
 				nextFollowUpDate: formData.nextFollowUpDate || '',
@@ -1846,9 +1842,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 			// Create report snapshot before updating
 			const currentReportData: Partial<PatientRecordFull> = {
-				complaints: reportPatientData.complaints,
-				presentHistory: reportPatientData.presentHistory,
-				pastHistory: reportPatientData.pastHistory,
+				history: reportPatientData.history || (reportPatientData.presentHistory || '') + (reportPatientData.pastHistory ? '\n' + reportPatientData.pastHistory : ''),
 				med_xray: reportPatientData.med_xray,
 				med_mri: reportPatientData.med_mri,
 				med_report: reportPatientData.med_report,
@@ -2365,9 +2359,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 			// Create a report snapshot of current data before loading previous report
 			const currentReportData: Partial<PatientRecordFull> = {
-				complaints: reportPatientData.complaints,
-				presentHistory: reportPatientData.presentHistory,
-				pastHistory: reportPatientData.pastHistory,
+				history: reportPatientData.history || (reportPatientData.presentHistory || '') + (reportPatientData.pastHistory ? '\n' + reportPatientData.pastHistory : ''),
 				med_xray: reportPatientData.med_xray,
 				med_mri: reportPatientData.med_mri,
 				med_report: reportPatientData.med_report,
@@ -2903,30 +2895,12 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										/>
 									</div>
 									<div>
-										<label className="block text-xs font-medium text-slate-500">Complaints</label>
+										<label className="block text-xs font-medium text-slate-500">History</label>
 										<textarea
-											value={formData.complaints || ''}
-											onChange={e => handleFieldChange('complaints', e.target.value)}
+											value={formData.history || ''}
+											onChange={e => handleFieldChange('history', e.target.value)}
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={2}
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Present History</label>
-										<textarea
-											value={formData.presentHistory || ''}
-											onChange={e => handleFieldChange('presentHistory', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={2}
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Past History</label>
-										<textarea
-											value={formData.pastHistory || ''}
-											onChange={e => handleFieldChange('pastHistory', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={2}
+											rows={3}
 										/>
 									</div>
 									<div>
@@ -3586,13 +3560,13 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										/>
 									</div>
 									<div>
-										<h4 className="mb-2 text-sm font-semibold text-slate-700">iv) Clinical Diagnosis</h4>
+										<h4 className="mb-2 text-sm font-semibold text-slate-700">iv) Differential Diagnosis</h4>
 										<textarea
-											value={formData.clinicalDiagnosis || ''}
-											onChange={e => handleFieldChange('clinicalDiagnosis', e.target.value)}
+											value={formData.differentialDiagnosis || formData.clinicalDiagnosis || ''}
+											onChange={e => handleFieldChange('differentialDiagnosis', e.target.value)}
 											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 											rows={3}
-											placeholder="Clinical diagnosis"
+											placeholder="Differential diagnosis"
 										/>
 									</div>
 									<div>
@@ -3631,25 +3605,16 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										/>
 									</div>
 									<div>
-										<label className="block text-xs font-medium text-slate-500">iii) Rehab Protocol</label>
+										<label className="block text-xs font-medium text-slate-500">iii) Treatment</label>
 										<textarea
-											value={formData.rehabProtocol || ''}
-											onChange={e => handleFieldChange('rehabProtocol', e.target.value)}
+											value={formData.treatment || formData.treatmentProvided || ''}
+											onChange={e => handleFieldChange('treatment', e.target.value)}
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 											rows={3}
 										/>
 									</div>
 									<div>
-										<label className="block text-xs font-medium text-slate-500">iv) Treatment Provided</label>
-										<textarea
-											value={formData.treatmentProvided || ''}
-											onChange={e => handleFieldChange('treatmentProvided', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={3}
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">v) Advice</label>
+										<label className="block text-xs font-medium text-slate-500">iv) Advice</label>
 										<textarea
 											value={formData.advice || ''}
 											onChange={e => handleFieldChange('advice', e.target.value)}
@@ -3658,68 +3623,6 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										/>
 									</div>
 								</div>
-							</div>
-
-							{/* Follow-Up Visit Summary */}
-							<div className="mb-8">
-								<h3 className="mb-4 text-sm font-semibold text-sky-600">Follow-Up Visit Summary</h3>
-								<table className="min-w-full divide-y divide-slate-200 border border-slate-300 text-left text-sm">
-									<thead className="bg-slate-100">
-										<tr>
-											<th className="px-3 py-2 font-semibold text-slate-700">Visit</th>
-											<th className="px-3 py-2 font-semibold text-slate-700">Pain Level (VAS)</th>
-											<th className="px-3 py-2 font-semibold text-slate-700">Findings / Progress</th>
-										</tr>
-									</thead>
-									<tbody className="divide-y divide-slate-200 bg-white">
-										{[1, 2, 3, 4].map(index => {
-											const visit = formData.followUpVisits?.[index - 1] || { visitDate: '', painLevel: '', findings: '' };
-											return (
-												<tr key={`visit-${index}`}>
-													<td className="px-3 py-2">
-														<input
-															type="date"
-															value={visit.visitDate}
-															onChange={e => {
-																const newVisits = [...(formData.followUpVisits || [])];
-																newVisits[index - 1] = { ...visit, visitDate: e.target.value };
-																handleFieldChange('followUpVisits', newVisits);
-															}}
-															className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-															style={{ color: '#1e293b' }}
-														/>
-													</td>
-													<td className="px-3 py-2">
-														<input
-															type="text"
-															value={visit.painLevel}
-															onChange={e => {
-																const newVisits = [...(formData.followUpVisits || [])];
-																newVisits[index - 1] = { ...visit, painLevel: e.target.value };
-																handleFieldChange('followUpVisits', newVisits);
-															}}
-															className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-															style={{ color: '#1e293b' }}
-														/>
-													</td>
-													<td className="px-3 py-2">
-														<input
-															type="text"
-															value={visit.findings}
-															onChange={e => {
-																const newVisits = [...(formData.followUpVisits || [])];
-																newVisits[index - 1] = { ...visit, findings: e.target.value };
-																handleFieldChange('followUpVisits', newVisits);
-															}}
-															className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-															style={{ color: '#1e293b' }}
-														/>
-													</td>
-												</tr>
-											);
-										})}
-									</tbody>
-								</table>
 							</div>
 
 							{/* Current Status */}
@@ -5571,9 +5474,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																				email: versionData.email || reportPatientData.email || '',
 																				totalSessionsRequired: versionData.totalSessionsRequired,
 																				remainingSessions: versionData.remainingSessions,
-																				complaints: versionData.complaints || '',
-																				presentHistory: versionData.presentHistory || '',
-																				pastHistory: versionData.pastHistory || '',
+																				history: versionData.history || (versionData.presentHistory || '') + (versionData.pastHistory ? '\n' + versionData.pastHistory : ''),
 																				surgicalHistory: versionData.surgicalHistory || '',
 																				medicalHistory: getMedicalHistoryText(versionData),
 																				sleepCycle: versionData.sleepCycle || '',
@@ -5611,12 +5512,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																				crepitus: versionData.crepitus || '',
 																				odema: versionData.odema || '',
 																				specialTest: versionData.specialTest || '',
-																				differentialDiagnosis: versionData.differentialDiagnosis || '',
-																				clinicalDiagnosis: versionData.clinicalDiagnosis || '',
+																				differentialDiagnosis: versionData.differentialDiagnosis || versionData.clinicalDiagnosis || '',
 																				finalDiagnosis: versionData.finalDiagnosis || '',
 																				shortTermGoals: versionData.shortTermGoals || '',
 																				longTermGoals: versionData.longTermGoals || '',
-																				rehabProtocol: versionData.rehabProtocol || '',
+																				treatment: versionData.treatment || versionData.treatmentProvided || '',
 																				treatmentProvided: versionData.treatmentProvided || '',
 																				advice: versionData.advice || '',
 																				nextFollowUpDate: versionData.nextFollowUpDate || '',
@@ -6446,15 +6346,6 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									)}
 
-									{physioData.complaints && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Complaints</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.complaints}
-											</div>
-										</div>
-									)}
-
 									{physioData.chiefComplaint && (
 										<div>
 											<label className="block text-xs font-medium text-slate-500 mb-1">Chief Complaint</label>
@@ -6464,20 +6355,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									)}
 
-									{physioData.presentHistory && (
+									{(physioData.history || physioData.presentHistory || physioData.pastHistory) && (
 										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Present History</label>
+											<label className="block text-xs font-medium text-slate-500 mb-1">History</label>
 											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.presentHistory}
-											</div>
-										</div>
-									)}
-
-									{physioData.pastHistory && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Past History</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.pastHistory}
+												{physioData.history || (physioData.presentHistory || '') + (physioData.pastHistory ? '\n' + physioData.pastHistory : '')}
 											</div>
 										</div>
 									)}
@@ -6606,11 +6488,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									)}
 
-									{physioData.clinicalDiagnosis && (
+									{(physioData.differentialDiagnosis || physioData.clinicalDiagnosis) && (
 										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Clinical Diagnosis</label>
+											<label className="block text-xs font-medium text-slate-500 mb-1">Differential Diagnosis</label>
 											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.clinicalDiagnosis}
+												{physioData.differentialDiagnosis || physioData.clinicalDiagnosis}
 											</div>
 										</div>
 									)}
@@ -6835,19 +6717,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 														</div>
 													</div>
 												)}
-												{physioData.rehabProtocol && (
+												{(physioData.treatment || physioData.treatmentProvided) && (
 													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Rehab Protocol</label>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Treatment</label>
 														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.rehabProtocol}
-														</div>
-													</div>
-												)}
-												{physioData.treatmentProvided && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Treatment Provided</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.treatmentProvided}
+															{physioData.treatment || physioData.treatmentProvided}
 														</div>
 													</div>
 												)}
@@ -6881,7 +6755,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 														</div>
 													</div>
 												)}
-												{!physioData.shortTermGoals && !physioData.longTermGoals && !physioData.rehabProtocol && !physioData.treatmentProvided && (!physioData.treatmentPlan || (Array.isArray(physioData.treatmentPlan) && physioData.treatmentPlan.length === 0)) && !physioData.progressNotes && !physioData.advice && (
+												{!physioData.shortTermGoals && !physioData.longTermGoals && !physioData.treatment && !physioData.treatmentProvided && (!physioData.treatmentPlan || (Array.isArray(physioData.treatmentPlan) && physioData.treatmentPlan.length === 0)) && !physioData.progressNotes && !physioData.advice && (
 													<div className="text-sm text-slate-500 italic py-4 text-center">
 														No management information available for this report.
 													</div>
@@ -7067,9 +6941,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											email: versionData.email || reportPatientData.email || '',
 											totalSessionsRequired: versionData.totalSessionsRequired,
 											remainingSessions: versionData.remainingSessions,
-											complaints: versionData.complaints || '',
-											presentHistory: versionData.presentHistory || '',
-											pastHistory: versionData.pastHistory || '',
+											history: versionData.history || (versionData.presentHistory || '') + (versionData.pastHistory ? '\n' + versionData.pastHistory : ''),
 											surgicalHistory: versionData.surgicalHistory || '',
 											medicalHistory: getMedicalHistoryText(versionData),
 											sleepCycle: versionData.sleepCycle || '',

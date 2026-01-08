@@ -112,6 +112,7 @@ export interface PatientRecordFull {
 	complaints?: string;
 	presentHistory?: string;
 	pastHistory?: string;
+	history?: string;
 	med_xray?: boolean;
 	med_mri?: boolean;
 	med_report?: boolean;
@@ -200,6 +201,7 @@ export interface PatientRecordFull {
 	shortTermGoals?: string;
 	longTermGoals?: string;
 	rehabProtocol?: string;
+	treatment?: string;
 	advice?: string;
 	managementRemarks?: string;
 	nextFollowUpDate?: string;

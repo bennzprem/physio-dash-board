@@ -735,9 +735,7 @@ export default function EditReport() {
 						paymentType: data.paymentType ? String(data.paymentType) : undefined,
 						packageName: data.packageName ? String(data.packageName) : undefined,
 						packageDescription: data.packageDescription ? String(data.packageDescription) : undefined,
-						complaints: data.complaints ? String(data.complaints) : undefined,
-						presentHistory: data.presentHistory ? String(data.presentHistory) : undefined,
-						pastHistory: data.pastHistory ? String(data.pastHistory) : undefined,
+						history: data.history ? String(data.history) : ((data.presentHistory || '') + (data.pastHistory ? '\n' + data.pastHistory : '')),
 						med_xray: data.med_xray === true,
 						med_mri: data.med_mri === true,
 						med_report: data.med_report === true,
@@ -771,8 +769,7 @@ export default function EditReport() {
 						mechanismOfInjury: data.mechanismOfInjury ? String(data.mechanismOfInjury) : undefined,
 						painType: data.painType ? String(data.painType) : undefined,
 						painIntensity: data.painIntensity ? String(data.painIntensity) : undefined,
-						clinicalDiagnosis: data.clinicalDiagnosis ? String(data.clinicalDiagnosis) : undefined,
-						treatmentPlan: data.treatmentPlan ? (data.treatmentPlan as Array<any>) : undefined,
+						differentialDiagnosis: data.differentialDiagnosis ? String(data.differentialDiagnosis) : (data.clinicalDiagnosis ? String(data.clinicalDiagnosis) : undefined),
 						followUpVisits: data.followUpVisits ? (data.followUpVisits as Array<any>) : undefined,
 						currentPainStatus: data.currentPainStatus ? String(data.currentPainStatus) : undefined,
 						currentRom: data.currentRom ? String(data.currentRom) : undefined,
@@ -801,11 +798,10 @@ export default function EditReport() {
 						odema: data.odema ? String(data.odema) : undefined,
 						mmt: (data.mmt as Record<string, any>) || {},
 						specialTest: data.specialTest ? String(data.specialTest) : undefined,
-						differentialDiagnosis: data.differentialDiagnosis ? String(data.differentialDiagnosis) : undefined,
 						finalDiagnosis: data.finalDiagnosis ? String(data.finalDiagnosis) : undefined,
 						shortTermGoals: data.shortTermGoals ? String(data.shortTermGoals) : undefined,
 						longTermGoals: data.longTermGoals ? String(data.longTermGoals) : undefined,
-						rehabProtocol: data.rehabProtocol ? String(data.rehabProtocol) : undefined,
+						treatment: data.treatment ? String(data.treatment) : (data.treatmentProvided ? String(data.treatmentProvided) : (data.rehabProtocol ? String(data.rehabProtocol) : undefined)),
 						advice: data.advice ? String(data.advice) : undefined,
 						managementRemarks: data.managementRemarks ? String(data.managementRemarks) : undefined,
 						nextFollowUpDate: data.nextFollowUpDate ? String(data.nextFollowUpDate) : undefined,
@@ -1186,9 +1182,7 @@ export default function EditReport() {
 			
 			// Only save report-related fields, not patient demographics
 			const reportData: Record<string, any> = {
-				complaints: formData.complaints || '',
-				presentHistory: formData.presentHistory || '',
-				pastHistory: formData.pastHistory || '',
+				history: formData.history || '',
 				med_xray: formData.med_xray || false,
 				med_mri: formData.med_mri || false,
 				med_report: formData.med_report || false,
@@ -1248,7 +1242,7 @@ export default function EditReport() {
 				finalDiagnosis: formData.finalDiagnosis || '',
 				shortTermGoals: formData.shortTermGoals || '',
 				longTermGoals: formData.longTermGoals || '',
-				rehabProtocol: formData.rehabProtocol || '',
+				treatment: formData.treatment || formData.treatmentProvided || '',
 				advice: formData.advice || '',
 				managementRemarks: formData.managementRemarks || '',
 				nextFollowUpDate: formData.nextFollowUpDate || '',
@@ -1306,9 +1300,7 @@ export default function EditReport() {
 			// Create report snapshot before updating
 			// Get current report data from selectedPatient to create a snapshot
 			const currentReportData: Partial<PatientRecordFull> = {
-				complaints: selectedPatient.complaints,
-				presentHistory: selectedPatient.presentHistory,
-				pastHistory: selectedPatient.pastHistory,
+				history: selectedPatient.history || (selectedPatient.presentHistory || '') + (selectedPatient.pastHistory ? '\n' + selectedPatient.pastHistory : ''),
 				med_xray: selectedPatient.med_xray,
 				med_mri: selectedPatient.med_mri,
 				med_report: selectedPatient.med_report,
@@ -2494,9 +2486,7 @@ export default function EditReport() {
 
 			// Create a report snapshot of current data before loading previous report
 			const currentReportData: Partial<PatientRecordFull> = {
-				complaints: selectedPatient.complaints,
-				presentHistory: selectedPatient.presentHistory,
-				pastHistory: selectedPatient.pastHistory,
+				history: selectedPatient.history || (selectedPatient.presentHistory || '') + (selectedPatient.pastHistory ? '\n' + selectedPatient.pastHistory : ''),
 				med_xray: selectedPatient.med_xray,
 				med_mri: selectedPatient.med_mri,
 				med_report: selectedPatient.med_report,
@@ -3918,9 +3908,7 @@ export default function EditReport() {
 			email: selectedPatient.email || '',
 			totalSessionsRequired: formData.totalSessionsRequired ?? selectedPatient.totalSessionsRequired,
 			remainingSessions: formData.remainingSessions ?? selectedPatient.remainingSessions,
-			complaints: formData.complaints || '',
-			presentHistory: formData.presentHistory || '',
-			pastHistory: formData.pastHistory || '',
+			history: formData.history || '',
 			surgicalHistory: formData.surgicalHistory || '',
 			medicalHistory: getMedicalHistoryText(selectedPatient),
 			sleepCycle: formData.sleepCycle || '',

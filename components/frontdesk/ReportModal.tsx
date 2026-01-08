@@ -327,9 +327,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 			email: reportPatientData.email || '',
 			totalSessionsRequired: reportPatientData.totalSessionsRequired,
 			remainingSessions: reportPatientData.remainingSessions,
-			complaints: reportPatientData.complaints || '',
-			presentHistory: reportPatientData.presentHistory || '',
-			pastHistory: reportPatientData.pastHistory || '',
+			history: reportPatientData.history || (reportPatientData.presentHistory || '') + (reportPatientData.pastHistory ? '\n' + reportPatientData.pastHistory : ''),
 			surgicalHistory: reportPatientData.surgicalHistory || '',
 			medicalHistory: getMedicalHistoryText(reportPatientData),
 			sleepCycle: reportPatientData.sleepCycle || '',
@@ -368,7 +366,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 			finalDiagnosis: reportPatientData.finalDiagnosis || '',
 			shortTermGoals: reportPatientData.shortTermGoals || '',
 			longTermGoals: reportPatientData.longTermGoals || '',
-			rehabProtocol: reportPatientData.rehabProtocol || '',
+			treatment: reportPatientData.treatment || reportPatientData.treatmentProvided || reportPatientData.rehabProtocol || '',
 			advice: reportPatientData.advice || '',
 			managementRemarks: reportPatientData.managementRemarks || '',
 			nextFollowUpDate: reportPatientData.nextFollowUpDate || '',
@@ -715,29 +713,11 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 												<p className="text-sm font-semibold text-sky-600">Assessment</p>
 												<div className="mt-4 grid gap-4 sm:grid-cols-2">
 													<div>
-														<label className="block text-xs font-medium text-slate-500">Complaints</label>
-														<input
-															type="text"
-															value={displayData.complaints || ''}
+														<label className="block text-xs font-medium text-slate-500">History</label>
+														<textarea
+															value={displayData.history || (displayData.presentHistory || '') + (displayData.pastHistory ? '\n' + displayData.pastHistory : '')}
 															readOnly
-															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-														/>
-													</div>
-													<div>
-														<label className="block text-xs font-medium text-slate-500">Present History</label>
-														<input
-															type="text"
-															value={displayData.presentHistory || ''}
-															readOnly
-															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-														/>
-													</div>
-													<div>
-														<label className="block text-xs font-medium text-slate-500">Past History</label>
-														<input
-															type="text"
-															value={displayData.pastHistory || ''}
-															readOnly
+															rows={3}
 															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
 														/>
 													</div>
@@ -1186,11 +1166,11 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 															/>
 														</div>
 													)}
-													{displayData.rehabProtocol && (
+													{(displayData.treatment || displayData.treatmentProvided || displayData.rehabProtocol) && (
 														<div>
-															<label className="block text-xs font-medium text-slate-500">Rehab Protocol</label>
+															<label className="block text-xs font-medium text-slate-500">Treatment</label>
 															<textarea
-																value={displayData.rehabProtocol}
+																value={displayData.treatment || displayData.treatmentProvided || displayData.rehabProtocol || ''}
 																readOnly
 																rows={3}
 																className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
@@ -1221,54 +1201,6 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 													)}
 												</div>
 											</div>
-
-											{/* Follow-Up Visits */}
-											{displayData.followUpVisits && Array.isArray(displayData.followUpVisits) && displayData.followUpVisits.length > 0 && (
-												<div className="mt-6">
-													<h4 className="mb-4 text-base font-semibold text-sky-600">Follow-Up Visits</h4>
-													<div className="space-y-4">
-														{displayData.followUpVisits.map((visit: any, index: number) => (
-															<div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-																<div className="grid gap-4 sm:grid-cols-3">
-																	{visit.visitDate && (
-																		<div>
-																			<label className="block text-xs font-medium text-slate-500">Visit Date</label>
-																			<input
-																				type="text"
-																				value={visit.visitDate}
-																				readOnly
-																				className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-																			/>
-																		</div>
-																	)}
-																	{visit.painLevel && (
-																		<div>
-																			<label className="block text-xs font-medium text-slate-500">Pain Level</label>
-																			<input
-																				type="text"
-																				value={visit.painLevel}
-																				readOnly
-																				className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-																			/>
-																		</div>
-																	)}
-																	{visit.findings && (
-																		<div className="sm:col-span-3">
-																			<label className="block text-xs font-medium text-slate-500">Findings</label>
-																			<textarea
-																				value={visit.findings}
-																				readOnly
-																				rows={2}
-																				className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-																			/>
-																		</div>
-																	)}
-																</div>
-															</div>
-														))}
-													</div>
-												</div>
-											)}
 
 											{/* Current Status */}
 											{(displayData.currentPainStatus || displayData.currentRom || displayData.currentStrength || displayData.currentFunctionalAbility || displayData.complianceWithHEP) && (
@@ -2062,7 +1994,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 																		</div>
 																	)}
 
-																	{(displayData.shortTermGoals || displayData.longTermGoals || displayData.rehabProtocol || displayData.advice) && (
+																	{(displayData.shortTermGoals || displayData.longTermGoals || displayData.treatment || displayData.treatmentProvided || displayData.rehabProtocol || displayData.advice) && (
 																		<div>
 																			<h4 className="mb-4 text-base font-semibold text-sky-600">Physiotherapy Management</h4>
 																			<div className="grid gap-4 sm:grid-cols-2">
@@ -2078,10 +2010,10 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 																						<div className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">{displayData.longTermGoals}</div>
 																					</div>
 																				)}
-																				{displayData.rehabProtocol && (
+																				{(displayData.treatment || displayData.treatmentProvided || displayData.rehabProtocol) && (
 																					<div>
-																						<label className="block text-xs font-medium text-slate-500">Rehab Protocol</label>
-																						<div className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">{displayData.rehabProtocol}</div>
+																						<label className="block text-xs font-medium text-slate-500">Treatment</label>
+																						<div className="mt-1 text-sm text-slate-800 whitespace-pre-wrap">{displayData.treatment || displayData.treatmentProvided || displayData.rehabProtocol || ''}</div>
 																					</div>
 																				)}
 																				{displayData.advice && (

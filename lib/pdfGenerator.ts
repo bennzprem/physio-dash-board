@@ -12,9 +12,7 @@ export interface PatientReportData {
 	// Session tracking
 	totalSessionsRequired?: number;
 	remainingSessions?: number;
-	complaints?: string;
-	presentHistory?: string;
-	pastHistory?: string;
+	history?: string;
 	medicalHistory?: string;
 	surgicalHistory?: string;
 	sleepCycle?: string;
@@ -50,10 +48,11 @@ export interface PatientReportData {
 	crepitus?: string;
 	odema?: string;
 	specialTest?: string;
+	differentialDiagnosis?: string;
 	finalDiagnosis?: string;
 	shortTermGoals?: string;
 	longTermGoals?: string;
-	rehabProtocol?: string;
+	treatment?: string;
 	treatmentProvided?: string;
 	advice?: string;
 	managementRemarks?: string;
@@ -489,9 +488,7 @@ export async function generatePhysiotherapyReportPDF(
 			theme: 'grid',
 			head: [['ASSESSMENT OVERVIEW', '']],
 		body: [
-			['Complaints', data.complaints || ''],
-			['Present History', data.presentHistory || ''],
-			['Past History', data.pastHistory || ''],
+			['History', data.history || ((data as any).presentHistory || '') + ((data as any).pastHistory ? '\n' + (data as any).pastHistory : '')],
 			['Medical History', data.medicalHistory || ''],
 			['Surgical History', data.surgicalHistory || ''],
 			['Sleep Cycle', data.sleepCycle || ''],
@@ -633,6 +630,7 @@ export async function generatePhysiotherapyReportPDF(
 	if (includeSection('advancedAssessment')) {
 		const advancedRows: string[][] = [];
 		if (data.specialTest) advancedRows.push(['Special Tests', data.specialTest]);
+		if (data.differentialDiagnosis) advancedRows.push(['Differential Diagnosis', data.differentialDiagnosis]);
 		if (data.finalDiagnosis) advancedRows.push(['Diagnosis', data.finalDiagnosis]);
 		if (advancedRows.length) {
 		autoTable(doc, {
@@ -650,7 +648,7 @@ export async function generatePhysiotherapyReportPDF(
 		}
 	}
 
-	if (includeSection('physiotherapyManagement') || includeSection('followUpVisits') || includeSection('currentStatus') || includeSection('nextFollowUp') || includeSection('signature')) {
+	if (includeSection('physiotherapyManagement') || includeSection('currentStatus') || includeSection('nextFollowUp') || includeSection('signature')) {
 		doc.addPage();
 		y = 12;
 	}
@@ -659,9 +657,8 @@ export async function generatePhysiotherapyReportPDF(
 		const managementRows: string[][] = [];
 	if (data.shortTermGoals) managementRows.push(['i) Short Term Goals', data.shortTermGoals]);
 	if (data.longTermGoals) managementRows.push(['ii) Long Term Goals', data.longTermGoals]);
-	if (data.rehabProtocol) managementRows.push(['iii) Rehab Protocol', data.rehabProtocol]);
-	if (data.treatmentProvided) managementRows.push(['iv) Treatment Provided', data.treatmentProvided]);
-	if (data.advice) managementRows.push(['v) Advice', data.advice]);
+	if (data.treatment || data.treatmentProvided) managementRows.push(['iii) Treatment', data.treatment || data.treatmentProvided || '']);
+	if (data.advice) managementRows.push(['iv) Advice', data.advice]);
 	if (managementRows.length) {
 		autoTable(doc, {
 			startY: y,
@@ -676,25 +673,6 @@ export async function generatePhysiotherapyReportPDF(
 		});
 		y = (doc as any).lastAutoTable.finalY + 6;
 		}
-	}
-
-	if (includeSection('followUpVisits') && data.followUpVisits?.length) {
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['VISIT', 'Pain Level', 'Findings / Progress']],
-			body: data.followUpVisits.map((visit, index) => [
-				visit.visitDate || `Visit ${index + 1}`,
-				visit.painLevel || '',
-				visit.findings || '',
-			]),
-			headStyles,
-			styles: baseStyles,
-			columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 40 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 6;
 	}
 
 	if (includeSection('currentStatus')) {
