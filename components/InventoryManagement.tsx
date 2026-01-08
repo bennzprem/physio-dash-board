@@ -82,6 +82,8 @@ export default function InventoryManagement() {
 	const [submitting, setSubmitting] = useState(false);
 	const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
+	const [categoryFilter, setCategoryFilter] = useState<'all' | 'consumable' | 'non-consumable'>('all');
+	const [typeFilter, setTypeFilter] = useState<'all' | ItemType>('all');
 
 	// Use ref to store latest items to avoid circular dependency in useEffect
 	const itemsRef = useRef<InventoryItem[]>([]);
@@ -654,18 +656,32 @@ export default function InventoryManagement() {
 	const isClinicalTeam = user?.role === 'ClinicalTeam' || user?.role === 'clinic' || user?.role === 'Clinic';
 	const canManageInventory = isFrontDesk || isAdmin || isSuperAdmin || isClinicalTeam;
 
-	// Filter items based on search term
+	// Filter items based on search term, category, and type
 	const filteredItems = useMemo(() => {
-		if (!searchTerm.trim()) {
-			return items;
+		let filtered = items;
+
+		// Apply category filter
+		if (categoryFilter !== 'all') {
+			filtered = filtered.filter(item => item.category === categoryFilter);
 		}
-		const term = searchTerm.toLowerCase().trim();
-		return items.filter(item => 
-			item.name.toLowerCase().includes(term) ||
-			item.category.toLowerCase().includes(term) ||
-			item.type.toLowerCase().includes(term)
-		);
-	}, [items, searchTerm]);
+
+		// Apply type filter
+		if (typeFilter !== 'all') {
+			filtered = filtered.filter(item => item.type === typeFilter);
+		}
+
+		// Apply search term filter
+		if (searchTerm.trim()) {
+			const term = searchTerm.toLowerCase().trim();
+			filtered = filtered.filter(item => 
+				item.name.toLowerCase().includes(term) ||
+				item.category.toLowerCase().includes(term) ||
+				item.type.toLowerCase().includes(term)
+			);
+		}
+
+		return filtered;
+	}, [items, searchTerm, categoryFilter, typeFilter]);
 
 	// Import functions
 	const parseFile = async (file: File): Promise<any[]> => {
@@ -957,8 +973,64 @@ export default function InventoryManagement() {
 						)}
 					</div>
 
-					{/* Search Bar */}
-					<div className="mb-4">
+					{/* Filters and Search Bar */}
+					<div className="mb-4 space-y-3">
+						{/* Filter Options */}
+						<div className="flex flex-wrap items-center gap-4">
+							{/* Category Filter */}
+							<div className="flex items-center gap-2">
+								<label htmlFor="categoryFilter" className="text-sm font-medium text-slate-700 whitespace-nowrap">
+									Category:
+								</label>
+								<select
+									id="categoryFilter"
+									value={categoryFilter}
+									onChange={e => setCategoryFilter(e.target.value as 'all' | 'consumable' | 'non-consumable')}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+								>
+									<option value="all">All Categories</option>
+									<option value="consumable">Consumables</option>
+									<option value="non-consumable">Non-Consumables</option>
+								</select>
+							</div>
+
+							{/* Type Filter */}
+							<div className="flex items-center gap-2">
+								<label htmlFor="typeFilter" className="text-sm font-medium text-slate-700 whitespace-nowrap">
+									Type:
+								</label>
+								<select
+									id="typeFilter"
+									value={typeFilter}
+									onChange={e => setTypeFilter(e.target.value as 'all' | ItemType)}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+								>
+									<option value="all">All Types</option>
+									<option value="Physiotherapy">Physiotherapy</option>
+									<option value="Strength and Conditioning">Strength and Conditioning</option>
+									<option value="Psychological">Psychological</option>
+									<option value="Biomechanics">Biomechanics</option>
+								</select>
+							</div>
+
+							{/* Clear Filters Button */}
+							{(categoryFilter !== 'all' || typeFilter !== 'all' || searchTerm) && (
+								<button
+									type="button"
+									onClick={() => {
+										setCategoryFilter('all');
+										setTypeFilter('all');
+										setSearchTerm('');
+									}}
+									className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 transition-colors"
+								>
+									<i className="fas fa-times text-xs" aria-hidden="true" />
+									Clear Filters
+								</button>
+							)}
+						</div>
+
+						{/* Search Bar */}
 						<div className="relative">
 							<i className="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" aria-hidden="true" />
 							<input
