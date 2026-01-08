@@ -30,7 +30,6 @@ const clinicalTeamLinks: SidebarLink[] = [
 	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
 	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
 	{ href: '#edit-report', label: 'View/Edit Reports', icon: 'fas fa-notes-medical' },
-	{ href: '#strength-conditioning-report', label: 'Strength & Conditioning', icon: 'fas fa-dumbbell' },
 	{ href: '#availability', label: 'My Availability', icon: 'fas fa-calendar-check' },
 	{ href: '#transfer', label: 'Transfer Management', icon: 'fas fa-exchange-alt' },
 	{ href: '#my-performance', label: 'My Performance', icon: 'fas fa-chart-line' },
