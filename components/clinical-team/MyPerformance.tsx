@@ -67,7 +67,7 @@ interface SessionTransferRecord {
 	reason?: string;
 }
 
-type TimePeriod = 'day' | 'week' | 'month';
+type TimePeriod = 'day' | 'week' | 'month' | 'custom';
 
 export default function MyPerformance() {
 	const { user } = useAuth();
@@ -81,6 +81,8 @@ export default function MyPerformance() {
 	const [staffId, setStaffId] = useState<string>('');
 	const [loading, setLoading] = useState(true);
 	const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('month');
+	const [fromDate, setFromDate] = useState<string>('');
+	const [toDate, setToDate] = useState<string>('');
 	const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
 	const [selectedTransfers, setSelectedTransfers] = useState<TransferRecord[] | null>(null);
 
@@ -351,16 +353,34 @@ export default function MyPerformance() {
 
 		const now = new Date();
 		let startDate: Date;
+		let endDate: Date = now;
+
+		// Filter patients (always show all assigned patients)
+		const filteredPatients = patients.filter(pat => pat.assignedDoctor === staffName);
 
 		switch (selectedPeriod) {
 			case 'day':
 				startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+				endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 				break;
 			case 'week':
 				startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+				endDate = now;
 				break;
 			case 'month':
 				startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+				endDate = now;
+				break;
+			case 'custom':
+				if (fromDate && toDate) {
+					startDate = new Date(fromDate);
+					startDate.setHours(0, 0, 0, 0);
+					endDate = new Date(toDate);
+					endDate.setHours(23, 59, 59, 999);
+				} else {
+					// If custom is selected but dates not set, return empty data except patients
+					return { appointments: [], activities: [], billing: [], patients: filteredPatients, transfers: [], sessionTransfers: [] };
+				}
 				break;
 		}
 
@@ -369,7 +389,7 @@ export default function MyPerformance() {
 			if (apt.doctor !== staffName) return false;
 			if (!apt.date) return false;
 			const aptDate = new Date(apt.date);
-			return aptDate >= startDate && aptDate <= now;
+			return aptDate >= startDate && aptDate <= endDate;
 		});
 
 		// Filter activities
@@ -377,7 +397,7 @@ export default function MyPerformance() {
 			if (act.staffEmail !== user?.email) return false;
 			if (!act.startTime) return false;
 			const actDate = new Date(act.startTime);
-			return actDate >= startDate && actDate <= now;
+			return actDate >= startDate && actDate <= endDate;
 		});
 
 		// Filter billing
@@ -385,7 +405,7 @@ export default function MyPerformance() {
 			if (bill.doctor !== staffName) return false;
 			if (!bill.date) return false;
 			const billDate = new Date(bill.date);
-			return billDate >= startDate && billDate <= now;
+			return billDate >= startDate && billDate <= endDate;
 		});
 
 		// Filter transfers (where current user is the fromTherapist or toTherapist)
@@ -395,7 +415,7 @@ export default function MyPerformance() {
 			const transferDate = transfer.transferredAt instanceof Timestamp 
 				? transfer.transferredAt.toDate() 
 				: new Date(transfer.transferredAt);
-			return transferDate >= startDate && transferDate <= now;
+			return transferDate >= startDate && transferDate <= endDate;
 		});
 
 		// Filter session transfers
@@ -405,11 +425,8 @@ export default function MyPerformance() {
 			const stDate = st.transferredAt instanceof Timestamp 
 				? st.transferredAt.toDate() 
 				: new Date(st.transferredAt);
-			return stDate >= startDate && stDate <= now;
+			return stDate >= startDate && stDate <= endDate;
 		});
-
-		// Filter patients (always show all assigned patients)
-		const filteredPatients = patients.filter(pat => pat.assignedDoctor === staffName);
 
 		return {
 			appointments: filteredAppointments,
@@ -419,7 +436,7 @@ export default function MyPerformance() {
 			transfers: filteredTransfers,
 			sessionTransfers: filteredSessionTransfers,
 		};
-	}, [appointments, activities, billing, patients, transfers, sessionTransfers, staffName, selectedPeriod, user]);
+	}, [appointments, activities, billing, patients, transfers, sessionTransfers, staffName, selectedPeriod, fromDate, toDate, user]);
 
 	// Calculate analytics
 	const analytics = useMemo(() => {
@@ -598,27 +615,94 @@ export default function MyPerformance() {
 							<div className="rounded-full bg-sky-100 p-2">
 								<i className="fas fa-chart-line text-sky-600" aria-hidden="true" />
 							</div>
-							<p className="text-sm font-semibold text-slate-900 capitalize">{selectedPeriod}</p>
+							<p className="text-sm font-semibold text-slate-900">
+								{selectedPeriod === 'custom' && fromDate && toDate
+									? `${new Date(fromDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} - ${new Date(toDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+									: selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)}
+							</p>
 						</div>
 					),
 				}}
 			/>
 
 			{/* Time Period Selector */}
-			<div className="mb-6 flex gap-2">
-				{(['day', 'week', 'month'] as TimePeriod[]).map(period => (
-					<button
-						key={period}
-						onClick={() => setSelectedPeriod(period)}
-						className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-							selectedPeriod === period
-								? 'bg-sky-600 text-white'
-								: 'bg-white text-slate-700 hover:bg-slate-50'
-						}`}
-					>
-						{period === 'day' ? 'Today' : period === 'week' ? 'This Week' : 'This Month'}
-					</button>
-				))}
+			<div className="mb-6 space-y-4">
+				<div className="flex gap-2">
+					{(['day', 'week', 'month', 'custom'] as TimePeriod[]).map(period => (
+						<button
+							key={period}
+							onClick={() => {
+								setSelectedPeriod(period);
+								if (period !== 'custom') {
+									setFromDate('');
+									setToDate('');
+								}
+							}}
+							className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+								selectedPeriod === period
+									? 'bg-sky-600 text-white'
+									: 'bg-white text-slate-700 hover:bg-slate-50'
+							}`}
+						>
+							{period === 'day' ? 'Today' : period === 'week' ? 'This Week' : period === 'month' ? 'This Month' : 'Custom Range'}
+						</button>
+					))}
+				</div>
+				
+				{selectedPeriod === 'custom' && (
+					<div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+						<div className="flex items-center gap-2">
+							<label htmlFor="fromDate" className="text-sm font-medium text-slate-700 whitespace-nowrap">
+								From Date:
+							</label>
+							<input
+								type="date"
+								id="fromDate"
+								value={fromDate}
+								onChange={e => {
+									const date = e.target.value;
+									setFromDate(date);
+									if (toDate && date > toDate) {
+										setToDate(date);
+									}
+								}}
+								max={toDate || new Date().toISOString().split('T')[0]}
+								className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+							/>
+						</div>
+						<div className="flex items-center gap-2">
+							<label htmlFor="toDate" className="text-sm font-medium text-slate-700 whitespace-nowrap">
+								To Date:
+							</label>
+							<input
+								type="date"
+								id="toDate"
+								value={toDate}
+								onChange={e => {
+									const date = e.target.value;
+									setToDate(date);
+									if (fromDate && date < fromDate) {
+										setFromDate(date);
+									}
+								}}
+								min={fromDate || undefined}
+								max={new Date().toISOString().split('T')[0]}
+								className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+							/>
+						</div>
+						{(fromDate || toDate) && (
+							<button
+								onClick={() => {
+									setFromDate('');
+									setToDate('');
+								}}
+								className="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+							>
+								Clear
+							</button>
+						)}
+					</div>
+				)}
 			</div>
 
 			{/* Key Metrics Cards */}

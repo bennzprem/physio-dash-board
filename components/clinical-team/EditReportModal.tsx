@@ -147,7 +147,8 @@ function applyCurrentSessionAdjustments(patient: PatientRecordFull) {
 
 async function markAppointmentCompletedForReport(
 	patient: PatientRecordFull,
-	reportDate?: string
+	reportDate?: string,
+	isExtraTreatment?: boolean
 ) {
 	if (!patient?.patientId) return;
 
@@ -170,7 +171,10 @@ async function markAppointmentCompletedForReport(
 		}
 
 		const appointmentDoc = snapshot.docs[0];
-		await updateDoc(appointmentDoc.ref, { status: 'completed' });
+		await updateDoc(appointmentDoc.ref, { 
+			status: 'completed',
+			isExtraTreatment: isExtraTreatment || false,
+		});
 
 		if (patient.id) {
 			try {
@@ -197,6 +201,7 @@ async function markAppointmentCompletedForReport(
 						appointmentDate: appointmentData.date || reportDate || '',
 						createdByUserId: null,
 						createdByUserName: null,
+						isExtraTreatment: isExtraTreatment || false,
 					});
 				} catch (billingError) {
 					console.error('Failed to create automatic DYES billing:', billingError);
@@ -477,6 +482,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | StrengthConditioningData | null>(null);
 	const [viewingVersionIsStrengthConditioning, setViewingVersionIsStrengthConditioning] = useState(false);
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
+	const [isExtraTreatment, setIsExtraTreatment] = useState(false);
 	
 	// Crisp report state
 	const [showCrispReportModal, setShowCrispReportModal] = useState(false);
@@ -1617,7 +1623,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						};
 
 						const consultationDate = strengthConditioningFormData.assessmentDate || reportPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
-						await markAppointmentCompletedForReport(patientForProgress, consultationDate);
+						await markAppointmentCompletedForReport(patientForProgress, consultationDate, isExtraTreatment);
 
 						// Refresh patient session progress
 						const sessionProgress = await refreshPatientSessionProgress(
@@ -1993,7 +1999,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					: reportPatientData.remainingSessions,
 			};
 			
-			await markAppointmentCompletedForReport(patientForProgress, consultationDate);
+			await markAppointmentCompletedForReport(patientForProgress, consultationDate, isExtraTreatment);
 			
 			const sessionProgress = await refreshPatientSessionProgress(
 				patientForProgress,
@@ -3726,28 +3732,51 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							)}
 
 							{/* Save Section */}
-							<div className="flex items-center justify-between border-t border-slate-200 pt-6 mt-8">
-								<label className="flex items-center gap-2 cursor-pointer">
-									<input
-										type="checkbox"
-										checked={sessionCompleted}
-										onChange={e => setSessionCompleted(e.target.checked)}
+							<div className="space-y-4 border-t border-slate-200 pt-6 mt-8">
+								<div className="flex items-center justify-between">
+									<label className="flex items-center gap-2 cursor-pointer">
+										<input
+											type="checkbox"
+											checked={sessionCompleted}
+											onChange={e => setSessionCompleted(e.target.checked)}
+											disabled={saving || !reportPatientData}
+											className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200 disabled:opacity-50 disabled:cursor-not-allowed"
+										/>
+										<span className="text-sm font-medium text-slate-700">
+											Completion of one session
+										</span>
+									</label>
+									<button 
+										type="button" 
+										onClick={handleSave} 
+										className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 focus-visible:outline-none disabled:opacity-50"
 										disabled={saving || !reportPatientData}
-										className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200 disabled:opacity-50 disabled:cursor-not-allowed"
-									/>
-									<span className="text-sm font-medium text-slate-700">
-										Completion of one session
-									</span>
-								</label>
-								<button 
-									type="button" 
-									onClick={handleSave} 
-									className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 focus-visible:outline-none disabled:opacity-50"
-									disabled={saving || !reportPatientData}
-								>
-									<i className="fas fa-save text-xs mr-2" aria-hidden="true" />
-									{saving ? 'Saving...' : 'Save Report'}
-								</button>
+									>
+										<i className="fas fa-save text-xs mr-2" aria-hidden="true" />
+										{saving ? 'Saving...' : 'Save Report'}
+									</button>
+								</div>
+								{reportPatientData?.patientType?.toUpperCase() === 'DYES' && sessionCompleted && (
+									<div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+										<label className="flex items-start gap-2 cursor-pointer">
+											<input
+												type="checkbox"
+												checked={isExtraTreatment}
+												onChange={e => setIsExtraTreatment(e.target.checked)}
+												disabled={saving || !reportPatientData}
+												className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+											/>
+											<div>
+												<span className="text-sm font-medium text-amber-900">
+													Extra Treatment
+												</span>
+												<p className="text-xs text-amber-700 mt-1">
+													Patient will pay separately for this treatment (not covered by DYES free sessions)
+												</p>
+											</div>
+										</label>
+									</div>
+								)}
 							</div>
 						</div>
 					) : reportPatientData && activeReportTab === 'strength-conditioning' ? (
@@ -5161,19 +5190,42 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 									{/* Save Section with Session Completion Checkbox */}
 									{activeReportTab === 'strength-conditioning' && (
-										<div className="flex items-center justify-between border-t border-slate-200 pt-6 mt-8">
-											<label className="flex items-center gap-2 cursor-pointer">
-												<input
-													type="checkbox"
-													checked={sessionCompleted}
-													onChange={e => setSessionCompleted(e.target.checked)}
-													disabled={savingStrengthConditioning || !reportPatientData}
-													className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200 disabled:opacity-50 disabled:cursor-not-allowed"
-												/>
-												<span className="text-sm font-medium text-slate-700">
-													Completion of one session
-												</span>
-											</label>
+										<div className="space-y-4 border-t border-slate-200 pt-6 mt-8">
+											<div className="flex items-center justify-between">
+												<label className="flex items-center gap-2 cursor-pointer">
+													<input
+														type="checkbox"
+														checked={sessionCompleted}
+														onChange={e => setSessionCompleted(e.target.checked)}
+														disabled={savingStrengthConditioning || !reportPatientData}
+														className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200 disabled:opacity-50 disabled:cursor-not-allowed"
+													/>
+													<span className="text-sm font-medium text-slate-700">
+														Completion of one session
+													</span>
+												</label>
+											</div>
+											{reportPatientData?.patientType?.toUpperCase() === 'DYES' && sessionCompleted && (
+												<div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+													<label className="flex items-start gap-2 cursor-pointer">
+														<input
+															type="checkbox"
+															checked={isExtraTreatment}
+															onChange={e => setIsExtraTreatment(e.target.checked)}
+															disabled={savingStrengthConditioning || !reportPatientData}
+															className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+														/>
+														<div>
+															<span className="text-sm font-medium text-amber-900">
+																Extra Treatment
+															</span>
+															<p className="text-xs text-amber-700 mt-1">
+																Patient will pay separately for this treatment (not covered by DYES free sessions)
+															</p>
+														</div>
+													</label>
+												</div>
+											)}
 										</div>
 									)}
 								</>
