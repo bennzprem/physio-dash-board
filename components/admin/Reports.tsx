@@ -115,6 +115,8 @@ export default function Reports() {
 	const [organizationTimeFilter, setOrganizationTimeFilter] = useState<'today' | 'weekly' | 'monthly' | 'overall'>('overall');
 	const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 	const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+	const [analyticsFromDate, setAnalyticsFromDate] = useState<string>('');
+	const [analyticsToDate, setAnalyticsToDate] = useState<string>('');
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [modalContext, setModalContext] = useState<{ patient: AdminPatientRecord; doctors: string[] } | null>(
@@ -430,7 +432,49 @@ export default function Reports() {
 	}, [patients, appointmentMap, statusFilter, doctorFilter, dateFilter, searchTerm]);
 
 	const summary = useMemo<SummaryCounts>(() => {
-		return filteredRows.reduce<SummaryCounts>(
+		let rowsToUse = filteredRows;
+
+		// Apply date range filter if set
+		if (analyticsFromDate || analyticsToDate) {
+			rowsToUse = filteredRows.filter(row => {
+				const patient = row.patient;
+				const registeredAt = patient.registeredAt;
+				if (!registeredAt) return false;
+
+				let registeredDate: Date;
+				if (typeof registeredAt === 'string') {
+					registeredDate = new Date(registeredAt);
+				} else if (registeredAt && typeof registeredAt === 'object' && 'toDate' in registeredAt) {
+					// Firestore Timestamp object
+					registeredDate = (registeredAt as Timestamp).toDate();
+				} else {
+					// Fallback: try to create Date from the value
+					registeredDate = new Date(String(registeredAt));
+				}
+
+				if (isNaN(registeredDate.getTime())) return false;
+
+				// Set time to start of day for comparison
+				const regDate = new Date(registeredDate);
+				regDate.setHours(0, 0, 0, 0);
+
+				if (analyticsFromDate) {
+					const fromDate = new Date(analyticsFromDate);
+					fromDate.setHours(0, 0, 0, 0);
+					if (regDate < fromDate) return false;
+				}
+
+				if (analyticsToDate) {
+					const toDate = new Date(analyticsToDate);
+					toDate.setHours(23, 59, 59, 999);
+					if (regDate > toDate) return false;
+				}
+
+				return true;
+			});
+		}
+
+		return rowsToUse.reduce<SummaryCounts>(
 			(acc, row) => {
 				acc.total += 1;
 				acc[row.status] += 1;
@@ -438,7 +482,7 @@ export default function Reports() {
 			},
 			{ total: 0, pending: 0, ongoing: 0, completed: 0, cancelled: 0 }
 		);
-	}, [filteredRows]);
+	}, [filteredRows, analyticsFromDate, analyticsToDate]);
 
 	const chartData = useMemo(
 		() => [
@@ -462,10 +506,38 @@ export default function Reports() {
 				member.status === 'Active'
 		);
 
+		// Filter appointments by date range if set
+		let filteredAppointments = appointments;
+		if (analyticsFromDate || analyticsToDate) {
+			filteredAppointments = appointments.filter(apt => {
+				if (!apt.date) return false;
+				const aptDate = new Date(apt.date);
+				if (isNaN(aptDate.getTime())) return false;
+
+				const aptDateOnly = new Date(aptDate);
+				aptDateOnly.setHours(0, 0, 0, 0);
+
+				if (analyticsFromDate) {
+					const fromDate = new Date(analyticsFromDate);
+					fromDate.setHours(0, 0, 0, 0);
+					if (aptDateOnly < fromDate) return false;
+				}
+
+				if (analyticsToDate) {
+					const toDate = new Date(analyticsToDate);
+					toDate.setHours(23, 59, 59, 999);
+					if (aptDateOnly > toDate) return false;
+				}
+
+				return true;
+			});
+		}
+
 		const teamPatientCounts = clinicalTeamMembers.map(member => {
-			const memberAppointments = appointments.filter(
+			const memberAppointments = filteredAppointments.filter(
 				apt => apt.doctor?.toLowerCase() === member.userName.toLowerCase()
 			);
+			// Get unique patient IDs from appointments within the date range
 			const uniquePatientIds = new Set(memberAppointments.map(apt => apt.patientId).filter(Boolean));
 			return {
 				name: member.userName,
@@ -497,7 +569,7 @@ export default function Reports() {
 				},
 			],
 		};
-	}, [staff, appointments]);
+	}, [staff, appointments, analyticsFromDate, analyticsToDate]);
 
 	// Organization-based Graph Data with time filters
 	const organizationData = useMemo(() => {
@@ -571,10 +643,37 @@ export default function Reports() {
 				member.status === 'Active'
 		);
 
+		// Filter billing by date range if set
+		let filteredBilling = billing;
+		if (analyticsFromDate || analyticsToDate) {
+			filteredBilling = billing.filter(bill => {
+				if (!bill.date) return false;
+				const billDate = new Date(bill.date);
+				if (isNaN(billDate.getTime())) return false;
+
+				const billDateOnly = new Date(billDate);
+				billDateOnly.setHours(0, 0, 0, 0);
+
+				if (analyticsFromDate) {
+					const fromDate = new Date(analyticsFromDate);
+					fromDate.setHours(0, 0, 0, 0);
+					if (billDateOnly < fromDate) return false;
+				}
+
+				if (analyticsToDate) {
+					const toDate = new Date(analyticsToDate);
+					toDate.setHours(23, 59, 59, 999);
+					if (billDateOnly > toDate) return false;
+				}
+
+				return true;
+			});
+		}
+
 		const teamRevenue = clinicalTeamMembers.map(member => {
 			// Calculate total revenue from billing records for this member
 			// Include both 'Completed' and 'Auto-Paid' statuses as they represent actual revenue
-			const memberBilling = billing.filter(bill => {
+			const memberBilling = filteredBilling.filter(bill => {
 				const doctorMatch = bill.doctor?.toLowerCase().trim() === member.userName.toLowerCase().trim() ||
 					bill.doctor?.toLowerCase().trim() === member.userName?.toLowerCase().trim();
 				const statusMatch = bill.status === 'Completed' || bill.status === 'Auto-Paid';
@@ -623,7 +722,7 @@ export default function Reports() {
 				},
 			],
 		};
-	}, [staff, billing]);
+	}, [staff, billing, analyticsFromDate, analyticsToDate]);
 
 	const openModal = (row: PatientRow) => {
 		setModalContext({ patient: row.patient, doctors: row.doctors });
@@ -1045,6 +1144,75 @@ export default function Reports() {
 						</button>
 					}
 				/>
+
+				{/* Date Range Filter for Analytics */}
+				<div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+					<div className="flex items-center gap-4 flex-wrap">
+						<label className="text-sm font-medium text-slate-700 whitespace-nowrap">
+							Filter by Date Range:
+						</label>
+						<div className="flex items-center gap-3 flex-wrap">
+							<div className="flex items-center gap-2">
+								<label htmlFor="analyticsFromDate" className="text-sm text-slate-600 whitespace-nowrap">
+									From:
+								</label>
+								<input
+									type="date"
+									id="analyticsFromDate"
+									value={analyticsFromDate}
+									onChange={e => {
+										const date = e.target.value;
+										setAnalyticsFromDate(date);
+										if (analyticsToDate && date > analyticsToDate) {
+											setAnalyticsToDate(date);
+										}
+									}}
+									max={analyticsToDate || new Date().toISOString().split('T')[0]}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<label htmlFor="analyticsToDate" className="text-sm text-slate-600 whitespace-nowrap">
+									To:
+								</label>
+								<input
+									type="date"
+									id="analyticsToDate"
+									value={analyticsToDate}
+									onChange={e => {
+										const date = e.target.value;
+										setAnalyticsToDate(date);
+										if (analyticsFromDate && date < analyticsFromDate) {
+											setAnalyticsFromDate(date);
+										}
+									}}
+									min={analyticsFromDate || undefined}
+									max={new Date().toISOString().split('T')[0]}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+								/>
+							</div>
+							{(analyticsFromDate || analyticsToDate) && (
+								<button
+									type="button"
+									onClick={() => {
+										setAnalyticsFromDate('');
+										setAnalyticsToDate('');
+									}}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+								>
+									Clear
+								</button>
+							)}
+						</div>
+					</div>
+					{(analyticsFromDate || analyticsToDate) && (
+						<p className="mt-2 text-xs text-slate-500">
+							Showing analytics for: {analyticsFromDate ? new Date(analyticsFromDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'All time'} 
+							{' - '}
+							{analyticsToDate ? new Date(analyticsToDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}
+						</p>
+					)}
+				</div>
 
 				<div className="border-t border-slate-200" />
 

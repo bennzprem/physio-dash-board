@@ -32,6 +32,8 @@ interface BillingRecord {
 	utr?: string;
 	createdAt?: string | Timestamp;
 	updatedAt?: string | Timestamp;
+	isExtraTreatment?: boolean;
+	dyesSessionNumber?: number;
 }
 
 interface PatientRecord {
@@ -137,6 +139,8 @@ export default function Billing() {
 							utr: data.utr ? String(data.utr) : undefined,
 							createdAt: created ? created.toISOString() : undefined,
 							updatedAt: updated ? updated.toISOString() : undefined,
+							isExtraTreatment: data.isExtraTreatment === true,
+							dyesSessionNumber: typeof data.dyesSessionNumber === 'number' ? data.dyesSessionNumber : undefined,
 						} as BillingRecord;
 					})
 					.filter(bill => assignedPatientIds.has(bill.patientId));
@@ -427,6 +431,15 @@ export default function Billing() {
 													{bill.patient}
 													<br />
 													<span className="text-xs text-slate-500">{bill.patientId}</span>
+													{bill.isExtraTreatment && (
+														<>
+															<br />
+															<span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+																<i className="fas fa-exclamation-circle"></i>
+																Extra Treatment
+															</span>
+														</>
+													)}
 												</td>
 												<td className="px-4 py-4 text-sm text-slate-600">{formatDateLabel(bill.date)}</td>
 												<td className="px-4 py-4 text-sm font-semibold text-slate-900">
@@ -496,6 +509,7 @@ export default function Billing() {
 									{filteredCompleted.map(bill => {
 										const patient = patients.find(p => p.patientId === bill.patientId);
 										const isReferral = (patient?.patientType || '').toUpperCase() === 'REFERRAL';
+										const isDYES = (patient?.patientType || '').toUpperCase() === 'DYES';
 										return (
 											<tr key={bill.id}>
 												<td className="px-4 py-4 text-sm text-slate-900">{bill.billingId}</td>
@@ -503,15 +517,40 @@ export default function Billing() {
 													{bill.patient}
 													<br />
 													<span className="text-xs text-slate-500">{bill.patientId}</span>
+													{isDYES && bill.dyesSessionNumber && (
+														<>
+															<br />
+															<span className="text-xs text-slate-400">
+																Session #{bill.dyesSessionNumber}
+																{bill.dyesSessionNumber <= 500 && ' (Free)'}
+															</span>
+														</>
+													)}
 												</td>
 												<td className="px-4 py-4 text-sm text-slate-600">{formatDateLabel(bill.date)}</td>
 												<td className="px-4 py-4 text-sm font-semibold text-slate-900">
-													{isReferral ? 'N/A' : `₹${bill.amount.toFixed(2)}`}
+													<div className="space-y-1">
+														{isReferral ? 'N/A' : `₹${bill.amount.toFixed(2)}`}
+														{bill.isExtraTreatment && (
+															<div>
+																<span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+																	<i className="fas fa-exclamation-circle"></i>
+																	Extra Treatment
+																</span>
+															</div>
+														)}
+													</div>
 												</td>
 												<td className="px-4 py-4 text-sm text-slate-600">{bill.paymentMode || '—'}</td>
 												<td className="px-4 py-4">
-													<span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800">
-														{bill.status === 'Auto-Paid' ? 'Auto-Paid' : 'Completed'}
+													<span className={`rounded-full px-3 py-1 text-xs font-medium ${
+														bill.status === 'Auto-Paid' 
+															? 'bg-blue-100 text-blue-800'
+															: bill.isExtraTreatment && bill.status === 'Pending'
+															? 'bg-amber-100 text-amber-800'
+															: 'bg-green-100 text-green-800'
+													}`}>
+														{bill.status === 'Auto-Paid' ? 'Auto-Paid' : bill.status === 'Pending' ? 'Pending' : 'Completed'}
 													</span>
 												</td>
 											</tr>
