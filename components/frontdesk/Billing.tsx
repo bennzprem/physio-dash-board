@@ -1107,6 +1107,7 @@ export default function Billing() {
 	const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI/Card'>('Cash');
 	const [utr, setUtr] = useState('');
 	const [paymentAmount, setPaymentAmount] = useState<number | string>(0);
+	const [paymentDate, setPaymentDate] = useState<string>('');
 	const [syncing, setSyncing] = useState(false);
 	const [resettingCycle, setResettingCycle] = useState(false);
 	const [sendingNotifications, setSendingNotifications] = useState(false);
@@ -1345,12 +1346,15 @@ export default function Billing() {
 						if (patientType === 'Dyes' || patientType === 'DYES') {
 							// DYES patients: Auto-Paid and marked as 'Completed' (bypasses Pending Payments)
 							billStatus = 'Completed';
+						} else if (patientType === 'VIP') {
+							// VIP patients: Auto-Paid and marked as 'Completed' when session is completed
+							billStatus = 'Completed';
 						} else if (billAmount > 0) {
 							billStatus = 'Pending';
 						}
 
 						if (!existingSnapshot.empty) {
-							// Billing record exists - update it if it's a DYES patient to ensure correct status and amount
+							// Billing record exists - update it if it's a DYES or VIP patient to ensure correct status and amount
 							const existingBill = existingSnapshot.docs[0];
 							const existingBillData = existingBill.data();
 							
@@ -1359,6 +1363,15 @@ export default function Billing() {
 								if (existingBillData.status !== 'Completed' || existingBillData.amount !== 500) {
 									await updateDoc(doc(db, 'billing', existingBill.id), {
 										amount: 500,
+										status: 'Completed',
+										paymentMode: 'Auto-Paid',
+										updatedAt: serverTimestamp(),
+									});
+								}
+							} else if (patientType === 'VIP') {
+								// For VIP patients, update existing bills to ensure status is 'Completed' when session is completed
+								if (existingBillData.status !== 'Completed') {
+									await updateDoc(doc(db, 'billing', existingBill.id), {
 										status: 'Completed',
 										paymentMode: 'Auto-Paid',
 										updatedAt: serverTimestamp(),
@@ -1379,7 +1392,7 @@ export default function Billing() {
 							amount: billAmount,
 							date: appt.date || new Date().toISOString().split('T')[0],
 							status: billStatus,
-							paymentMode: billStatus === 'Completed' && (patientType === 'Dyes' || patientType === 'DYES') ? 'Auto-Paid' : null,
+							paymentMode: billStatus === 'Completed' && (patientType === 'Dyes' || patientType === 'DYES' || patientType === 'VIP') ? 'Auto-Paid' : null,
 							utr: null,
 							createdAt: serverTimestamp(),
 							updatedAt: serverTimestamp(),
@@ -1396,6 +1409,74 @@ export default function Billing() {
 		syncAppointmentsToBilling();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [appointments.length, billing.length]);
+
+	// Auto-complete pending payments for existing VIP patients with completed appointments
+	useEffect(() => {
+		if (loading || billing.length === 0 || patients.length === 0 || appointments.length === 0) return;
+
+		const updateVIPPayments = async () => {
+			try {
+				// Get all VIP patients
+				const vipPatients = patients.filter(p => (p.patientType || '').toUpperCase() === 'VIP');
+				
+				if (vipPatients.length === 0) return;
+
+				// Create a set of completed appointment IDs for quick lookup
+				const completedAppointmentIds = new Set(
+					appointments
+						.filter(apt => apt.status === 'completed')
+						.map(apt => apt.appointmentId)
+						.filter(Boolean)
+				);
+
+				// Find all pending billing records for VIP patients where the appointment is completed
+				const pendingVIPBills = billing.filter(bill => {
+					if (bill.status !== 'Pending') return false;
+					const patient = vipPatients.find(p => p.patientId === bill.patientId);
+					if (!patient) return false;
+					
+					// Check if the associated appointment is completed
+					if (bill.appointmentId && completedAppointmentIds.has(bill.appointmentId)) {
+						return true;
+					}
+					
+					// If no appointmentId, check if there's a completed appointment for this patient on this date
+					if (!bill.appointmentId && bill.date) {
+						const hasCompletedAppointment = appointments.some(apt => 
+							apt.patientId === bill.patientId &&
+							apt.date === bill.date &&
+							apt.status === 'completed'
+						);
+						return hasCompletedAppointment;
+					}
+					
+					return false;
+				});
+
+				if (pendingVIPBills.length === 0) return;
+
+				// Update all pending VIP billing records to Completed
+				const updatePromises = pendingVIPBills.map(bill => {
+					if (!bill.id) return Promise.resolve();
+					
+					const billingRef = doc(db, 'billing', bill.id);
+					return updateDoc(billingRef, {
+						status: 'Completed',
+						paymentMode: 'Auto-Paid',
+						updatedAt: serverTimestamp(),
+					});
+				});
+
+				await Promise.all(updatePromises);
+				console.log(`Updated ${pendingVIPBills.length} VIP payment(s) to Completed`);
+			} catch (error) {
+				console.error('Failed to update VIP payments:', error);
+			}
+		};
+
+		updateVIPPayments();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [billing.length, patients.length, appointments.length, loading]);
 
 	const filteredBilling = useMemo(() => {
 		if (filterRange === 'all') return billing;
@@ -1525,6 +1606,7 @@ export default function Billing() {
 		const patient = patients.find(p => p.patientId === bill.patientId);
 		const isReferral = (patient?.patientType || '').toUpperCase() === 'REFERRAL';
 		setPaymentAmount(isReferral ? 'N/A' : bill.amount);
+		setPaymentDate(formatDateForInput(bill.date));
 		setShowPayModal(true);
 	};
 
@@ -1542,6 +1624,7 @@ export default function Billing() {
 				amount: amountToSave,
 				paymentMode,
 				utr: paymentMode === 'UPI/Card' ? utr : null,
+				date: paymentDate,
 				updatedAt: serverTimestamp(),
 			});
 			setShowPayModal(false);
@@ -1549,6 +1632,7 @@ export default function Billing() {
 			setPaymentMode('Cash');
 			setUtr('');
 			setPaymentAmount(0);
+			setPaymentDate('');
 		} catch (error) {
 			console.error('Failed to update payment', error);
 			alert(`Failed to process payment: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -2629,6 +2713,7 @@ export default function Billing() {
 														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
 														const isDyes = (patientType || '').toUpperCase() === 'DYES';
 														const isReferral = (patientType || '').toUpperCase() === 'REFERRAL';
+														const isVIP = (patientType || '').toUpperCase() === 'VIP';
 														const payLabel = isDyes ? 'Bill' : 'Pay';
 														return (
 															<tr key={bill.billingId}>
@@ -2636,7 +2721,14 @@ export default function Billing() {
 																{bill.billingId}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
-																{bill.patient}
+																<div className="flex items-center gap-2">
+																	{bill.patient}
+																	{isVIP && (
+																		<span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800">
+																			VIP
+																		</span>
+																	)}
+																</div>
 															</td>
 															<td className="px-3 py-3 text-sm font-semibold text-slate-900">
 																{isReferral ? 'N/A' : `Rs. ${bill.amount}`}
@@ -2733,13 +2825,21 @@ export default function Billing() {
 													{filteredCompleted.map(bill => {
 														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
 														const isReferral = (patientType || '').toUpperCase() === 'REFERRAL';
+														const isVIP = (patientType || '').toUpperCase() === 'VIP';
 														return (
 														<tr key={bill.billingId}>
 															<td className="px-3 py-3 text-sm font-medium text-slate-800">
 																{bill.billingId}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
-																{bill.patient}
+																<div className="flex items-center gap-2">
+																	{bill.patient}
+																	{isVIP && (
+																		<span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800">
+																			VIP
+																		</span>
+																	)}
+																</div>
 															</td>
 															<td className="px-3 py-3 text-sm font-semibold text-slate-900">
 																{isReferral ? 'N/A' : `Rs. ${bill.amount}`}
@@ -2926,8 +3026,17 @@ export default function Billing() {
 					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
 						<div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-								<h2 className="text-lg font-semibold text-slate-900">
+								<h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
 									Mark Payment for {selectedBill.patient}
+									{(() => {
+										const patient = patients.find(p => p.patientId === selectedBill.patientId);
+										const isVIP = (patient?.patientType || '').toUpperCase() === 'VIP';
+										return isVIP ? (
+											<span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-800">
+												VIP
+											</span>
+										) : null;
+									})()}
 								</h2>
 								<button
 									type="button"
@@ -2976,8 +3085,13 @@ export default function Billing() {
 										})()}
 									</div>
 									<div>
-										<span className="font-semibold text-slate-700">Date:</span>{' '}
-										<span className="text-slate-600">{selectedBill.date}</span>
+										<label className="block text-sm font-medium text-slate-700 mb-2">Date</label>
+										<input
+											type="date"
+											value={paymentDate}
+											onChange={e => setPaymentDate(e.target.value)}
+											className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+										/>
 									</div>
 									<div className="pt-3">
 										<label className="block text-sm font-medium text-slate-700">

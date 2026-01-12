@@ -915,6 +915,38 @@ export default function Appointments() {
 						console.error('Failed to create automatic DYES billing:', billingError);
 					}
 				}
+
+				// Automatically mark payments as completed for VIP patients
+				if (patientType === 'VIP') {
+					try {
+						// Find billing records for this appointment
+						const billingQuery = query(
+							collection(db, 'billing'),
+							where('appointmentId', '==', appointment.appointmentId)
+						);
+						const billingSnapshot = await getDocs(billingQuery);
+						
+						if (!billingSnapshot.empty) {
+							// Update all billing records for this appointment to Completed
+							const updatePromises = billingSnapshot.docs.map(billingDoc => {
+								const billingData = billingDoc.data();
+								// Only update if status is Pending
+								if (billingData.status === 'Pending') {
+									return updateDoc(doc(db, 'billing', billingDoc.id), {
+										status: 'Completed',
+										paymentMode: 'Auto-Paid',
+										updatedAt: serverTimestamp(),
+									});
+								}
+								return Promise.resolve();
+							});
+							
+							await Promise.all(updatePromises);
+						}
+					} catch (vipBillingError) {
+						console.error('Failed to auto-complete VIP payment:', vipBillingError);
+					}
+				}
 			}
 
 			// Recalculate and update remaining sessions when status changes, if totalSessionsRequired is set
