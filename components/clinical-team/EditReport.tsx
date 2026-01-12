@@ -667,6 +667,7 @@ export default function EditReport() {
 		transferredFrom?: string;
 	}>>>({});
 	const appointmentSubscriptionsRef = useRef<Record<string, () => void>>({});
+	const selectedPatientUnsubscribeRef = useRef<(() => void) | null>(null);
 	
 	// Compute displayed remaining sessions based on checkbox state
 	// Use the ORIGINAL value (not formData which may already be adjusted) and apply checkbox adjustment
@@ -901,6 +902,50 @@ export default function EditReport() {
 			}
 		}
 	}, [patientIdParam, patients, selectedPatient]);
+
+	// Real-time listener for selected patient document
+	useEffect(() => {
+		if (!selectedPatient?.id) {
+			if (selectedPatientUnsubscribeRef.current) {
+				selectedPatientUnsubscribeRef.current();
+				selectedPatientUnsubscribeRef.current = null;
+			}
+			return;
+		}
+
+		const patientRef = doc(db, 'patients', selectedPatient.id);
+		const unsubscribe = onSnapshot(patientRef, (docSnap) => {
+			if (docSnap.exists()) {
+				const updatedPatient = docSnap.data() as PatientRecordFull;
+				
+				// Only update if user is not actively editing (formData is empty or matches current data)
+				const isUserEditing = Object.keys(formData).length > 0 && 
+					JSON.stringify(formData) !== JSON.stringify(selectedPatient);
+				
+				if (!isUserEditing) {
+					setSelectedPatient(updatedPatient);
+					// Update formData only if it's empty or matches the old data
+					if (Object.keys(formData).length === 0 || JSON.stringify(formData) === JSON.stringify(applyCurrentSessionAdjustments(selectedPatient))) {
+						setFormData(applyCurrentSessionAdjustments(updatedPatient));
+					}
+					
+					// Update in patients array as well
+					setPatients(prev => prev.map(p => p.id === updatedPatient.id ? updatedPatient : p));
+				}
+			}
+		}, (error) => {
+			console.error('Error loading selected patient:', error);
+		});
+
+		selectedPatientUnsubscribeRef.current = unsubscribe;
+
+		return () => {
+			if (selectedPatientUnsubscribeRef.current) {
+				selectedPatientUnsubscribeRef.current();
+				selectedPatientUnsubscribeRef.current = null;
+			}
+		};
+	}, [selectedPatient?.id]);
 
 	// Load header config based on patient type (DYES vs non-DYES)
 	useEffect(() => {

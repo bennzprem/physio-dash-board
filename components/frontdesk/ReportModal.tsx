@@ -208,6 +208,8 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 	const [loadingReport, setLoadingReport] = useState(false);
 	const [loadingStrengthConditioning, setLoadingStrengthConditioning] = useState(false);
 	const strengthConditioningUnsubscribeRef = useRef<(() => void) | null>(null);
+	const patientUnsubscribeRef = useRef<(() => void) | null>(null);
+	const reportVersionsUnsubscribeRef = useRef<(() => void) | null>(null);
 	
 	// Version history state
 	const [showVersionHistory, setShowVersionHistory] = useState(false);
@@ -251,6 +253,14 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 				strengthConditioningUnsubscribeRef.current();
 				strengthConditioningUnsubscribeRef.current = null;
 			}
+			if (patientUnsubscribeRef.current) {
+				patientUnsubscribeRef.current();
+				patientUnsubscribeRef.current = null;
+			}
+			if (reportVersionsUnsubscribeRef.current) {
+				reportVersionsUnsubscribeRef.current();
+				reportVersionsUnsubscribeRef.current = null;
+			}
 		}
 	}, [isOpen, initialTab]);
 
@@ -264,16 +274,102 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 			setReportPatientData(null);
 			setStrengthConditioningData(null);
 
-			// Load regular report data
+			// Load regular report data with real-time listener
 			try {
 				const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
 				if (!patientSnap.empty) {
-					const patientData = patientSnap.docs[0].data();
-					setReportPatientData(patientData);
+					const patientDoc = patientSnap.docs[0];
+					const patientDocId = patientDoc.id;
+					
+					// Set up real-time listener for patient document
+					const patientRef = doc(db, 'patients', patientDocId);
+					const unsubscribePatient = onSnapshot(patientRef, (docSnap) => {
+						if (docSnap.exists()) {
+							const patientData = docSnap.data();
+							setReportPatientData(patientData);
+						} else {
+							setReportPatientData(null);
+						}
+						setLoadingReport(false);
+					}, (error) => {
+						console.error('Error loading patient report:', error);
+						setLoadingReport(false);
+					});
+					
+					patientUnsubscribeRef.current = unsubscribePatient;
+					
+					// Set up real-time listener for report versions
+					const initialPatientData = patientDoc.data();
+					if (initialPatientData.patientId) {
+						const versionsQuery = query(
+							collection(db, 'reportVersions'),
+							where('patientId', '==', initialPatientData.patientId),
+							orderBy('version', 'desc')
+						);
+						
+						const unsubscribeVersions = onSnapshot(
+							versionsQuery,
+							(snapshot) => {
+								const versions = snapshot.docs.map(doc => {
+									const data = doc.data();
+									const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+									return {
+										id: doc.id,
+										version: data.version as number,
+										createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+										createdBy: (data.createdBy as string) || 'Unknown',
+										data: (data.reportData as Partial<PatientRecordFull>) || {},
+									};
+								});
+								
+								// Only update if version history is currently being viewed
+								if (showVersionHistory) {
+									setVersionHistory(versions);
+								}
+							},
+							(error) => {
+								// If orderBy fails (missing index), try without it
+								if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+									const versionsQueryNoOrder = query(
+										collection(db, 'reportVersions'),
+										where('patientId', '==', initialPatientData.patientId)
+									);
+									
+									onSnapshot(
+										versionsQueryNoOrder,
+										(snapshot) => {
+											const versions = snapshot.docs.map(doc => {
+												const data = doc.data();
+												const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+												return {
+													id: doc.id,
+													version: data.version as number,
+													createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+													createdBy: (data.createdBy as string) || 'Unknown',
+													data: (data.reportData as Partial<PatientRecordFull>) || {},
+												};
+											});
+											versions.sort((a, b) => b.version - a.version);
+											
+											if (showVersionHistory) {
+												setVersionHistory(versions);
+											}
+										},
+										(err) => console.error('Error loading report versions:', err)
+									);
+								} else {
+									console.error('Error loading report versions:', error);
+								}
+							}
+						);
+						
+						reportVersionsUnsubscribeRef.current = unsubscribeVersions;
+					}
+				} else {
+					setLoadingReport(false);
 				}
 			} catch (error) {
 				console.error('Failed to load patient report:', error);
-			} finally {
 				setLoadingReport(false);
 			}
 

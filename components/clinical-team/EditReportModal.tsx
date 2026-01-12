@@ -452,6 +452,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const [uploadingPdf, setUploadingPdf] = useState(false);
 	const [uploadedPdfUrl, setUploadedPdfUrl] = useState<string | null>(null);
 	const strengthConditioningUnsubscribeRef = useRef<(() => void) | null>(null);
+	const patientUnsubscribeRef = useRef<(() => void) | null>(null);
+	const reportVersionsUnsubscribeRef = useRef<(() => void) | null>(null);
 	
 	// Form state
 	const [patientDocId, setPatientDocId] = useState<string | null>(null);
@@ -557,6 +559,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				strengthConditioningUnsubscribeRef.current();
 				strengthConditioningUnsubscribeRef.current = null;
 			}
+			if (patientUnsubscribeRef.current) {
+				patientUnsubscribeRef.current();
+				patientUnsubscribeRef.current = null;
+			}
+			if (reportVersionsUnsubscribeRef.current) {
+				reportVersionsUnsubscribeRef.current();
+				reportVersionsUnsubscribeRef.current = null;
+			}
 		}
 	}, [isOpen, initialTab]);
 
@@ -571,49 +581,139 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setStrengthConditioningData(null);
 			setFormData({});
 
-			// Load regular report data
+			// Load regular report data with real-time listener
 			try {
 				const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
 				if (!patientSnap.empty) {
 					const patientDoc = patientSnap.docs[0];
-					const patientData = patientDoc.data() as PatientRecordFull;
-					setReportPatientData(patientData);
-					setPatientDocId(patientDoc.id);
+					const patientDocId = patientDoc.id;
+					setPatientDocId(patientDocId);
 					
-					// Check if it's a subsequent date for Physiotherapy report
-					// Compare dateOfConsultation or updatedAt with today
-					if (patientData.dateOfConsultation) {
-						setIsSubsequentDatePhysio(isDateOnDifferentDay(patientData.dateOfConsultation));
-					} else if (patientData.updatedAt) {
-						// If no consultation date, check updatedAt timestamp
-						const updatedDate = (patientData.updatedAt as any)?.toDate ? (patientData.updatedAt as any).toDate() : new Date(patientData.updatedAt);
-						if (!isNaN(updatedDate.getTime())) {
-							setIsSubsequentDatePhysio(isDateOnDifferentDay(updatedDate));
+					// Set up real-time listener for patient document
+					const patientRef = doc(db, 'patients', patientDocId);
+					const unsubscribePatient = onSnapshot(patientRef, (docSnap) => {
+						if (docSnap.exists()) {
+							const patientData = docSnap.data() as PatientRecordFull;
+							
+							// Only update if user is not actively editing (formData is empty or matches current data)
+							// This prevents overwriting user's unsaved changes
+							const isUserEditing = Object.keys(formData).length > 0 && 
+								JSON.stringify(formData) !== JSON.stringify(reportPatientData);
+							
+							if (!isUserEditing || !editable) {
+								setReportPatientData(patientData);
+								
+								// Check if it's a subsequent date for Physiotherapy report
+								if (patientData.dateOfConsultation) {
+									setIsSubsequentDatePhysio(isDateOnDifferentDay(patientData.dateOfConsultation));
+								} else if (patientData.updatedAt) {
+									const updatedDate = (patientData.updatedAt as any)?.toDate ? (patientData.updatedAt as any).toDate() : new Date(patientData.updatedAt);
+									if (!isNaN(updatedDate.getTime())) {
+										setIsSubsequentDatePhysio(isDateOnDifferentDay(updatedDate));
+									} else {
+										setIsSubsequentDatePhysio(false);
+									}
+								} else {
+									setIsSubsequentDatePhysio(false);
+								}
+								
+								// Initialize formData with patient data if editable and form is empty
+								if (editable && Object.keys(formData).length === 0) {
+									const adjustedData = applyCurrentSessionAdjustments(patientData);
+									if (!adjustedData.dateOfConsultation) {
+										adjustedData.dateOfConsultation = new Date().toISOString().split('T')[0];
+									}
+									if (!adjustedData.physioName && clinicalTeamMembers.length > 0) {
+										const currentUserStaff = clinicalTeamMembers.find(m => m.userEmail === user?.email);
+										adjustedData.physioName = currentUserStaff?.userName || user?.displayName || user?.email || '';
+									}
+									setFormData(adjustedData);
+									setIsPhysioNameEditable(false);
+								}
+							}
 						} else {
-							setIsSubsequentDatePhysio(false);
+							setReportPatientData(null);
 						}
-					} else {
-						setIsSubsequentDatePhysio(false);
+						setLoadingReport(false);
+					}, (error) => {
+						console.error('Error loading patient report:', error);
+						setLoadingReport(false);
+					});
+					
+					patientUnsubscribeRef.current = unsubscribePatient;
+					
+					// Set up real-time listener for report versions
+					const initialPatientData = patientDoc.data() as PatientRecordFull;
+					if (initialPatientData.patientId) {
+						const versionsQuery = query(
+							collection(db, 'reportVersions'),
+							where('patientId', '==', initialPatientData.patientId),
+							orderBy('version', 'desc')
+						);
+						
+						const unsubscribeVersions = onSnapshot(
+							versionsQuery,
+							(snapshot) => {
+								const versions = snapshot.docs.map(doc => {
+									const data = doc.data();
+									const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+									return {
+										id: doc.id,
+										version: data.version as number,
+										createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+										createdBy: (data.createdBy as string) || 'Unknown',
+										data: (data.reportData as Partial<PatientRecordFull>) || {},
+										isStrengthConditioning: false,
+									};
+								});
+								
+								// Only update if version history is currently being viewed
+								if (showVersionHistory && activeReportTab === 'report') {
+									setVersionHistory(versions);
+								}
+							},
+							(error) => {
+								// If orderBy fails (missing index), try without it
+								if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+									const versionsQueryNoOrder = query(
+										collection(db, 'reportVersions'),
+										where('patientId', '==', initialPatientData.patientId)
+									);
+									
+									onSnapshot(
+										versionsQueryNoOrder,
+										(snapshot) => {
+											const versions = snapshot.docs.map(doc => {
+												const data = doc.data();
+												const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+												return {
+													id: doc.id,
+													version: data.version as number,
+													createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+													createdBy: (data.createdBy as string) || 'Unknown',
+													data: (data.reportData as Partial<PatientRecordFull>) || {},
+													isStrengthConditioning: false,
+												};
+											});
+											versions.sort((a, b) => b.version - a.version);
+											
+											if (showVersionHistory && activeReportTab === 'report') {
+												setVersionHistory(versions);
+											}
+										},
+										(err) => console.error('Error loading report versions:', err)
+									);
+								} else {
+									console.error('Error loading report versions:', error);
+								}
+							}
+						);
+						
+						reportVersionsUnsubscribeRef.current = unsubscribeVersions;
 					}
 					
-					// Initialize formData with patient data if editable
-					if (editable) {
-						const adjustedData = applyCurrentSessionAdjustments(patientData);
-						// Set dateOfConsultation to today's date if it's not already set
-						if (!adjustedData.dateOfConsultation) {
-							adjustedData.dateOfConsultation = new Date().toISOString().split('T')[0];
-						}
-						// Auto-populate physio name if not already set
-						if (!adjustedData.physioName && clinicalTeamMembers.length > 0) {
-							const currentUserStaff = clinicalTeamMembers.find(m => m.userEmail === user?.email);
-							adjustedData.physioName = currentUserStaff?.userName || user?.displayName || user?.email || '';
-						}
-						setFormData(adjustedData);
-						setIsPhysioNameEditable(false); // Reset edit state when loading new patient
-					}
-					
-					// Load header config
-					const patientType = patientData.patientType || 'nonDYES';
+					// Load header config (one-time load)
+					const patientType = initialPatientData.patientType || 'nonDYES';
 					const headerType = patientType === 'DYES' ? 'reportDYES' : 'reportNonDYES';
 					try {
 						const config = await getHeaderConfig(headerType);
@@ -639,10 +739,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							...defaultConfig,
 						} as HeaderConfig);
 					}
+				} else {
+					setLoadingReport(false);
 				}
 			} catch (error) {
 				console.error('Failed to load patient report:', error);
-			} finally {
 				setLoadingReport(false);
 			}
 
