@@ -403,23 +403,8 @@ async function generateInvoiceHtml(
 								<td><strong>Mode/Terms of Payment</strong><br>${escapeHtml(paymentModeDisplay)}</td>
 							</tr>
 							<tr>
-								<td><strong>Reference No. & Date</strong><br>${escapeHtml(bill.appointmentId || '')}</td>
+								<td><strong>Reference No. </strong><br>${escapeHtml(bill.appointmentId || '')}</td>
 								<td><strong>Other References</strong><br>&nbsp;</td>
-							</tr>
-							<tr>
-								<td><strong>Buyer's Order No.</strong><br>&nbsp;</td>
-								<td><strong>Dated</strong><br>&nbsp;</td>
-							</tr>
-							<tr>
-								<td><strong>Dispatch Doc No.</strong><br>&nbsp;</td>
-								<td><strong>Delivery Note Date</strong><br>&nbsp;</td>
-							</tr>
-							<tr>
-								<td><strong>Dispatched through</strong><br>&nbsp;</td>
-								<td><strong>Destination</strong><br>&nbsp;</td>
-							</tr>
-							<tr>
-								<td colspan="2" style="height: 30px;"><strong>Terms of Delivery</strong><br>&nbsp;</td>
 							</tr>
 						</table>
 					</td>
@@ -427,15 +412,7 @@ async function generateInvoiceHtml(
 
 				<tr>
 					<td colspan="2">
-						<strong>Consignee (Ship to)</strong><br>
-						${buyerName}<br>
-						${buyerAddress}
-					</td>
-				</tr>
-
-				<tr>
-					<td colspan="2">
-						<strong>Buyer (Bill to)</strong><br>
+						<strong>Billed to</strong><br>
 						${buyerName}<br>
 						${buyerAddress}<br>
 						${buyerCity}
