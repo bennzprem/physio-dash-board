@@ -625,7 +625,7 @@ async function generateInvoiceHtml(
 							<img src="${logoDataUrl}" alt="Company Logo" style="width: 100px; height: auto; flex-shrink: 0;">
 							<div>
 								${headerConfig ? headerLines : (headerLines || 
-									`<span class="bold" style="font-size: 14px;">SIXS SPORTS AND BUSINESS SOLUTIONS INC</span><br>
+									`<span class="bold" style="font-size: 14px;">CENTRE FOR SPORTS AND SCIENCE</span><br>
 									Blr: No.503, 5th Floor Donata Marvel Apartment,<br>
 									Gokula Extension, Mattikere, Bangalore-560054<br>
 									<strong>GSTIN/UIN:</strong> 07ADZFS3168H1ZC<br>
@@ -763,7 +763,7 @@ async function generateInvoiceHtml(
 			<table style="border-top: none;">
 				<tr>
 					<td width="50%" style="border-right: 1px solid #000;">
-						Company's PAN: <strong>ADZF83168H</strong><br><br>
+						
 						<span class="bold" style="text-decoration: underline;">Declaration</span><br>
 						We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.<br><br>
 						
@@ -779,7 +779,7 @@ async function generateInvoiceHtml(
 						Branch & IFS Code: CNRB0000444`}<br><br>
 						
 						<div class="text-right" style="margin-top: 20px;">
-							for <strong>SIXS SPORTS AND BUSINESS SOLUTIONS INC</strong><br><br><br>
+							for <strong>CENTRE FOR SPORTS AND SCIENCE</strong><br><br><br>
 							Authorised Signatory
 						</div>
 					</td>
