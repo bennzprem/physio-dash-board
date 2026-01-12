@@ -471,6 +471,7 @@ export default function Appointments() {
 							appointmentDate: appointment.date || '',
 							createdByUserId: null,
 							createdByUserName: null,
+							isExtraTreatment: false, // Frontdesk appointments default to regular treatment
 						});
 					} catch (billingError) {
 						console.error('Failed to create automatic DYES billing:', billingError);

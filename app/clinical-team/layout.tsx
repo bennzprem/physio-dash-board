@@ -17,9 +17,10 @@ import InventoryManagement from '@/components/InventoryManagement';
 import LeaveManagement from '@/components/LeaveManagement';
 import Billing from '@/components/clinical-team/Billing';
 import StrengthConditioningReport from '@/components/clinical-team/StrengthConditioningReport';
+import SOPViewer from '@/components/SOPViewer';
 import { useAuth } from '@/contexts/AuthContext';
 
-type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'strength-conditioning-report' | 'availability' | 'transfer' | 'appointments' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'my-performance' | 'performance-rating' | 'billing';
+type ClinicalTeamPage = 'dashboard' | 'calendar' | 'edit-report' | 'strength-conditioning-report' | 'availability' | 'transfer' | 'appointments' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'my-performance' | 'performance-rating' | 'billing' | 'sop';
 
 const clinicalTeamLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-dumbbell' },
@@ -34,6 +35,7 @@ const clinicalTeamLinks: SidebarLink[] = [
 	{ href: '#transfer', label: 'Transfer Management', icon: 'fas fa-exchange-alt' },
 	{ href: '#my-performance', label: 'My Performance', icon: 'fas fa-chart-line' },
 	{ href: '#performance-rating', label: 'Performance Rating', icon: 'fas fa-star' },
+	{ href: '#sop', label: 'SOP Document', icon: 'fas fa-file-alt' },
 ];
 
 export default function ClinicalTeamLayout({ children }: { children: React.ReactNode }) {
@@ -106,6 +108,8 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 			setActivePage('my-performance');
 		} else if (pathname?.includes('/performance-rating')) {
 			setActivePage('performance-rating');
+		} else if (pathname?.includes('/sop')) {
+			setActivePage('sop');
 		}
 		// Don't set to dashboard when on base route - let hash navigation handle it
 	}, [pathname]);
@@ -170,6 +174,8 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 				return <MyPerformance />;
 			case 'performance-rating':
 				return <PerformanceRating />;
+			case 'sop':
+				return <SOPViewer />;
 			default:
 				return <Dashboard onNavigate={handleLinkClick} />;
 		}
@@ -201,7 +207,7 @@ export default function ClinicalTeamLayout({ children }: { children: React.React
 				activeHref={`#${activePage}`}
 				onProfileClick={handleProfileClick}
 			/>
-			<main className="ml-64 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
+			<main className="ml-72 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
 		</div>
 	);
 }

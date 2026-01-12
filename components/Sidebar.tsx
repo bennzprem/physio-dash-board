@@ -83,7 +83,7 @@ export default function Sidebar({ title, links, onLinkClick, activeHref, onProfi
 
 	return (
 		<nav
-			className="fixed left-0 top-0 z-40 flex h-svh w-64 flex-col overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-600 text-white shadow-2xl"
+			className="fixed left-0 top-0 z-40 flex h-svh w-72 flex-col overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-600 text-white shadow-2xl"
 			aria-label="Sidebar Navigation"
 			suppressHydrationWarning
 		>
@@ -96,37 +96,37 @@ export default function Sidebar({ title, links, onLinkClick, activeHref, onProfi
 			</div>
 			<div className="relative flex flex-col h-full">
 			<div className="px-5 py-4 border-b border-white/20">
-				<h4 className="flex items-center text-lg font-semibold mb-3 text-white">
-					<i className="fas fa-house-medical mr-2" aria-hidden="true" />
-					{title}
+				<h4 className="group flex items-center text-lg font-bold mb-3 text-white">
+					<i className="fas fa-house-medical mr-3 text-xl flex-shrink-0 transition-transform duration-300 group-hover:scale-125" aria-hidden="true" />
+					<span className="flex-1 min-w-0 transition-transform duration-300 group-hover:scale-110 group-active:scale-105">{title}</span>
 				</h4>
 				{/* Profile Section */}
 				{onProfileClick ? (
 					<button
 						type="button"
 						onClick={onProfileClick}
-						className="flex w-full items-center gap-3 mt-4 pt-4 border-t border-white/20 hover:bg-white/10 rounded-lg px-2 py-2 transition"
+						className="group flex w-full items-center gap-3 mt-4 pt-4 border-t border-white/20 hover:bg-white/10 rounded-lg px-2 py-2 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
 					>
 						<div className="flex-shrink-0">
 							{userProfile.profileImage ? (
 								<img
 									src={userProfile.profileImage}
 									alt={userProfile.userName || 'User'}
-									className="h-12 w-12 rounded-full object-cover border-2 border-purple-200/50"
+									className="h-12 w-12 rounded-full object-cover border-2 border-purple-200/50 transition-transform duration-300 group-hover:scale-125"
 								/>
 							) : (
-								<div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/30 border-2 border-purple-200/50">
-									<i className="fas fa-user text-white text-lg" aria-hidden="true" />
+								<div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/30 border-2 border-purple-200/50 transition-transform duration-300 group-hover:scale-125">
+									<i className="fas fa-user text-white text-xl transition-transform duration-300 group-hover:scale-150" aria-hidden="true" />
 								</div>
 							)}
 						</div>
 						<div className="flex-1 min-w-0 text-left">
-							<p className="text-xs text-purple-200 font-medium">Hi, Welcome</p>
-							<p className="text-sm font-semibold text-white truncate">
+							<p className="text-xs text-blue-200 font-bold transition-transform duration-300 group-hover:scale-125 group-active:scale-110">Hi, Welcome</p>
+							<p className="text-sm font-bold text-white truncate transition-transform duration-300 group-hover:scale-125 group-active:scale-110">
 								{userProfile.userName || user?.displayName || user?.email?.split('@')[0] || 'User'}
 							</p>
 						</div>
-						<i className="fas fa-chevron-right text-purple-200/50 text-xs" aria-hidden="true" />
+						<i className="fas fa-chevron-right text-blue-200/50 text-sm transition-transform duration-300 group-hover:translate-x-1 group-hover:scale-125" aria-hidden="true" />
 					</button>
 				) : (
 					<div className="flex items-center gap-3 mt-4 pt-4 border-t border-white/20">
@@ -139,13 +139,13 @@ export default function Sidebar({ title, links, onLinkClick, activeHref, onProfi
 								/>
 							) : (
 								<div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/30 border-2 border-purple-200/50">
-									<i className="fas fa-user text-white text-lg" aria-hidden="true" />
+									<i className="fas fa-user text-white text-xl" aria-hidden="true" />
 								</div>
 							)}
 						</div>
 						<div className="flex-1 min-w-0">
-							<p className="text-xs text-purple-200 font-medium">Hi, Welcome</p>
-							<p className="text-sm font-semibold text-white truncate">
+							<p className="text-xs text-purple-200 font-bold transition-transform duration-300 hover:scale-125 active:scale-110">Hi, Welcome</p>
+							<p className="text-sm font-bold text-white truncate transition-transform duration-300 hover:scale-125 active:scale-110">
 								{userProfile.userName || user?.displayName || user?.email?.split('@')[0] || 'User'}
 							</p>
 						</div>
@@ -168,15 +168,15 @@ export default function Sidebar({ title, links, onLinkClick, activeHref, onProfi
 									onClick={() => onLinkClick(link.href)}
 									role="menuitem"
 									className={[
-										'flex w-full items-center rounded-xl px-3 py-2.5 text-sm transition text-left font-medium',
+										'group flex w-full items-center rounded-xl px-3 py-2.5 text-sm text-left font-medium transition-all duration-300 hover:translate-x-1',
 										isActive
 											? 'bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 text-white shadow-lg shadow-blue-900/40'
 											: 'text-blue-100 hover:bg-blue-800/50 hover:text-white',
 									].join(' ')}
 									aria-current={isActive ? 'page' : undefined}
 								>
-									<i className={`${link.icon} mr-2 text-sm`} aria-hidden="true" />
-									<span>{link.label}</span>
+									<i className={`${link.icon} mr-4 text-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-125 group-active:scale-110`} aria-hidden="true" />
+									<span className="flex-1 min-w-0 transition-transform duration-300 group-hover:scale-110 group-active:scale-105 font-bold">{link.label}</span>
 								</button>
 							</li>
 						);
@@ -188,15 +188,15 @@ export default function Sidebar({ title, links, onLinkClick, activeHref, onProfi
 								href={link.href}
 								role="menuitem"
 								className={[
-									'flex items-center rounded-xl px-3 py-2.5 text-sm transition font-medium',
+									'group flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 hover:translate-x-1',
 									isActive
 										? 'bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 text-white shadow-lg shadow-blue-900/40'
 										: 'text-blue-100 hover:bg-blue-800/50 hover:text-white',
 								].join(' ')}
 								aria-current={isActive ? 'page' : undefined}
 							>
-								<i className={`${link.icon} mr-2 text-sm`} aria-hidden="true" />
-								<span>{link.label}</span>
+								<i className={`${link.icon} mr-4 text-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-125 group-active:scale-110`} aria-hidden="true" />
+								<span className="flex-1 min-w-0 transition-transform duration-300 group-hover:scale-110 group-active:scale-105 font-bold">{link.label}</span>
 							</Link>
 						</li>
 					);
@@ -207,10 +207,10 @@ export default function Sidebar({ title, links, onLinkClick, activeHref, onProfi
 				<button
 					type="button"
 					onClick={handleLogout}
-					className="flex w-full items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm px-3 py-2.5 text-sm font-medium text-red-100 hover:bg-red-500/20 hover:text-red-50 transition border border-white/10"
+					className="group flex w-full items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm px-3 py-2.5 text-sm font-medium text-red-100 hover:bg-red-500/20 hover:text-red-50 transition-all duration-300 border border-white/10 hover:shadow-lg hover:shadow-red-500/20"
 				>
-					<i className="fas fa-sign-out-alt mr-2" aria-hidden="true" />
-					Logout
+					<i className="fas fa-sign-out-alt mr-3 text-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-125 group-active:scale-110" aria-hidden="true" />
+					<span className="transition-transform duration-300 group-hover:scale-110 group-active:scale-105 font-bold">Logout</span>
 				</button>
 			</div>
 			</div>

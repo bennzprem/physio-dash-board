@@ -537,7 +537,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		'flex h-12 w-12 items-center justify-center rounded-2xl shadow-sm ring-1 transition group-hover:-translate-y-0.5';
 
 	return (
-		<div className="min-h-svh bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 px-6 py-10">
+		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title={clinicianName ? 'Your Clinical Dashboard' : 'Clinical Team Dashboard'}

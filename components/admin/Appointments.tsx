@@ -615,6 +615,7 @@ export default function Appointments() {
 								appointmentDate: formData.date || appointment.date || '',
 								createdByUserId: user?.uid || null,
 								createdByUserName: user?.displayName || user?.email || null,
+								isExtraTreatment: false, // Admin appointments default to regular treatment
 							});
 						}
 					} catch (billingError) {

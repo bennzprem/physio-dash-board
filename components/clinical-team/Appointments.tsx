@@ -175,6 +175,8 @@ const PATIENT_TYPE_OPTIONS: Array<{ value: 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 
 
 export default function Appointments() {
 	const { user } = useAuth();
+	const [extraTreatmentFlags, setExtraTreatmentFlags] = useState<Record<string, boolean>>({});
+	const [statusChangePending, setStatusChangePending] = useState<{ appointmentId: string; status: AdminAppointmentStatus; appointment: any } | null>(null);
 	const [appointments, setAppointments] = useState<FrontdeskAppointment[]>([]);
 	const [patients, setPatients] = useState<PatientRecordWithSessions[]>([]);
 	const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -856,14 +858,28 @@ export default function Appointments() {
 
 		const oldStatus = appointment.status;
 		const patientDetails = patients.find(p => p.patientId === appointment.patientId);
+		
+		// If marking as completed for a DYES patient, check if we need to prompt for extra treatment
+		if (status === 'completed' && oldStatus !== 'completed' && patientDetails) {
+			const patientType = (patientDetails.patientType || '').toUpperCase();
+			if (patientType === 'DYES') {
+				// Check if extra treatment flag is already set, otherwise show modal
+				const isExtra = extraTreatmentFlags[appointmentId] || false;
+				// Continue with the existing logic but pass the flag
+			}
+		}
+
 		const staffMember = staff.find(s => s.userName === appointment.doctor);
 		let sessionUsageResult: RecordSessionUsageResult | null = null;
 
 		setUpdating(prev => ({ ...prev, [appointment.id]: true }));
 		try {
 			const appointmentRef = doc(db, 'appointments', appointment.id);
+			const isExtraTreatment = extraTreatmentFlags[appointmentId] || false;
+			
 			await updateDoc(appointmentRef, {
 				status,
+				isExtraTreatment: status === 'completed' ? isExtraTreatment : false,
 			});
 
 			// Small delay to ensure the database update is committed
@@ -893,6 +909,7 @@ export default function Appointments() {
 							appointmentDate: appointment.date || '',
 							createdByUserId: user?.uid || null,
 							createdByUserName: user?.displayName || user?.email || null,
+							isExtraTreatment: isExtraTreatment,
 						});
 					} catch (billingError) {
 						console.error('Failed to create automatic DYES billing:', billingError);
@@ -2960,22 +2977,42 @@ export default function Appointments() {
 															)}
 														</td>
 														<td className="px-4 py-4">
-															<select
-																value={appointment.status}
-																onChange={event =>
-																	handleStatusChange(
-																		appointment.appointmentId,
-																		event.target.value as AdminAppointmentStatus,
-																	)
-																}
-																disabled={isUpdating}
-																className="select-base"
-															>
-																<option value="pending">Pending</option>
-																<option value="ongoing">Ongoing</option>
-																<option value="completed">Completed</option>
-																<option value="cancelled">Cancelled</option>
-															</select>
+															<div className="space-y-2">
+																<select
+																	value={appointment.status}
+																	onChange={event =>
+																		handleStatusChange(
+																			appointment.appointmentId,
+																			event.target.value as AdminAppointmentStatus,
+																		)
+																	}
+																	disabled={isUpdating}
+																	className="select-base"
+																>
+																	<option value="pending">Pending</option>
+																	<option value="ongoing">Ongoing</option>
+																	<option value="completed">Completed</option>
+																	<option value="cancelled">Cancelled</option>
+																</select>
+																{patientDetails?.patientType?.toUpperCase() === 'DYES' && appointment.status !== 'completed' && (
+																	<label className="flex items-center gap-2 cursor-pointer" title="Mark as extra treatment before completing appointment">
+																		<input
+																			type="checkbox"
+																			checked={extraTreatmentFlags[appointment.appointmentId] || false}
+																			onChange={e => {
+																				setExtraTreatmentFlags(prev => ({
+																					...prev,
+																					[appointment.appointmentId]: e.target.checked,
+																				}));
+																			}}
+																			className="h-3 w-3 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+																		/>
+																		<span className="text-xs text-amber-700 font-medium">
+																			Extra Treatment
+																		</span>
+																	</label>
+																)}
+															</div>
 														</td>
 														<td className="px-4 py-4">
 															{paymentStatus ? (

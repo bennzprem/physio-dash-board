@@ -115,6 +115,10 @@ export default function Reports() {
 	const [organizationTimeFilter, setOrganizationTimeFilter] = useState<'today' | 'weekly' | 'monthly' | 'overall'>('overall');
 	const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 	const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+	const [analyticsFromDate, setAnalyticsFromDate] = useState<string>('');
+	const [analyticsToDate, setAnalyticsToDate] = useState<string>('');
+	const [attendanceFromDate, setAttendanceFromDate] = useState<string>('');
+	const [attendanceToDate, setAttendanceToDate] = useState<string>('');
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [modalContext, setModalContext] = useState<{ patient: AdminPatientRecord; doctors: string[] } | null>(
@@ -430,7 +434,49 @@ export default function Reports() {
 	}, [patients, appointmentMap, statusFilter, doctorFilter, dateFilter, searchTerm]);
 
 	const summary = useMemo<SummaryCounts>(() => {
-		return filteredRows.reduce<SummaryCounts>(
+		let rowsToUse = filteredRows;
+
+		// Apply date range filter if set
+		if (analyticsFromDate || analyticsToDate) {
+			rowsToUse = filteredRows.filter(row => {
+				const patient = row.patient;
+				const registeredAt = patient.registeredAt;
+				if (!registeredAt) return false;
+
+				let registeredDate: Date;
+				if (typeof registeredAt === 'string') {
+					registeredDate = new Date(registeredAt);
+				} else if (registeredAt && typeof registeredAt === 'object' && 'toDate' in registeredAt) {
+					// Firestore Timestamp object
+					registeredDate = (registeredAt as Timestamp).toDate();
+				} else {
+					// Fallback: try to create Date from the value
+					registeredDate = new Date(String(registeredAt));
+				}
+
+				if (isNaN(registeredDate.getTime())) return false;
+
+				// Set time to start of day for comparison
+				const regDate = new Date(registeredDate);
+				regDate.setHours(0, 0, 0, 0);
+
+				if (analyticsFromDate) {
+					const fromDate = new Date(analyticsFromDate);
+					fromDate.setHours(0, 0, 0, 0);
+					if (regDate < fromDate) return false;
+				}
+
+				if (analyticsToDate) {
+					const toDate = new Date(analyticsToDate);
+					toDate.setHours(23, 59, 59, 999);
+					if (regDate > toDate) return false;
+				}
+
+				return true;
+			});
+		}
+
+		return rowsToUse.reduce<SummaryCounts>(
 			(acc, row) => {
 				acc.total += 1;
 				acc[row.status] += 1;
@@ -438,7 +484,7 @@ export default function Reports() {
 			},
 			{ total: 0, pending: 0, ongoing: 0, completed: 0, cancelled: 0 }
 		);
-	}, [filteredRows]);
+	}, [filteredRows, analyticsFromDate, analyticsToDate]);
 
 	const chartData = useMemo(
 		() => [
@@ -462,10 +508,38 @@ export default function Reports() {
 				member.status === 'Active'
 		);
 
+		// Filter appointments by date range if set
+		let filteredAppointments = appointments;
+		if (analyticsFromDate || analyticsToDate) {
+			filteredAppointments = appointments.filter(apt => {
+				if (!apt.date) return false;
+				const aptDate = new Date(apt.date);
+				if (isNaN(aptDate.getTime())) return false;
+
+				const aptDateOnly = new Date(aptDate);
+				aptDateOnly.setHours(0, 0, 0, 0);
+
+				if (analyticsFromDate) {
+					const fromDate = new Date(analyticsFromDate);
+					fromDate.setHours(0, 0, 0, 0);
+					if (aptDateOnly < fromDate) return false;
+				}
+
+				if (analyticsToDate) {
+					const toDate = new Date(analyticsToDate);
+					toDate.setHours(23, 59, 59, 999);
+					if (aptDateOnly > toDate) return false;
+				}
+
+				return true;
+			});
+		}
+
 		const teamPatientCounts = clinicalTeamMembers.map(member => {
-			const memberAppointments = appointments.filter(
+			const memberAppointments = filteredAppointments.filter(
 				apt => apt.doctor?.toLowerCase() === member.userName.toLowerCase()
 			);
+			// Get unique patient IDs from appointments within the date range
 			const uniquePatientIds = new Set(memberAppointments.map(apt => apt.patientId).filter(Boolean));
 			return {
 				name: member.userName,
@@ -497,7 +571,7 @@ export default function Reports() {
 				},
 			],
 		};
-	}, [staff, appointments]);
+	}, [staff, appointments, analyticsFromDate, analyticsToDate]);
 
 	// Organization-based Graph Data with time filters
 	const organizationData = useMemo(() => {
@@ -571,10 +645,37 @@ export default function Reports() {
 				member.status === 'Active'
 		);
 
+		// Filter billing by date range if set
+		let filteredBilling = billing;
+		if (analyticsFromDate || analyticsToDate) {
+			filteredBilling = billing.filter(bill => {
+				if (!bill.date) return false;
+				const billDate = new Date(bill.date);
+				if (isNaN(billDate.getTime())) return false;
+
+				const billDateOnly = new Date(billDate);
+				billDateOnly.setHours(0, 0, 0, 0);
+
+				if (analyticsFromDate) {
+					const fromDate = new Date(analyticsFromDate);
+					fromDate.setHours(0, 0, 0, 0);
+					if (billDateOnly < fromDate) return false;
+				}
+
+				if (analyticsToDate) {
+					const toDate = new Date(analyticsToDate);
+					toDate.setHours(23, 59, 59, 999);
+					if (billDateOnly > toDate) return false;
+				}
+
+				return true;
+			});
+		}
+
 		const teamRevenue = clinicalTeamMembers.map(member => {
 			// Calculate total revenue from billing records for this member
 			// Include both 'Completed' and 'Auto-Paid' statuses as they represent actual revenue
-			const memberBilling = billing.filter(bill => {
+			const memberBilling = filteredBilling.filter(bill => {
 				const doctorMatch = bill.doctor?.toLowerCase().trim() === member.userName.toLowerCase().trim() ||
 					bill.doctor?.toLowerCase().trim() === member.userName?.toLowerCase().trim();
 				const statusMatch = bill.status === 'Completed' || bill.status === 'Auto-Paid';
@@ -623,7 +724,7 @@ export default function Reports() {
 				},
 			],
 		};
-	}, [staff, billing]);
+	}, [staff, billing, analyticsFromDate, analyticsToDate]);
 
 	const openModal = (row: PatientRow) => {
 		setModalContext({ patient: row.patient, doctors: row.doctors });
@@ -937,6 +1038,103 @@ export default function Reports() {
 		URL.revokeObjectURL(url);
 	};
 
+	// Patient Attendance Report Data
+	const patientAttendanceData = useMemo(() => {
+		const clinicalTeamMembers = staff.filter(
+			member => 
+				(member.role === 'ClinicalTeam' || member.role === 'Physiotherapist' || member.role === 'StrengthAndConditioning') &&
+				member.status === 'Active'
+		);
+
+		// Filter appointments by date range and status
+		let filteredAppointments = appointments.filter(apt => apt.status === 'completed');
+		
+		if (attendanceFromDate || attendanceToDate) {
+			filteredAppointments = filteredAppointments.filter(apt => {
+				if (!apt.date) return false;
+				const aptDate = new Date(apt.date);
+				if (isNaN(aptDate.getTime())) return false;
+
+				const aptDateOnly = new Date(aptDate);
+				aptDateOnly.setHours(0, 0, 0, 0);
+
+				if (attendanceFromDate) {
+					const fromDate = new Date(attendanceFromDate);
+					fromDate.setHours(0, 0, 0, 0);
+					if (aptDateOnly < fromDate) return false;
+				}
+
+				if (attendanceToDate) {
+					const toDate = new Date(attendanceToDate);
+					toDate.setHours(23, 59, 59, 999);
+					if (aptDateOnly > toDate) return false;
+				}
+
+				return true;
+			});
+		}
+
+		// Count unique patients per clinician
+		const attendanceReport = clinicalTeamMembers.map(member => {
+			const memberAppointments = filteredAppointments.filter(
+				apt => apt.doctor?.toLowerCase().trim() === member.userName.toLowerCase().trim()
+			);
+			
+			// Get unique patient IDs
+			const uniquePatientIds = new Set(memberAppointments.map(apt => apt.patientId).filter(Boolean));
+			
+			// Count total completed appointments
+			const totalAppointments = memberAppointments.length;
+
+			return {
+				clinicianName: member.userName,
+				uniquePatientCount: uniquePatientIds.size,
+				totalAppointments: totalAppointments,
+			};
+		}).sort((a, b) => b.uniquePatientCount - a.uniquePatientCount);
+
+		return attendanceReport;
+	}, [staff, appointments, attendanceFromDate, attendanceToDate]);
+
+	const handleExportPatientAttendance = () => {
+		const safe = (val: string | number) => {
+			const str = String(val ?? '');
+			if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+				return `"${str.replace(/"/g, '""')}"`;
+			}
+			return str;
+		};
+
+		const headers = ['Clinician Name', 'Unique Patients Attended', 'Total Completed Appointments'];
+		const rows = [
+			headers.map(safe).join(','),
+			...patientAttendanceData.map(item => [
+				item.clinicianName,
+				item.uniquePatientCount.toString(),
+				item.totalAppointments.toString(),
+			].map(safe).join(','))
+		];
+
+		const csvContent = rows.join('\n');
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+
+		const link = document.createElement('a');
+		link.href = url;
+		const dateRange = attendanceFromDate && attendanceToDate 
+			? `${attendanceFromDate}_to_${attendanceToDate}`
+			: attendanceFromDate 
+				? `from_${attendanceFromDate}`
+				: attendanceToDate 
+					? `to_${attendanceToDate}`
+					: 'all';
+		link.setAttribute('download', `patient-attendance-report-${dateRange}-${new Date().toISOString().slice(0, 10)}.csv`);
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
+	};
+
 	const handleExportClinicianAnalytics = () => {
 		if (!doctorOptions.length) {
 			alert('No physicians found to export analytics.');
@@ -1045,6 +1243,75 @@ export default function Reports() {
 						</button>
 					}
 				/>
+
+				{/* Date Range Filter for Analytics */}
+				<div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+					<div className="flex items-center gap-4 flex-wrap">
+						<label className="text-sm font-medium text-slate-700 whitespace-nowrap">
+							Filter by Date Range:
+						</label>
+						<div className="flex items-center gap-3 flex-wrap">
+							<div className="flex items-center gap-2">
+								<label htmlFor="analyticsFromDate" className="text-sm text-slate-600 whitespace-nowrap">
+									From:
+								</label>
+								<input
+									type="date"
+									id="analyticsFromDate"
+									value={analyticsFromDate}
+									onChange={e => {
+										const date = e.target.value;
+										setAnalyticsFromDate(date);
+										if (analyticsToDate && date > analyticsToDate) {
+											setAnalyticsToDate(date);
+										}
+									}}
+									max={analyticsToDate || new Date().toISOString().split('T')[0]}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<label htmlFor="analyticsToDate" className="text-sm text-slate-600 whitespace-nowrap">
+									To:
+								</label>
+								<input
+									type="date"
+									id="analyticsToDate"
+									value={analyticsToDate}
+									onChange={e => {
+										const date = e.target.value;
+										setAnalyticsToDate(date);
+										if (analyticsFromDate && date < analyticsFromDate) {
+											setAnalyticsFromDate(date);
+										}
+									}}
+									min={analyticsFromDate || undefined}
+									max={new Date().toISOString().split('T')[0]}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+								/>
+							</div>
+							{(analyticsFromDate || analyticsToDate) && (
+								<button
+									type="button"
+									onClick={() => {
+										setAnalyticsFromDate('');
+										setAnalyticsToDate('');
+									}}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+								>
+									Clear
+								</button>
+							)}
+						</div>
+					</div>
+					{(analyticsFromDate || analyticsToDate) && (
+						<p className="mt-2 text-xs text-slate-500">
+							Showing analytics for: {analyticsFromDate ? new Date(analyticsFromDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'All time'} 
+							{' - '}
+							{analyticsToDate ? new Date(analyticsToDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today'}
+						</p>
+					)}
+				</div>
 
 				<div className="border-t border-slate-200" />
 
@@ -1408,6 +1675,140 @@ export default function Reports() {
 						<p className="text-sm text-slate-600">Select a physician to view performance analytics</p>
 				</div>
 				)}
+			</section>
+
+			{/* Patient Attendance Report */}
+			<section className="mx-auto mt-8 max-w-6xl rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
+				<div className="mb-6 flex items-center justify-between">
+					<div>
+						<h2 className="text-lg font-semibold text-slate-900">Patient Attendance Report</h2>
+						<p className="mt-1 text-sm text-slate-500">Number of unique patients attended by each clinical team member</p>
+					</div>
+					<button
+						type="button"
+						onClick={handleExportPatientAttendance}
+						className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 focus-visible:border-slate-400 focus-visible:text-slate-900 focus-visible:outline-none"
+					>
+						<i className="fas fa-file-csv text-xs" aria-hidden="true" />
+						Download CSV
+					</button>
+				</div>
+
+				{/* Date Range Filter */}
+				<div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+					<div className="flex items-center gap-4 flex-wrap">
+						<label className="text-sm font-medium text-slate-700 whitespace-nowrap">
+							Filter by Date Range:
+						</label>
+						<div className="flex items-center gap-3 flex-wrap">
+							<div className="flex items-center gap-2">
+								<label htmlFor="attendanceFromDate" className="text-sm text-slate-600 whitespace-nowrap">
+									From:
+								</label>
+								<input
+									type="date"
+									id="attendanceFromDate"
+									value={attendanceFromDate}
+									onChange={e => {
+										const date = e.target.value;
+										setAttendanceFromDate(date);
+										if (attendanceToDate && date > attendanceToDate) {
+											setAttendanceToDate(date);
+										}
+									}}
+									max={attendanceToDate || new Date().toISOString().split('T')[0]}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+								/>
+							</div>
+							<div className="flex items-center gap-2">
+								<label htmlFor="attendanceToDate" className="text-sm text-slate-600 whitespace-nowrap">
+									To:
+								</label>
+								<input
+									type="date"
+									id="attendanceToDate"
+									value={attendanceToDate}
+									onChange={e => {
+										const date = e.target.value;
+										setAttendanceToDate(date);
+										if (attendanceFromDate && date < attendanceFromDate) {
+											setAttendanceFromDate(date);
+										}
+									}}
+									min={attendanceFromDate || undefined}
+									max={new Date().toISOString().split('T')[0]}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+								/>
+							</div>
+							{(attendanceFromDate || attendanceToDate) && (
+								<button
+									type="button"
+									onClick={() => {
+										setAttendanceFromDate('');
+										setAttendanceToDate('');
+									}}
+									className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 focus:border-slate-400 focus:bg-slate-50 focus:outline-none"
+								>
+									Clear
+								</button>
+							)}
+						</div>
+					</div>
+				</div>
+
+				{/* Report Table */}
+				<div className="overflow-x-auto">
+					<table className="w-full border-collapse">
+						<thead>
+							<tr className="border-b-2 border-slate-200 bg-slate-50">
+								<th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">#</th>
+								<th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Clinician Name</th>
+								<th className="px-4 py-3 text-right text-sm font-semibold text-slate-700">Unique Patients Attended</th>
+								<th className="px-4 py-3 text-right text-sm font-semibold text-slate-700">Total Completed Appointments</th>
+							</tr>
+						</thead>
+						<tbody>
+							{patientAttendanceData.length > 0 ? (
+								patientAttendanceData.map((item, index) => (
+									<tr
+										key={item.clinicianName}
+										className="border-b border-slate-100 transition-colors hover:bg-slate-50"
+									>
+										<td className="px-4 py-3 text-sm text-slate-600">{index + 1}</td>
+										<td className="px-4 py-3 text-sm font-medium text-slate-900">{item.clinicianName}</td>
+										<td className="px-4 py-3 text-right text-sm font-semibold text-emerald-600">
+											{item.uniquePatientCount}
+										</td>
+										<td className="px-4 py-3 text-right text-sm text-slate-600">
+											{item.totalAppointments}
+										</td>
+									</tr>
+								))
+							) : (
+								<tr>
+									<td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">
+										No data available for the selected date range.
+									</td>
+								</tr>
+							)}
+						</tbody>
+						{patientAttendanceData.length > 0 && (
+							<tfoot className="bg-slate-50">
+								<tr className="border-t-2 border-slate-200">
+									<td className="px-4 py-3 text-sm font-semibold text-slate-900" colSpan={2}>
+										Total
+									</td>
+									<td className="px-4 py-3 text-right text-sm font-bold text-emerald-700">
+										{patientAttendanceData.reduce((sum, item) => sum + item.uniquePatientCount, 0)}
+									</td>
+									<td className="px-4 py-3 text-right text-sm font-bold text-slate-900">
+										{patientAttendanceData.reduce((sum, item) => sum + item.totalAppointments, 0)}
+									</td>
+								</tr>
+							</tfoot>
+						)}
+					</table>
+				</div>
 			</section>
 
 			{isModalOpen && modalContext && (

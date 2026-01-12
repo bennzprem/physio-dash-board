@@ -20,9 +20,10 @@ import AdminLeaveManagement from '@/components/admin/LeaveManagement';
 import LeaveRequestNotification from '@/components/admin/LeaveRequestNotification';
 import RatingApprovals from '@/components/admin/RatingApprovals';
 import PerformanceRating from '@/components/clinical-team/PerformanceRating';
+import SOPViewer from '@/components/SOPViewer';
 import { useAuth } from '@/contexts/AuthContext';
 
-type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'rating-approvals' | 'performance-rating';
+type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'rating-approvals' | 'performance-rating' | 'sop';
 
 const adminLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-columns' },
@@ -39,6 +40,7 @@ const adminLinks: SidebarLink[] = [
 	{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
 	{ href: '#rating-approvals', label: 'Rating Approvals', icon: 'fas fa-check-circle' },
 	{ href: '#performance-rating', label: 'Performance Rating', icon: 'fas fa-star' },
+	{ href: '#sop', label: 'SOP Document', icon: 'fas fa-file-alt' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -119,6 +121,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 			return <RatingApprovals />;
 		case 'performance-rating':
 			return <PerformanceRating />;
+		case 'sop':
+			return <SOPViewer />;
 		default:
 			return <Dashboard onNavigate={handleLinkClick} />;
 		}
@@ -152,7 +156,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 				activeHref={`#${activePage}`}
 				onProfileClick={handleProfileClick}
 			/>
-			<main className="ml-64 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
+			<main className="ml-72 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
 		</div>
 	);
 }

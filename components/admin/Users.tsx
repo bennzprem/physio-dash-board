@@ -1176,7 +1176,7 @@ export default function Users() {
 	const clinicalMetrics = useMemo(() => {
 		if (!selectedEmployee || selectedEmployee.role !== 'ClinicalTeam') {
 			return {
-				activePatients: 0,
+				totalPatients: 0,
 				revenue: 0,
 				totalSessions: 0,
 				patientsByType: { DYES: 0, PAID: 0, VIP: 0, GETHNA: 0 },
@@ -1193,15 +1193,11 @@ export default function Users() {
 			normalize(apt.doctor) === employeeName && apt.status === 'completed'
 		);
 
-		// Active patients (ongoing status, assigned to this employee)
-		const activePatients = clinicalPatients.filter(p => 
-			normalize(p.assignedDoctor) === employeeName && p.status === 'ongoing'
-		).length;
-
-		// Get unique patient IDs from appointments
+		// Get unique patient IDs from appointments (total patients attended)
 		const uniquePatientIds = new Set(
 			employeeAppointments.map(apt => apt.patientId).filter(Boolean)
 		);
+		const totalPatients = uniquePatientIds.size;
 
 		// Patients by type
 		const patientsByType = { DYES: 0, PAID: 0, VIP: 0, GETHNA: 0 };
@@ -1216,10 +1212,17 @@ export default function Users() {
 			}
 		});
 
-		// Calculate revenue (completed billing for this employee)
+		// Calculate revenue (completed and auto-paid billing for this employee)
 		const revenue = clinicalBilling
-			.filter(bill => normalize(bill.doctor) === employeeName && bill.status === 'completed')
-			.reduce((sum, bill) => sum + bill.amount, 0);
+			.filter(bill => {
+				const doctorMatch = normalize(bill.doctor) === employeeName;
+				const statusMatch = bill.status === 'Completed' || bill.status === 'Auto-Paid';
+				return doctorMatch && statusMatch;
+			})
+			.reduce((sum, bill) => {
+				const amount = Number.isFinite(bill.amount) ? bill.amount : 0;
+				return sum + (amount > 0 ? amount : 0);
+			}, 0);
 
 		// Activities by type for this employee
 		const activitiesByType: Record<string, number> = {};
@@ -1231,7 +1234,7 @@ export default function Users() {
 			});
 
 		return {
-			activePatients,
+			totalPatients,
 			revenue,
 			totalSessions: employeeAppointments.length,
 			patientsByType,
@@ -1761,8 +1764,8 @@ export default function Users() {
 												{/* Key Metrics */}
 												<div className="grid grid-cols-2 gap-3">
 													<div className="rounded-lg border border-slate-200 bg-sky-50 p-3">
-														<p className="text-xs font-medium text-slate-600">Active Patients</p>
-														<p className="mt-1 text-xl font-bold text-sky-900">{clinicalMetrics.activePatients}</p>
+														<p className="text-xs font-medium text-slate-600">Total Patients</p>
+														<p className="mt-1 text-xl font-bold text-sky-900">{clinicalMetrics.totalPatients}</p>
 													</div>
 													<div className="rounded-lg border border-slate-200 bg-emerald-50 p-3">
 														<p className="text-xs font-medium text-slate-600">Revenue Generated</p>

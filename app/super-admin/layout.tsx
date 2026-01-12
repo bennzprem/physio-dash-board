@@ -21,9 +21,10 @@ import LeaveRequestNotification from '@/components/admin/LeaveRequestNotificatio
 import ClinicalTeamActivities from '@/components/admin/ClinicalTeamActivities';
 import RatingApprovals from '@/components/admin/RatingApprovals';
 import PerformanceRating from '@/components/clinical-team/PerformanceRating';
+import SOPViewer from '@/components/SOPViewer';
 import { useAuth } from '@/contexts/AuthContext';
 
-type SuperAdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'clinical-activities' | 'rating-approvals' | 'performance-rating';
+type SuperAdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'clinical-activities' | 'rating-approvals' | 'performance-rating' | 'sop';
 
 // Get sidebar links based on user permissions
 const getSuperAdminLinks = (isExclusiveSuperAdmin: boolean): SidebarLink[] => {
@@ -42,6 +43,7 @@ const getSuperAdminLinks = (isExclusiveSuperAdmin: boolean): SidebarLink[] => {
 		{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
 		{ href: '#rating-approvals', label: 'Rating Approvals', icon: 'fas fa-check-circle' },
 		{ href: '#performance-rating', label: 'Performance Rating', icon: 'fas fa-star' },
+		{ href: '#sop', label: 'SOP Document', icon: 'fas fa-file-alt' },
 	];
 
 	// Only add Clinical Team Activities for exclusive Super Admin
@@ -154,6 +156,8 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 			return <RatingApprovals />;
 		case 'performance-rating':
 			return <PerformanceRating />;
+		case 'sop':
+			return <SOPViewer />;
 		default:
 			return <Dashboard onNavigate={handleLinkClick} />;
 		}
@@ -188,7 +192,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 				activeHref={`#${activePage}`}
 				onProfileClick={handleProfileClick}
 			/>
-			<main className="ml-64 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
+			<main className="ml-72 min-h-svh overflow-y-auto bg-purple-50">{renderPage()}</main>
 		</div>
 	);
 }
