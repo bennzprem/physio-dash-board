@@ -1201,6 +1201,7 @@ export default function Billing() {
 						date: data.date ? String(data.date) : '',
 						status: data.status ? String(data.status) : '',
 						amount: data.amount ? Number(data.amount) : 1200,
+						isExtraTreatment: data.isExtraTreatment === true,
 					};
 				});
 				setAppointments([...mapped]);
@@ -1276,17 +1277,39 @@ export default function Billing() {
 					const patientType = (patientData.patientType as string) || '';
 					const paymentType = (patientData.paymentType as string) || 'without';
 					const standardAmount = appt.amount || 1200;
+					
+					// Check if patient has a package - if so, skip individual session billing
+					const hasPackage = (typeof patientData.packageAmount === 'number' && patientData.packageAmount > 0) ||
+						(typeof patientData.totalSessionsRequired === 'number' && patientData.totalSessionsRequired > 0);
+					
+					// Check if a package billing record already exists for this patient
+					// This check is important even if patient data doesn't show package (e.g., package was assigned but data not updated)
+					const packageBillingQuery = query(
+						collection(db, 'billing'),
+						where('patientId', '==', appt.patientId),
+						where('packageAmount', '>', 0)
+					);
+					const packageBillingSnapshot = await getDocs(packageBillingQuery);
+					const hasPackageBillingRecord = !packageBillingSnapshot.empty;
+					
+					// Check if this is an extra treatment (extra treatments should still be billed individually)
+					const isExtraTreatment = appt.isExtraTreatment === true;
 
 					// Apply billing rules based on patient type
 					let shouldCreateBill = false;
 					let billAmount = standardAmount;
 
-					if (patientType === 'Referral' || patientType === 'REFERRAL') {
+					// Skip billing for package patients unless it's an extra treatment
+					// Also skip if a package billing record already exists (even if patient data doesn't show package)
+					if ((hasPackage || hasPackageBillingRecord) && !isExtraTreatment) {
+						shouldCreateBill = false;
+						continue; // Skip to next appointment
+					} else if (patientType === 'Referral' || patientType === 'REFERRAL') {
 						// Referral: Create billing record with 0 amount (will show N/A in invoices/receipts)
 						shouldCreateBill = true;
 						billAmount = 0;
 					} else if (patientType === 'VIP') {
-						// VIP: Create bill for every completed session as normal
+						// VIP: Create bill for every completed session as normal (only if no package)
 						shouldCreateBill = true;
 						billAmount = standardAmount;
 					} else if (patientType === 'Paid') {
@@ -1301,6 +1324,7 @@ export default function Billing() {
 						}
 					} else if (patientType === 'Dyes' || patientType === 'DYES') {
 						// DYES: Automated billing - Rs. 500 per session, status 'Completed' (Paid)
+						// DYES patients don't use packages, so always create billing
 						shouldCreateBill = true;
 						billAmount = 500; // Fixed rate for DYES patients
 					} else if (patientType === 'Gethhma') {
@@ -1308,7 +1332,7 @@ export default function Billing() {
 						shouldCreateBill = true;
 						billAmount = standardAmount;
 					} else {
-						// Unknown patient type: default behavior (create bill)
+						// Unknown patient type: default behavior (create bill only if no package)
 						shouldCreateBill = true;
 						billAmount = standardAmount;
 					}

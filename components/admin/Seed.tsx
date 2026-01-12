@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { collection, addDoc, serverTimestamp, getDocs, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import { migratePackageBilling } from '@/lib/migratePackageBilling';
 
 
 // Dummy staff data
@@ -277,6 +278,14 @@ export default function Seed() {
 	const [results, setResults] = useState<{ staff: number; patients: number; appointments: number } | null>(null);
 	const [testUsersCreated, setTestUsersCreated] = useState(false);
 	const [testUsersError, setTestUsersError] = useState<string | null>(null);
+	const [migrating, setMigrating] = useState(false);
+	const [migrationResults, setMigrationResults] = useState<{
+		success: boolean;
+		patientsProcessed: number;
+		billingRecordsConsolidated: number;
+		billingRecordsDeleted: number;
+		errors: string[];
+	} | null>(null);
 
 	// Test user credentials
 	const testUsers = [
@@ -431,6 +440,52 @@ export default function Seed() {
 			setProgress(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
 		} finally {
 			setSeeding(false);
+		}
+	};
+
+	const handleMigratePackageBilling = async () => {
+		if (!user) {
+			alert('You must be logged in to run migrations');
+			return;
+		}
+
+		const confirmed = confirm(
+			'This will consolidate individual session billing records into package billing records for all patients with packages.\n\n' +
+			'This action cannot be undone. Continue?'
+		);
+
+		if (!confirmed) return;
+
+		setMigrating(true);
+		setProgress('Starting package billing migration...');
+		setMigrationResults(null);
+
+		try {
+			const results = await migratePackageBilling();
+			setMigrationResults(results);
+			
+			if (results.success) {
+				setProgress(
+					`Migration completed successfully!\n` +
+					`- Patients processed: ${results.patientsProcessed}\n` +
+					`- Package billing records created: ${results.billingRecordsConsolidated}\n` +
+					`- Individual billing records deleted: ${results.billingRecordsDeleted}`
+				);
+			} else {
+				setProgress(`Migration completed with errors. Check results below.`);
+			}
+		} catch (error) {
+			console.error('Migration error:', error);
+			setProgress(`Migration failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+			setMigrationResults({
+				success: false,
+				patientsProcessed: 0,
+				billingRecordsConsolidated: 0,
+				billingRecordsDeleted: 0,
+				errors: [error instanceof Error ? error.message : 'Unknown error'],
+			});
+		} finally {
+			setMigrating(false);
 		}
 	};
 
@@ -702,6 +757,43 @@ export default function Seed() {
 								<i className="fas fa-database text-xs" aria-hidden="true" />
 								{seeding ? 'Seeding...' : 'Seed All Data'}
 							</button>
+						</div>
+
+						<div className="border-t border-slate-200 pt-4">
+							<h3 className="mb-4 text-sm font-medium text-slate-700">Package Billing Migration</h3>
+							<p className="mb-3 text-xs text-slate-500">
+								Consolidates individual session billing records into single package billing records for all patients with packages. 
+								This fixes existing data to match the new billing logic where packages are billed once when assigned.
+							</p>
+							<button
+								type="button"
+								onClick={handleMigratePackageBilling}
+								disabled={migrating || seeding}
+								className="btn-primary bg-blue-600 hover:bg-blue-700"
+							>
+								<i className="fas fa-sync-alt text-xs" aria-hidden="true" />
+								{migrating ? 'Migrating...' : 'Migrate Package Billing'}
+							</button>
+							{migrationResults && (
+								<div className={`mt-4 rounded-lg border p-4 ${migrationResults.success ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'}`}>
+									<h4 className="mb-2 font-semibold">{migrationResults.success ? 'Migration Successful' : 'Migration Completed with Errors'}</h4>
+									<ul className="space-y-1 text-xs">
+										<li>Patients processed: {migrationResults.patientsProcessed}</li>
+										<li>Package billing records created: {migrationResults.billingRecordsConsolidated}</li>
+										<li>Individual billing records deleted: {migrationResults.billingRecordsDeleted}</li>
+									</ul>
+									{migrationResults.errors.length > 0 && (
+										<div className="mt-3">
+											<p className="font-semibold text-red-700">Errors:</p>
+											<ul className="mt-1 list-disc pl-5 text-xs text-red-600">
+												{migrationResults.errors.map((error, idx) => (
+													<li key={idx}>{error}</li>
+												))}
+											</ul>
+										</div>
+									)}
+								</div>
+							)}
 						</div>
 
 						<div className="border-t border-slate-200 pt-4">
