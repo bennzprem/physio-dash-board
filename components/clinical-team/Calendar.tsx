@@ -816,7 +816,7 @@ export default function Calendar() {
 					borderColor,
 					editable: true,
 					startEditable: true,
-					durationEditable: false,
+					durationEditable: true,
 				};
 			})
 			.filter(Boolean) as Array<
@@ -952,6 +952,48 @@ export default function Calendar() {
 		} catch (error) {
 			console.error('Failed to reschedule appointment', error);
 			alert('Failed to reschedule appointment. Please try again.');
+			changeInfo.revert();
+		} finally {
+			setIsRescheduling(null);
+		}
+	};
+
+	const handleEventResize = async (changeInfo: EventChangeArg) => {
+		const eventId = changeInfo.event.id;
+		const newStart = changeInfo.event.start;
+		const newEnd = changeInfo.event.end;
+		
+		if (!newStart || !newEnd) {
+			changeInfo.revert();
+			return;
+		}
+
+		// Calculate duration in minutes
+		const durationMs = newEnd.getTime() - newStart.getTime();
+		const durationMinutes = Math.max(SLOT_INTERVAL_MINUTES, Math.round(durationMs / 60000));
+
+		// If the start time changed, update date and time as well
+		const year = newStart.getFullYear();
+		const month = String(newStart.getMonth() + 1).padStart(2, '0');
+		const day = String(newStart.getDate()).padStart(2, '0');
+		const hours = String(newStart.getHours()).padStart(2, '0');
+		const minutes = String(newStart.getMinutes()).padStart(2, '0');
+		
+		const newDate = `${year}-${month}-${day}`;
+		const newTime = `${hours}:${minutes}`;
+
+		setIsRescheduling(eventId);
+		
+		try {
+			const appointmentRef = doc(db, 'appointments', eventId);
+			await updateDoc(appointmentRef, {
+				date: newDate,
+				time: newTime,
+				duration: durationMinutes,
+			});
+		} catch (error) {
+			console.error('Failed to update appointment duration', error);
+			alert('Failed to update appointment duration. Please try again.');
 			changeInfo.revert();
 		} finally {
 			setIsRescheduling(null);
@@ -1189,6 +1231,7 @@ export default function Calendar() {
 								handleEventClick(clickInfo);
 							}}
 							eventDrop={handleEventDrop}
+							eventResize={handleEventResize}
 							viewDidMount={handleViewChange}
 							fixedWeekCount={false}
 							height="auto"
