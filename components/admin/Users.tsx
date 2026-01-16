@@ -192,6 +192,7 @@ export default function Users() {
 		doctor: string;
 		amount: number;
 		status: string;
+		patientId?: string;
 	}>>([]);
 	const [clinicalActivities, setClinicalActivities] = useState<Array<{
 		staffEmail: string;
@@ -1079,6 +1080,7 @@ export default function Users() {
 						doctor: data.doctor ? String(data.doctor) : '',
 						amount: data.amount ? Number(data.amount) : 0,
 						status: data.status ? String(data.status) : 'pending',
+						patientId: data.patientId ? String(data.patientId) : undefined,
 					};
 				});
 				setClinicalBilling(billing);
@@ -1220,6 +1222,12 @@ export default function Users() {
 				return doctorMatch && statusMatch;
 			})
 			.reduce((sum, bill) => {
+				// Exclude VIP and Referral patients from revenue
+				const patient = clinicalPatients.find(p => p.patientId === bill.patientId);
+				const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+				const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+				if (isVIP || isReferral) return sum;
+				
 				const amount = Number.isFinite(bill.amount) ? bill.amount : 0;
 				return sum + (amount > 0 ? amount : 0);
 			}, 0);

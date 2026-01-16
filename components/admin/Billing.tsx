@@ -1139,8 +1139,9 @@ export default function Billing() {
 						continue; // Skip to next appointment
 					} else if (patientType === 'VIP') {
 						// VIP: Create bill for every completed session as normal (only if no package)
+						// VIP patients have no amount (set to 0)
 						shouldCreateBill = true;
-						billAmount = standardAmount;
+						billAmount = 0;
 					} else if (patientType === 'Paid') {
 						// Paid: Check paymentType
 						shouldCreateBill = true;
@@ -1177,12 +1178,15 @@ export default function Billing() {
 						if (patientType === 'Dyes' || patientType === 'DYES') {
 							// DYES patients: Auto-Paid and marked as 'Completed' (bypasses Pending Payments)
 							billStatus = 'Completed';
+						} else if (patientType === 'VIP') {
+							// VIP patients: Auto-Paid and marked as 'Completed' when session is completed
+							billStatus = 'Completed';
 						} else if (billAmount > 0) {
 							billStatus = 'Pending';
 						}
 
 						if (!existingSnapshot.empty) {
-							// Billing record exists - update it if it's a DYES patient to ensure correct status and amount
+							// Billing record exists - update it if it's a DYES or VIP patient to ensure correct status and amount
 							const existingBill = existingSnapshot.docs[0];
 							const existingBillData = existingBill.data();
 							
@@ -1204,6 +1208,24 @@ export default function Billing() {
 										},
 									});
 								}
+							} else if (patientType === 'VIP') {
+								// For VIP patients, update existing bills to ensure status is 'Completed' and amount is 0
+								if (existingBillData.status !== 'Completed' || existingBillData.amount !== 0) {
+									await updateDoc(doc(db, 'billing', existingBill.id), {
+										amount: 0,
+										status: 'Completed',
+										paymentMode: 'Auto-Paid',
+										updatedAt: serverTimestamp(),
+									});
+									
+									// Also update appointment with billing info
+									await updateDoc(doc(db, 'appointments', appt.id), {
+										billing: {
+											amount: '0.00',
+											date: defaultBillingDate,
+										},
+									});
+								}
 							}
 							continue;
 						}
@@ -1220,7 +1242,7 @@ export default function Billing() {
 							amount: billAmount,
 							date: appt.date || defaultBillingDate,
 							status: billStatus,
-							paymentMode: billStatus === 'Completed' && (patientType === 'Dyes' || patientType === 'DYES') ? 'Auto-Paid' : null,
+							paymentMode: billStatus === 'Completed' && (patientType === 'Dyes' || patientType === 'DYES' || patientType === 'VIP') ? 'Auto-Paid' : null,
 							utr: null,
 							createdByFrontdesk: currentUser?.uid || null,
 							createdByFrontdeskName: currentUser?.displayName || currentUser?.email || null,
@@ -1384,6 +1406,10 @@ export default function Billing() {
 		const wasAlreadyCompleted = appointment.status === 'completed';
 		const patient = appointment.patientId ? patientLookup.get(appointment.patientId) : undefined;
 		const staffMember = staff.find(s => s.userName === appointment.doctor);
+		
+		// Check if patient is VIP - VIP patients should have amount 0
+		const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+		const finalAmount = isVIP ? 0 : amountValue;
 
 		let sessionUsageResult: RecordSessionUsageResult | null = null;
 
@@ -1392,7 +1418,7 @@ export default function Billing() {
 			await updateDoc(doc(db, 'appointments', appointmentId), {
 				status: 'completed',
 				billing: {
-					amount: amountValue.toFixed(2),
+					amount: finalAmount.toFixed(2),
 					date: draft.date,
 				},
 			});
@@ -1402,25 +1428,31 @@ export default function Billing() {
 			const billingSnapshot = await getDocs(billingQuery);
 			if (!billingSnapshot.empty) {
 				const existingBill = billingSnapshot.docs[0].data();
+				const billStatus = isVIP ? 'Completed' : 'Pending';
+				const paymentMode = isVIP ? 'Auto-Paid' : null;
 				await updateDoc(doc(db, 'billing', billingSnapshot.docs[0].id), {
-					amount: amountValue,
+					amount: finalAmount,
 					date: draft.date,
+					status: billStatus,
+					paymentMode,
 					createdByFrontdesk: existingBill.createdByFrontdesk || user?.uid || null,
 					createdByFrontdeskName: existingBill.createdByFrontdeskName || user?.displayName || user?.email || null,
 					updatedAt: serverTimestamp(),
 				});
 			} else {
 				const billingId = 'BILL-' + (appointment.appointmentId || Date.now().toString());
+				const billStatus = isVIP ? 'Completed' : 'Pending';
+				const paymentMode = isVIP ? 'Auto-Paid' : null;
 				await addDoc(collection(db, 'billing'), {
 					billingId,
 					appointmentId: appointment.appointmentId,
 					patient: appointment.patient || '',
 					patientId: appointment.patientId || '',
 					doctor: appointment.doctor || '',
-					amount: amountValue,
+					amount: finalAmount,
 					date: draft.date,
-					status: 'Pending',
-					paymentMode: null,
+					status: billStatus,
+					paymentMode,
 					utr: null,
 					createdByFrontdesk: user?.uid || null,
 					createdByFrontdeskName: user?.displayName || user?.email || null,
@@ -2317,10 +2349,18 @@ export default function Billing() {
 				if (bill.status === 'Pending') {
 					pendingCount += 1;
 				} else if (bill.status === 'Completed' || bill.status === 'Auto-Paid') {
+					// Exclude VIP and Referral patients from revenue
+					const patient = patients.find(p => p.patientId === bill.patientId);
+					const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+					const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+					
 					completedCount += 1;
-					collectedAmount += Number.isFinite(billAmount) ? billAmount : 0;
-					const key = bill.doctor || 'Unassigned';
-					byClinicianMap.set(key, (byClinicianMap.get(key) || 0) + (Number.isFinite(billAmount) ? billAmount : 0));
+					// Only add to collectedAmount if not VIP or Referral
+					if (!isVIP && !isReferral) {
+						collectedAmount += Number.isFinite(billAmount) ? billAmount : 0;
+						const key = bill.doctor || 'Unassigned';
+						byClinicianMap.set(key, (byClinicianMap.get(key) || 0) + (Number.isFinite(billAmount) ? billAmount : 0));
+					}
 				}
 			}
 		}
@@ -2330,7 +2370,7 @@ export default function Billing() {
 			.sort((a, b) => b.amount - a.amount);
 
 		return { pendingCount, completedCount, collectedAmount, byClinician };
-	}, [billing, selectedCycle]);
+	}, [billing, selectedCycle, patients]);
 
 	// Create a lookup map for patients with packages
 	const patientsWithPackages = useMemo(() => {
@@ -3122,6 +3162,9 @@ export default function Billing() {
 								) : (
 									filteredCompleted.map(bill => {
 										const patient = bill.patientId ? patientLookup.get(bill.patientId) : undefined;
+										const patientType = patient?.patientType || '';
+										const isReferral = patientType.toUpperCase() === 'REFERRAL';
+										const isVIP = patientType.toUpperCase() === 'VIP';
 										return (
 										<tr key={bill.id}>
 												<td className="px-2 py-2 text-xs font-medium text-slate-800">
@@ -3132,7 +3175,7 @@ export default function Billing() {
 												</td>
 											<td className="px-2 py-2 text-xs text-slate-600">{bill.patientId}</td>
 											<td className="px-2 py-2 text-xs text-slate-600">{bill.doctor || '—'}</td>
-											<td className="px-2 py-2 text-xs text-slate-700">Rs. {bill.amount.toFixed(2)}</td>
+											<td className="px-2 py-2 text-xs text-slate-700">{isReferral || isVIP ? 'N/A' : `Rs. ${bill.amount.toFixed(2)}`}</td>
 											<td className="px-2 py-2 text-xs text-slate-600">{formatInstallmentPlan(bill)}</td>
 											<td className="px-2 py-2 text-xs text-slate-600">{bill.paymentMode || '—'}</td>
 												<td className="px-2 py-2 text-xs text-slate-600">

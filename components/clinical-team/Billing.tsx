@@ -271,8 +271,15 @@ export default function Billing() {
 	const monthlyTotal = useMemo(() => {
 		return filteredBilling
 			.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid')
-			.reduce((sum, bill) => sum + (bill.amount || 0), 0);
-	}, [filteredBilling]);
+			.reduce((sum, bill) => {
+				// Exclude VIP and Referral patients from revenue
+				const patient = patients.find(p => p.patientId === bill.patientId);
+				const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+				const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+				if (isVIP || isReferral) return sum;
+				return sum + (bill.amount || 0);
+			}, 0);
+	}, [filteredBilling, patients]);
 
 	const handlePay = (bill: BillingRecord) => {
 		setSelectedBill(bill);
@@ -280,7 +287,8 @@ export default function Billing() {
 		setUtr('');
 		const patient = patients.find(p => p.patientId === bill.patientId);
 		const isReferral = (patient?.patientType || '').toUpperCase() === 'REFERRAL';
-		setPaymentAmount(isReferral ? 'N/A' : bill.amount);
+		const isVIP = (patient?.patientType || '').toUpperCase() === 'VIP';
+		setPaymentAmount(isReferral || isVIP ? 'N/A' : bill.amount);
 		setShowPayModal(true);
 	};
 
@@ -476,6 +484,7 @@ export default function Billing() {
 									{filteredPending.map(bill => {
 										const patient = patients.find(p => p.patientId === bill.patientId);
 										const isReferral = (patient?.patientType || '').toUpperCase() === 'REFERRAL';
+										const isVIP = (patient?.patientType || '').toUpperCase() === 'VIP';
 										return (
 											<tr key={bill.id}>
 												<td className="px-4 py-4 text-sm text-slate-900">{bill.billingId}</td>
@@ -495,7 +504,7 @@ export default function Billing() {
 												</td>
 												<td className="px-4 py-4 text-sm text-slate-600">{formatDateLabel(bill.date)}</td>
 												<td className="px-4 py-4 text-sm font-semibold text-slate-900">
-													{isReferral ? 'N/A' : `₹${bill.amount.toFixed(2)}`}
+													{isReferral || isVIP ? 'N/A' : `₹${bill.amount.toFixed(2)}`}
 												</td>
 												<td className="px-4 py-4 text-right">
 													<button
@@ -561,6 +570,7 @@ export default function Billing() {
 									{filteredCompleted.map(bill => {
 										const patient = patients.find(p => p.patientId === bill.patientId);
 										const isReferral = (patient?.patientType || '').toUpperCase() === 'REFERRAL';
+										const isVIP = (patient?.patientType || '').toUpperCase() === 'VIP';
 										const isDYES = (patient?.patientType || '').toUpperCase() === 'DYES';
 										return (
 											<tr key={bill.id}>
@@ -582,7 +592,7 @@ export default function Billing() {
 												<td className="px-4 py-4 text-sm text-slate-600">{formatDateLabel(bill.date)}</td>
 												<td className="px-4 py-4 text-sm font-semibold text-slate-900">
 													<div className="space-y-1">
-														{isReferral ? 'N/A' : `₹${bill.amount.toFixed(2)}`}
+														{isReferral || isVIP ? 'N/A' : `₹${bill.amount.toFixed(2)}`}
 														{bill.isExtraTreatment && (
 															<div>
 																<span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">

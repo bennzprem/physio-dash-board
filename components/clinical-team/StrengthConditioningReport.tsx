@@ -194,14 +194,19 @@ export default function StrengthConditioningReport() {
 		setSaving(true);
 		try {
 			const docRef = doc(db, 'strengthConditioningReports', selectedPatient.id);
-			await setDoc(docRef, {
+			const dataToSave = {
 				...formData,
 				therapistName: formData.therapistName || user?.displayName || user?.email || '',
 				patientId: selectedPatient.patientId,
 				patientName: selectedPatient.name,
 				updatedAt: new Date().toISOString(),
 				updatedBy: user?.email || user?.displayName || 'Unknown',
-			}, { merge: true });
+			};
+			// Remove undefined values before saving to Firestore
+			const cleanedData = Object.fromEntries(
+				Object.entries(dataToSave).filter(([_, value]) => value !== undefined)
+			) as typeof dataToSave;
+			await setDoc(docRef, cleanedData, { merge: true });
 
 			setSavedMessage(true);
 			setTimeout(() => setSavedMessage(false), 3000);

@@ -325,7 +325,14 @@ export default function Reports() {
 		});
 
 		// Calculate total revenue from appointments with billing
+		// Exclude VIP and Referral patients from revenue
 		const totalRevenue = physicianAppointments.reduce((sum, apt) => {
+			// Check if patient is VIP or Referral
+			const patient = patients.find(p => p.patientId === apt.patientId);
+			const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+			const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+			if (isVIP || isReferral) return sum;
+			
 			if (apt.billing?.amount) {
 				const amount = Number(apt.billing.amount);
 				return sum + (Number.isFinite(amount) ? amount : 0);
@@ -683,6 +690,12 @@ export default function Reports() {
 			});
 			
 			const totalRevenue = memberBilling.reduce((sum, bill) => {
+				// Exclude VIP and Referral patients from revenue
+				const patient = patients.find(p => p.patientId === bill.patientId);
+				const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+				const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+				if (isVIP || isReferral) return sum;
+				
 				const amount = Number.isFinite(bill.amount) ? bill.amount : 0;
 				return sum + (amount > 0 ? amount : 0);
 			}, 0);
@@ -724,7 +737,7 @@ export default function Reports() {
 				},
 			],
 		};
-	}, [staff, billing, analyticsFromDate, analyticsToDate]);
+	}, [staff, billing, patients, analyticsFromDate, analyticsToDate]);
 
 	const openModal = (row: PatientRow) => {
 		setModalContext({ patient: row.patient, doctors: row.doctors });

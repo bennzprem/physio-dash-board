@@ -928,7 +928,7 @@ export default function Appointments() {
 					}
 				}
 
-				// Automatically mark payments as completed for VIP patients
+				// Automatically mark payments as completed for VIP patients and set amount to 0
 				if (patientType === 'VIP') {
 					try {
 						// Find billing records for this appointment
@@ -939,12 +939,13 @@ export default function Appointments() {
 						const billingSnapshot = await getDocs(billingQuery);
 						
 						if (!billingSnapshot.empty) {
-							// Update all billing records for this appointment to Completed
+							// Update all billing records for this appointment to Completed with amount 0
 							const updatePromises = billingSnapshot.docs.map(billingDoc => {
 								const billingData = billingDoc.data();
-								// Only update if status is Pending
-								if (billingData.status === 'Pending') {
+								// Update if status is Pending or amount is not 0
+								if (billingData.status === 'Pending' || billingData.amount !== 0) {
 									return updateDoc(doc(db, 'billing', billingDoc.id), {
+										amount: 0,
 										status: 'Completed',
 										paymentMode: 'Auto-Paid',
 										updatedAt: serverTimestamp(),

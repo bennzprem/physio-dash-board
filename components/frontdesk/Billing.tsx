@@ -1316,8 +1316,9 @@ export default function Billing() {
 						billAmount = 0;
 					} else if (patientType === 'VIP') {
 						// VIP: Create bill for every completed session as normal (only if no package)
+						// VIP patients have no amount (set to 0)
 						shouldCreateBill = true;
-						billAmount = standardAmount;
+						billAmount = 0;
 					} else if (patientType === 'Paid') {
 						// Paid: Check paymentType
 						shouldCreateBill = true;
@@ -1377,9 +1378,10 @@ export default function Billing() {
 									});
 								}
 							} else if (patientType === 'VIP') {
-								// For VIP patients, update existing bills to ensure status is 'Completed' when session is completed
-								if (existingBillData.status !== 'Completed') {
+								// For VIP patients, update existing bills to ensure status is 'Completed' and amount is 0
+								if (existingBillData.status !== 'Completed' || existingBillData.amount !== 0) {
 									await updateDoc(doc(db, 'billing', existingBill.id), {
+										amount: 0,
 										status: 'Completed',
 										paymentMode: 'Auto-Paid',
 										updatedAt: serverTimestamp(),
@@ -2877,7 +2879,7 @@ export default function Billing() {
 																</div>
 															</td>
 															<td className="px-3 py-3 text-sm font-semibold text-slate-900">
-																{isReferral ? 'N/A' : `Rs. ${bill.amount}`}
+																{isReferral || isVIP ? 'N/A' : `Rs. ${bill.amount}`}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
 																{bill.date}
@@ -2988,7 +2990,7 @@ export default function Billing() {
 																</div>
 															</td>
 															<td className="px-3 py-3 text-sm font-semibold text-slate-900">
-																{isReferral ? 'N/A' : `Rs. ${bill.amount}`}
+																{isReferral || isVIP ? 'N/A' : `Rs. ${bill.amount}`}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
 																{bill.paymentMode || '--'}

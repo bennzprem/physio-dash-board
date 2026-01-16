@@ -1637,7 +1637,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						? (versionsSnapshot.docs[0].data().version as number) + 1 
 						: 1;
 
-					await addDoc(collection(db, 'strengthConditioningReportVersions'), {
+					await addDoc(collection(db, 'strengthConditioningReportVersions'), removeUndefined({
 						patientId: reportPatientData.patientId,
 						patientName: reportPatientData.name,
 						version: nextVersion,
@@ -1645,7 +1645,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						createdBy: user?.displayName || user?.email || 'Unknown',
 						createdById: user?.uid || '',
 						createdAt: serverTimestamp(),
-					});
+					}));
 				} catch (versionError: any) {
 					// If orderBy fails (missing index), try without it
 					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
@@ -1661,7 +1661,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								? Math.max(...versionsSnapshot.docs.map(d => d.data().version as number)) + 1
 								: 1;
 
-							await addDoc(collection(db, 'strengthConditioningReportVersions'), {
+							await addDoc(collection(db, 'strengthConditioningReportVersions'), removeUndefined({
 								patientId: reportPatientData.patientId,
 								patientName: reportPatientData.name,
 								version: nextVersion,
@@ -1669,7 +1669,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								createdBy: user?.displayName || user?.email || 'Unknown',
 								createdById: user?.uid || '',
 								createdAt: serverTimestamp(),
-							});
+							}));
 						} catch (retryError) {
 							console.warn('Failed to save strength conditioning version history', retryError);
 							// Continue without version history
@@ -1681,7 +1681,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				}
 			}
 
-			await setDoc(docRef, dataToSave, { merge: true });
+			await setDoc(docRef, removeUndefined(dataToSave), { merge: true });
 
 			// Explicitly update form data with saved data to ensure it persists
 			// This prevents any timing issues with onSnapshot

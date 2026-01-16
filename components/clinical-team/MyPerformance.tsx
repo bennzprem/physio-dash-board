@@ -573,9 +573,17 @@ export default function MyPerformance() {
 		}, {} as Record<string, { count: number; hours: number; activities: ActivityRecord[] }>);
 
 		// Total revenue (include both 'Completed' and 'Auto-Paid' statuses)
+		// Exclude VIP and Referral patients from revenue calculations
 		const totalRevenue = bills
 			.filter(bill => bill.status === 'Completed' || bill.status === 'Auto-Paid')
-			.reduce((total, bill) => total + (bill.amount || 0), 0);
+			.reduce((total, bill) => {
+				// Exclude VIP and Referral patients from revenue
+				const patient = patients.find(p => p.patientId === bill.patientId);
+				const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+				const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+				if (isVIP || isReferral) return total;
+				return total + (bill.amount || 0);
+			}, 0);
 
 		// Revenue by DYES vs non-DYES
 		// Use full patients array (not filtered) to find patient type for billing records
@@ -590,6 +598,12 @@ export default function MyPerformance() {
 				// Use full patients array instead of filtered pats to ensure we can find the patient
 				const patient = patients.find(p => p.patientId === bill.patientId);
 				const isDYES = patient && (patient.patientType || '').toUpperCase() === 'DYES';
+				const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+				const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+				
+				// Skip VIP and Referral patients
+				if (isVIP || isReferral) return;
+				
 				if (isDYES) {
 					revenueByType.DYES += bill.amount || 0;
 				} else {
