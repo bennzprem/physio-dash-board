@@ -448,8 +448,8 @@ async function refreshPatientSessionProgress(
 		);
 		const completedSnapshot = await getDocs(completedQuery);
 		const completedCount = completedSnapshot.size;
-		// remainingSessions starts at totalSessionsRequired - 1 and decreases with each completed appointment
-		const remainingSessions = Math.max(0, totalRequired - 1 - completedCount);
+		// remainingSessions = totalSessionsRequired - completedCount
+		const remainingSessions = Math.max(0, totalRequired - completedCount);
 
 		const updates: Partial<PatientRecordFull> = {
 			remainingSessions,
@@ -3127,19 +3127,6 @@ export default function EditReport() {
 															{openDropdownId === `patient-${patient.id}` && (
 																<div className="absolute right-0 top-full z-[9999] mt-1 w-48 rounded-lg border border-slate-200 bg-white shadow-xl">
 																	<div className="py-1">
-																		<button
-																			type="button"
-																			onClick={(e) => {
-																				e.stopPropagation();
-																				setOpenDropdownId(null);
-																				console.log('Report button clicked for patient:', patient.patientId);
-																				handleOpenReportModal(patient.patientId);
-																			}}
-																			className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-sky-50 hover:text-sky-700"
-																		>
-																			<i className="fas fa-file-medical text-xs" aria-hidden="true" />
-																			View Report
-																		</button>
 																		{!patient.totalSessionsRequired && (
 																			<button
 																				type="button"

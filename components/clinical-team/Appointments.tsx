@@ -740,7 +740,12 @@ export default function Appointments() {
 		const seenIds = new Set<string>();
 		
 		appointments.forEach(apt => {
-			if (apt.packageBillingId && apt.patientId && apt.id) {
+			// Include appointments that have packageBillingId OR have sessionNumber (for package sessions)
+			// This ensures all package sessions are included even if packageBillingId is missing
+			const isPackageAppointment = (apt.packageBillingId && apt.patientId && apt.id) ||
+				(apt.sessionNumber != null && apt.patientId && apt.id && apt.totalSessions != null);
+			
+			if (isPackageAppointment) {
 				// Deduplicate by appointment ID
 				if (seenIds.has(apt.id)) {
 					return; // Skip duplicate
@@ -770,6 +775,13 @@ export default function Appointments() {
 		return appointments
 			.filter(apt => apt.patientId === selectedPatientId)
 			.sort((a, b) => {
+				// Sort by sessionNumber first to match package view order
+				if (a.sessionNumber !== undefined && b.sessionNumber !== undefined) {
+					return a.sessionNumber - b.sessionNumber;
+				}
+				if (a.sessionNumber !== undefined) return -1;
+				if (b.sessionNumber !== undefined) return 1;
+				// If no sessionNumber, sort by date/time
 				const aDate = new Date(`${a.date}T${a.time}`).getTime();
 				const bDate = new Date(`${b.date}T${b.time}`).getTime();
 				return bDate - aDate;
@@ -2144,32 +2156,101 @@ export default function Appointments() {
 															<p className="text-xs text-purple-600 font-medium">
 																Package: {patientDetails.packageName} ({patientDetails.totalSessionsRequired} sessions)
 															</p>
-															{packageAppointmentsByPatient[group.patientId] && packageAppointmentsByPatient[group.patientId].length > 0 && (
-																<div className="flex flex-wrap gap-1 mt-1">
-																	{packageAppointmentsByPatient[group.patientId].map((apt, idx) => {
-																		const isCompleted = apt.status === 'completed';
-																		return (
+															<div className="flex flex-wrap gap-1 mt-1">
+																{Array.from({ length: patientDetails.totalSessionsRequired }, (_, i) => {
+																	const sessionNumber = i + 1;
+																	// Find appointment for this session number
+																	// Use loose comparison to handle type mismatches (number vs string)
+																	const apt = packageAppointmentsByPatient[group.patientId]?.find(
+																		a => a.sessionNumber != null && Number(a.sessionNumber) === sessionNumber
+																	);
+																	const isCompleted = apt?.status === 'completed';
+																	const hasAppointment = !!apt;
+																	
+																	const handleSessionClick = async () => {
+																		if (hasAppointment) {
+																			setReportModalPatientId(group.patientId);
+																			setShowReportModal(true);
+																		} else {
+																			// Create missing session appointment
+																			try {
+																				// Find an existing package appointment to get package details
+																				const existingPackageApt = packageAppointmentsByPatient[group.patientId]?.find(a => a.packageBillingId);
+																				if (!existingPackageApt && packageAppointmentsByPatient[group.patientId]?.length > 0) {
+																					// Use first appointment if no packageBillingId found
+																					const firstApt = packageAppointmentsByPatient[group.patientId][0];
+																					if (firstApt) {
+																						const appointmentId = `APT-${group.patientId}-${Date.now()}-${sessionNumber}`;
+																						await addDoc(collection(db, 'appointments'), {
+																							appointmentId,
+																							patientId: group.patientId,
+																							patient: group.patientName,
+																							doctor: firstApt.doctor || '',
+																							staffId: firstApt.staffId,
+																							date: '',
+																							time: '',
+																							status: 'pending' as AdminAppointmentStatus,
+																							notes: null,
+																							isConsultation: false,
+																							sessionNumber: sessionNumber,
+																							totalSessions: patientDetails.totalSessionsRequired,
+																							packageBillingId: firstApt.packageBillingId,
+																							packageName: patientDetails.packageName,
+																							createdAt: serverTimestamp(),
+																						});
+																						alert(`Session ${sessionNumber} appointment created successfully!`);
+																					}
+																				} else if (existingPackageApt) {
+																					const appointmentId = `APT-${group.patientId}-${Date.now()}-${sessionNumber}`;
+																					await addDoc(collection(db, 'appointments'), {
+																						appointmentId,
+																						patientId: group.patientId,
+																						patient: group.patientName,
+																						doctor: existingPackageApt.doctor || '',
+																						staffId: existingPackageApt.staffId,
+																						date: '',
+																						time: '',
+																						status: 'pending' as AdminAppointmentStatus,
+																						notes: null,
+																						isConsultation: false,
+																						sessionNumber: sessionNumber,
+																						totalSessions: patientDetails.totalSessionsRequired,
+																						packageBillingId: existingPackageApt.packageBillingId,
+																						packageName: patientDetails.packageName,
+																						createdAt: serverTimestamp(),
+																					});
+																					alert(`Session ${sessionNumber} appointment created successfully!`);
+																				} else {
+																					alert(`Unable to create Session ${sessionNumber}. Please ensure the patient has package details.`);
+																				}
+																			} catch (error) {
+																				console.error(`Failed to create Session ${sessionNumber} appointment:`, error);
+																				alert(`Failed to create Session ${sessionNumber} appointment. Please try again.`);
+																			}
+																		}
+																	};
+
+																	return (
 																		<button
-																			key={apt.id}
+																			key={apt?.id || `session-${sessionNumber}`}
 																			type="button"
-																			onClick={() => {
-																				setReportModalPatientId(group.patientId);
-																				setShowReportModal(true);
-																			}}
-																				className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white shadow-sm transition-all ${
-																					isCompleted
-																						? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
-																						: 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
-																				}`}
-																			title={`Session ${apt.sessionNumber || idx + 1}${apt.date ? ` - ${formatDateLabel(apt.date)}` : ' - Not scheduled'}`}
+																			onClick={handleSessionClick}
+																			className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-white shadow-sm transition-all ${
+																				isCompleted
+																					? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
+																					: 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
+																			} ${!hasAppointment ? 'opacity-75 hover:opacity-100' : ''}`}
+																			title={hasAppointment 
+																				? `Session ${sessionNumber}${apt.date ? ` - ${formatDateLabel(apt.date)}` : ' - Not scheduled'}`
+																				: `Session ${sessionNumber} - Click to create missing appointment`
+																			}
 																		>
 																			<i className="fas fa-file-medical text-xs" aria-hidden="true" />
-																			Session {apt.sessionNumber || idx + 1}
+																			Session {sessionNumber}
 																		</button>
-																		);
-																	})}
-																</div>
-															)}
+																	);
+																})}
+															</div>
 														</div>
 													)}
 												</td>
@@ -2942,10 +3023,19 @@ export default function Appointments() {
 												return (
 													<tr key={appointment.appointmentId}>
 														<td className="px-4 py-4">
-															<p className="font-semibold text-slate-900">{appointment.appointmentId}</p>
-															<p className="text-xs text-slate-500">
-																Booked {formatDateLabel(appointment.createdAt)}
-															</p>
+															<div className="flex items-center gap-2">
+																{appointment.sessionNumber !== undefined && (
+																	<span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-sky-100 text-sky-700 font-semibold text-xs flex-shrink-0">
+																		{appointment.sessionNumber}
+																	</span>
+																)}
+																<div>
+																	<p className="font-semibold text-slate-900">{appointment.appointmentId}</p>
+																	<p className="text-xs text-slate-500">
+																		Booked {formatDateLabel(appointment.createdAt)}
+																	</p>
+																</div>
+															</div>
 														</td>
 														<td className="px-4 py-4 text-sm text-slate-600">
 															{displayDoctorName}

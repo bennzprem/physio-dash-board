@@ -262,7 +262,8 @@ async function refreshPatientSessionProgress(
 		);
 		const completedSnapshot = await getDocs(completedQuery);
 		const completedCount = completedSnapshot.size;
-		const remainingSessions = Math.max(0, totalRequired - 1 - completedCount);
+		// remainingSessions = totalSessionsRequired - completedCount
+		const remainingSessions = Math.max(0, totalRequired - completedCount);
 
 		const updates: Partial<PatientRecordFull> = {
 			remainingSessions,
@@ -1209,7 +1210,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 													type="text"
 													value={data?.[side]?.[baseMotion] || ''}
 													onChange={e => handleRomChange(joint, baseMotion, side, e.target.value)}
-													className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+													className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 													placeholder="Enter value"
 												/>
 											</td>
@@ -1224,7 +1225,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 													type="text"
 													value={data?.[motion] || ''}
 													onChange={e => handleRomChange(joint, motion, 'none', e.target.value)}
-													className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+													className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 													placeholder="Enter value"
 												/>
 											</td>
@@ -1385,7 +1386,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											type="text"
 											value={data?.left?.[motion] || ''}
 											onChange={e => handleMmtChange(joint, motion, 'left', e.target.value)}
-											className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+											className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 											placeholder="Grade"
 										/>
 									</td>
@@ -1395,7 +1396,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											type="text"
 											value={data?.right?.[motion] || ''}
 											onChange={e => handleMmtChange(joint, motion, 'right', e.target.value)}
-											className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+											className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 											placeholder="Grade"
 										/>
 									</td>

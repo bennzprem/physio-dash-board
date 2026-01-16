@@ -18,6 +18,7 @@ interface Intern {
 	amount: number;
 	isPaid: boolean;
 	paymentDate?: string;
+	receiptNumber?: string;
 	createdAt: any;
 	updatedAt: any;
 }
@@ -34,6 +35,8 @@ export default function InternshipManagement() {
 	const [interns, setInterns] = useState<Intern[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [showAddModal, setShowAddModal] = useState(false);
+	const [showEditModal, setShowEditModal] = useState(false);
+	const [editingIntern, setEditingIntern] = useState<Intern | null>(null);
 	const [processingPayment, setProcessingPayment] = useState<string | null>(null);
 	
 	// Form state
@@ -44,6 +47,7 @@ export default function InternshipManagement() {
 		dateOfJoining: '',
 		dateOfLeaving: '',
 		amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+		receiptNumber: '',
 	});
 	const [submitting, setSubmitting] = useState(false);
 
@@ -65,6 +69,7 @@ export default function InternshipManagement() {
 						amount: data.amount || 0,
 						isPaid: data.isPaid || false,
 						paymentDate: data.paymentDate || undefined,
+						receiptNumber: data.receiptNumber || undefined,
 						createdAt: data.createdAt,
 						updatedAt: data.updatedAt,
 					} as Intern;
@@ -144,6 +149,7 @@ export default function InternshipManagement() {
 				dateOfLeaving: formData.dateOfLeaving,
 				amount: Number(formData.amount),
 				isPaid: false,
+				receiptNumber: formData.receiptNumber.trim() || undefined,
 				createdAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
 			});
@@ -156,6 +162,7 @@ export default function InternshipManagement() {
 				dateOfJoining: '',
 				dateOfLeaving: '',
 				amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+				receiptNumber: '',
 			});
 			setShowAddModal(false);
 			alert('Intern added successfully!');
@@ -170,6 +177,9 @@ export default function InternshipManagement() {
 	const handlePay = async (intern: Intern) => {
 		if (!intern.id) return;
 		
+		const receiptNumber = prompt(`Enter receipt number for payment of ₹${intern.amount} for ${intern.name}:`, intern.receiptNumber || '');
+		if (receiptNumber === null) return; // User cancelled
+		
 		if (confirm(`Mark payment of ₹${intern.amount} as paid for ${intern.name}?`)) {
 			setProcessingPayment(intern.id);
 			try {
@@ -179,17 +189,19 @@ export default function InternshipManagement() {
 				await updateDoc(doc(db, 'interns', intern.id), {
 					isPaid: true,
 					paymentDate: today,
+					receiptNumber: receiptNumber.trim() || undefined,
 					updatedAt: serverTimestamp(),
 				});
 
 				// Create expense transaction record
 				await addDoc(collection(db, 'expenses'), {
 					type: 'internship_payment',
-					description: `Internship payment for ${intern.name} (${intern.college})`,
+					description: `Internship payment for ${intern.name} (${intern.college})${receiptNumber.trim() ? ` - Receipt: ${receiptNumber.trim()}` : ''}`,
 					amount: intern.amount,
 					date: today,
 					internId: intern.id,
 					internName: intern.name,
+					receiptNumber: receiptNumber.trim() || undefined,
 					createdBy: user?.uid || null,
 					createdByName: user?.displayName || user?.email || null,
 					createdAt: serverTimestamp(),
@@ -202,6 +214,70 @@ export default function InternshipManagement() {
 			} finally {
 				setProcessingPayment(null);
 			}
+		}
+	};
+
+	const handleEdit = (intern: Intern) => {
+		setEditingIntern(intern);
+		setFormData({
+			name: intern.name,
+			college: intern.college,
+			degree: intern.degree,
+			dateOfJoining: intern.dateOfJoining,
+			dateOfLeaving: intern.dateOfLeaving,
+			amount: intern.amount,
+			receiptNumber: intern.receiptNumber || '',
+		});
+		setShowEditModal(true);
+	};
+
+	const handleUpdateIntern = async () => {
+		if (!editingIntern?.id) return;
+		
+		if (!formData.name.trim() || !formData.college.trim() || !formData.dateOfJoining || !formData.dateOfLeaving) {
+			alert('Please fill in all required fields.');
+			return;
+		}
+
+		// Validate dates
+		const joiningDate = new Date(formData.dateOfJoining);
+		const leavingDate = new Date(formData.dateOfLeaving);
+		if (leavingDate < joiningDate) {
+			alert('Date of Leaving must be after Date of Joining.');
+			return;
+		}
+
+		setSubmitting(true);
+		try {
+			await updateDoc(doc(db, 'interns', editingIntern.id), {
+				name: formData.name.trim(),
+				college: formData.college.trim(),
+				degree: formData.degree,
+				dateOfJoining: formData.dateOfJoining,
+				dateOfLeaving: formData.dateOfLeaving,
+				amount: Number(formData.amount),
+				receiptNumber: formData.receiptNumber.trim() || undefined,
+				updatedAt: serverTimestamp(),
+			});
+
+			// Reset form and close modal
+			setFormData({
+				name: '',
+				college: '',
+				degree: "Bachelor's Degree",
+				dateOfJoining: '',
+				dateOfLeaving: '',
+				amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+				receiptNumber: '',
+			});
+			setEditingIntern(null);
+			setShowEditModal(false);
+			alert('Intern updated successfully!');
+		} catch (error) {
+			console.error('Failed to update intern:', error);
+			alert(`Failed to update intern: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		} finally {
+			setSubmitting(false);
 		}
 	};
 
@@ -300,6 +376,7 @@ export default function InternshipManagement() {
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Date of Joining</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Date of Leaving</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Amount (₹)</th>
+										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Receipt No.</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Status</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Actions</th>
 									</tr>
@@ -322,6 +399,9 @@ export default function InternshipManagement() {
 													{expired && <span className="ml-2 text-xs text-red-600">(Expired)</span>}
 												</td>
 												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900 font-medium">₹{intern.amount.toLocaleString('en-IN')}</td>
+												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+													{intern.receiptNumber || '—'}
+												</td>
 												<td className="px-4 py-3 whitespace-nowrap">
 													{intern.isPaid ? (
 														<span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
@@ -334,19 +414,28 @@ export default function InternshipManagement() {
 													)}
 												</td>
 												<td className="px-4 py-3 whitespace-nowrap text-sm">
-													{!intern.isPaid ? (
+													<div className="flex items-center gap-2">
 														<button
-															onClick={() => handlePay(intern)}
-															disabled={processingPayment === intern.id}
-															className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
+															onClick={() => handleEdit(intern)}
+															className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
+															title="Edit intern details"
 														>
-															{processingPayment === intern.id ? 'Processing...' : 'Pay'}
+															<i className="fas fa-edit"></i>
 														</button>
-													) : (
-														<span className="text-xs text-slate-500">
-															Paid on {formatDate(intern.paymentDate || '')}
-														</span>
-													)}
+														{!intern.isPaid ? (
+															<button
+																onClick={() => handlePay(intern)}
+																disabled={processingPayment === intern.id}
+																className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors text-xs"
+															>
+																{processingPayment === intern.id ? 'Processing...' : 'Pay'}
+															</button>
+														) : (
+															<span className="text-xs text-slate-500">
+																Paid on {formatDate(intern.paymentDate || '')}
+															</span>
+														)}
+													</div>
 												</td>
 											</tr>
 										);
@@ -446,6 +535,19 @@ export default function InternshipManagement() {
 									Auto-calculated: ₹{DEGREE_AMOUNTS[formData.degree].toLocaleString('en-IN')} for {formData.degree}. You can edit this amount.
 								</p>
 							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Receipt Number
+								</label>
+								<input
+									type="text"
+									value={formData.receiptNumber}
+									onChange={(e) => setFormData({ ...formData, receiptNumber: e.target.value })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+									placeholder="Enter receipt number (optional)"
+								/>
+							</div>
 						</div>
 						<div className="p-6 border-t border-slate-200 flex justify-end gap-3">
 							<button
@@ -458,6 +560,7 @@ export default function InternshipManagement() {
 										dateOfJoining: '',
 										dateOfLeaving: '',
 										amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+										receiptNumber: '',
 									});
 								}}
 								className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
@@ -471,6 +574,140 @@ export default function InternshipManagement() {
 								className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
 							>
 								{submitting ? 'Adding...' : 'Add Intern'}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Edit Intern Modal */}
+			{showEditModal && editingIntern && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+					<div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+						<div className="p-6 border-b border-slate-200">
+							<h3 className="text-xl font-semibold text-slate-800">Edit Intern Details</h3>
+						</div>
+						<div className="p-6 space-y-4">
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Name <span className="text-red-500">*</span>
+								</label>
+								<input
+									type="text"
+									value={formData.name}
+									onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+									placeholder="Enter intern name"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									College/University <span className="text-red-500">*</span>
+								</label>
+								<input
+									type="text"
+									value={formData.college}
+									onChange={(e) => setFormData({ ...formData, college: e.target.value })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+									placeholder="Enter college or university name"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Degree <span className="text-red-500">*</span>
+								</label>
+								<select
+									value={formData.degree}
+									onChange={(e) => setFormData({ ...formData, degree: e.target.value as DegreeType })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+								>
+									<option value="Bachelor's Degree">Bachelor's Degree</option>
+									<option value="Master's Degree">Master's Degree</option>
+								</select>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Date of Joining <span className="text-red-500">*</span>
+								</label>
+								<input
+									type="date"
+									value={formData.dateOfJoining}
+									onChange={(e) => setFormData({ ...formData, dateOfJoining: e.target.value })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Date of Leaving <span className="text-red-500">*</span>
+								</label>
+								<input
+									type="date"
+									value={formData.dateOfLeaving}
+									onChange={(e) => setFormData({ ...formData, dateOfLeaving: e.target.value })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Amount (₹) <span className="text-red-500">*</span>
+								</label>
+								<input
+									type="number"
+									value={formData.amount}
+									onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+									min="0"
+									step="0.01"
+								/>
+								<p className="mt-1 text-xs text-slate-500">
+									Auto-calculated: ₹{DEGREE_AMOUNTS[formData.degree].toLocaleString('en-IN')} for {formData.degree}. You can edit this amount.
+								</p>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Receipt Number
+								</label>
+								<input
+									type="text"
+									value={formData.receiptNumber}
+									onChange={(e) => setFormData({ ...formData, receiptNumber: e.target.value })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+									placeholder="Enter receipt number (optional)"
+								/>
+							</div>
+						</div>
+						<div className="p-6 border-t border-slate-200 flex justify-end gap-3">
+							<button
+								onClick={() => {
+									setShowEditModal(false);
+									setEditingIntern(null);
+									setFormData({
+										name: '',
+										college: '',
+										degree: "Bachelor's Degree",
+										dateOfJoining: '',
+										dateOfLeaving: '',
+										amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+										receiptNumber: '',
+									});
+								}}
+								className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
+								disabled={submitting}
+							>
+								Cancel
+							</button>
+							<button
+								onClick={handleUpdateIntern}
+								disabled={submitting}
+								className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
+							>
+								{submitting ? 'Updating...' : 'Update Intern'}
 							</button>
 						</div>
 					</div>
