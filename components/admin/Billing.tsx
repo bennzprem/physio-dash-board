@@ -30,11 +30,6 @@ interface StaffMember {
 
 type DateFilter = 'all' | '15' | '30' | '180' | '365';
 
-interface PendingDraft {
-	amount: string;
-	date: string;
-}
-
 interface InvoiceDetails {
 	patient: string;
 	appointmentId: string;
@@ -784,10 +779,7 @@ export default function Billing() {
 
 	const [doctorFilter, setDoctorFilter] = useState<'all' | string>('all');
 	const [departmentFilter, setDepartmentFilter] = useState<'all' | string>('all');
-	const [pendingWindow, setPendingWindow] = useState<DateFilter>('all');
 	const [completedWindow, setCompletedWindow] = useState<DateFilter>('all');
-
-	const [pendingDrafts, setPendingDrafts] = useState<Record<string, PendingDraft>>({});
 	const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
 	const [invoiceDetails, setInvoiceDetails] = useState<InvoiceDetails | null>(null);
 	const [editableInvoice, setEditableInvoice] = useState<{
@@ -1297,29 +1289,6 @@ export default function Billing() {
 		return Array.from(set).sort((a, b) => a.localeCompare(b));
 	}, [staff, appointments]);
 
-	const pendingRows = useMemo(() => {
-		return appointments
-			.map(appointment => ({ appointment }))
-			.filter(entry => entry.appointment.status === 'completed' && !entry.appointment.billing)
-			.filter(entry => (doctorFilter === 'all' ? true : entry.appointment.doctor === doctorFilter))
-			.filter(entry => {
-				if (departmentFilter === 'all') return true;
-				const patient = entry.appointment.patientId
-					? patientLookup.get(entry.appointment.patientId)
-					: undefined;
-				return patient?.department === departmentFilter;
-			})
-			.filter(entry => isWithinDays(entry.appointment.date, pendingWindow))
-			.map(entry => {
-				const patient = entry.appointment.patientId
-					? patientLookup.get(entry.appointment.patientId)
-					: undefined;
-				const patientName =
-					entry.appointment.patient || (patient ? patient.name : undefined) || entry.appointment.patientId || 'N/A';
-				return { ...entry, patientName, patientRecord: patient };
-			});
-	}, [appointments, doctorFilter, departmentFilter, pendingWindow, patientLookup]);
-
 	const billingHistoryRows = useMemo(() => {
 		return appointments
 			.map(appointment => ({ appointment }))
@@ -1351,248 +1320,6 @@ export default function Billing() {
 		() => billingHistoryRows.reduce((sum, row) => sum + (Number.isFinite(row.amount) ? row.amount : 0), 0),
 		[billingHistoryRows]
 	);
-
-	useEffect(() => {
-		setPendingDrafts(prev => {
-			const next: Record<string, PendingDraft> = {};
-			let changed = false;
-			for (const row of pendingRows) {
-				const appointmentId = row.appointment.id;
-				const existing = prev[appointmentId];
-				if (existing) {
-					next[appointmentId] = existing;
-				} else {
-					next[appointmentId] = { amount: '', date: defaultBillingDate };
-					changed = true;
-				}
-			}
-			changed = changed || Object.keys(prev).length !== Object.keys(next).length;
-			return changed ? next : prev;
-		});
-	}, [pendingRows, defaultBillingDate]);
-
-	const handlePendingDraftChange = (appointmentId: string, field: keyof PendingDraft, value: string) => {
-		setPendingDrafts(prev => ({
-			...prev,
-			[appointmentId]: {
-				...(prev[appointmentId] ?? { amount: '', date: defaultBillingDate }),
-				[field]: value,
-			},
-		}));
-	};
-
-	const handleSaveBilling = async (appointmentId: string) => {
-		const draft = pendingDrafts[appointmentId] ?? { amount: '', date: defaultBillingDate };
-		const amountValue = Number(draft.amount);
-		if (!draft.amount || Number.isNaN(amountValue) || amountValue <= 0) {
-			alert('Please enter a valid amount.');
-			return;
-		}
-		if (!draft.date) {
-			alert('Please select a billing date.');
-			return;
-		}
-
-		const appointment = appointments.find(a => a.id === appointmentId);
-		if (!appointment) {
-			alert('Appointment not found.');
-			return;
-		}
-
-		const wasAlreadyCompleted = appointment.status === 'completed';
-		const patient = appointment.patientId ? patientLookup.get(appointment.patientId) : undefined;
-		const staffMember = staff.find(s => s.userName === appointment.doctor);
-		
-		// Check if patient is VIP - VIP patients should have amount 0
-		const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
-		const finalAmount = isVIP ? 0 : amountValue;
-
-		let sessionUsageResult: RecordSessionUsageResult | null = null;
-
-		try {
-			// Update appointment
-			await updateDoc(doc(db, 'appointments', appointmentId), {
-				status: 'completed',
-				billing: {
-					amount: finalAmount.toFixed(2),
-					date: draft.date,
-				},
-			});
-
-			// Update or create billing record
-			const billingQuery = query(collection(db, 'billing'), where('appointmentId', '==', appointment.appointmentId));
-			const billingSnapshot = await getDocs(billingQuery);
-			if (!billingSnapshot.empty) {
-				const existingBill = billingSnapshot.docs[0].data();
-				const billStatus = isVIP ? 'Completed' : 'Pending';
-				const paymentMode = isVIP ? 'Auto-Paid' : null;
-				await updateDoc(doc(db, 'billing', billingSnapshot.docs[0].id), {
-					amount: finalAmount,
-					date: draft.date,
-					status: billStatus,
-					paymentMode,
-					createdByFrontdesk: existingBill.createdByFrontdesk || user?.uid || null,
-					createdByFrontdeskName: existingBill.createdByFrontdeskName || user?.displayName || user?.email || null,
-					updatedAt: serverTimestamp(),
-				});
-			} else {
-				const billingId = 'BILL-' + (appointment.appointmentId || Date.now().toString());
-				const billStatus = isVIP ? 'Completed' : 'Pending';
-				const paymentMode = isVIP ? 'Auto-Paid' : null;
-				await addDoc(collection(db, 'billing'), {
-					billingId,
-					appointmentId: appointment.appointmentId,
-					patient: appointment.patient || '',
-					patientId: appointment.patientId || '',
-					doctor: appointment.doctor || '',
-					amount: finalAmount,
-					date: draft.date,
-					status: billStatus,
-					paymentMode,
-					utr: null,
-					createdByFrontdesk: user?.uid || null,
-					createdByFrontdeskName: user?.displayName || user?.email || null,
-					createdAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
-				});
-			}
-
-			// Notify other admins about billing record update
-			await notifyAdmins(
-				'Billing Record Updated',
-				`${user?.displayName || user?.email || 'Admin'} ${billingSnapshot.empty ? 'created' : 'updated'} billing record for ${appointment.patient || 'patient'}`,
-				'billing_updated',
-				{
-					billingId: billingSnapshot.empty ? 'BILL-' + (appointment.appointmentId || Date.now().toString()) : billingSnapshot.docs[0].id,
-					patientId: appointment.patientId || '',
-					patientName: appointment.patient || '',
-					amount: amountValue,
-					updatedBy: user?.uid || '',
-					updatedByName: user?.displayName || user?.email || 'Unknown',
-				},
-				user?.uid
-			);
-
-			// Send notifications only if status changed from non-completed to completed
-			if (!wasAlreadyCompleted) {
-				if (patient?.id) {
-					try {
-						sessionUsageResult = await recordSessionUsageForAppointment({
-							patientDocId: patient.id,
-							patientType: patient.patientType,
-							appointmentId,
-							sessionCost: amountValue,
-						});
-					} catch (sessionError) {
-						console.error('Failed to record DYES session usage:', sessionError);
-					}
-				}
-
-				// Send notification to patient
-				if (patient?.email) {
-					try {
-						await sendEmailNotification({
-							to: patient.email,
-							subject: `Appointment Completed - ${appointment.date}`,
-							template: 'appointment-status-changed',
-							data: {
-								patientName: appointment.patient || patient.name,
-								patientEmail: patient.email,
-								patientId: appointment.patientId,
-								doctor: appointment.doctor,
-								date: appointment.date,
-								time: appointment.time,
-								appointmentId: appointment.appointmentId,
-								status: 'Completed',
-							},
-						});
-					} catch (emailError) {
-						console.error('Failed to send completion email to patient:', emailError);
-					}
-				}
-
-				// Send notification to staff member
-				if (staffMember?.userEmail) {
-					try {
-						await sendEmailNotification({
-							to: staffMember.userEmail,
-							subject: `Appointment Completed - ${appointment.patient} on ${appointment.date}`,
-							template: 'appointment-status-changed',
-							data: {
-								patientName: appointment.patient || patient?.name,
-								patientEmail: staffMember.userEmail,
-								patientId: appointment.patientId,
-								doctor: appointment.doctor,
-								date: appointment.date,
-								time: appointment.time,
-								appointmentId: appointment.appointmentId,
-								status: 'Completed',
-							},
-						});
-					} catch (emailError) {
-						console.error('Failed to send completion email to staff:', emailError);
-					}
-				}
-
-				if (sessionUsageResult && !sessionUsageResult.wasFree && patient?.email) {
-					try {
-						await sendEmailNotification({
-							to: patient.email,
-							subject: `Session Balance Update - ${appointment.patient || patient.name}`,
-							template: 'session-balance',
-							data: {
-								recipientName: appointment.patient || patient.name,
-								recipientType: 'patient',
-								patientName: appointment.patient || patient.name,
-								patientEmail: patient.email,
-								patientId: appointment.patientId,
-								appointmentDate: appointment.date,
-								appointmentTime: appointment.time,
-								freeSessionsRemaining: sessionUsageResult.remainingFreeSessions,
-								pendingPaidSessions: sessionUsageResult.allowance.pendingPaidSessions,
-								pendingChargeAmount: sessionUsageResult.allowance.pendingChargeAmount,
-							},
-						});
-					} catch (sessionEmailError) {
-						console.error('Failed to send session balance email to patient:', sessionEmailError);
-					}
-				}
-
-				if (sessionUsageResult && !sessionUsageResult.wasFree && staffMember?.userEmail) {
-					try {
-						await sendEmailNotification({
-							to: staffMember.userEmail,
-							subject: `Pending Sessions Alert - ${appointment.patient || patient?.name}`,
-							template: 'session-balance',
-							data: {
-								recipientName: staffMember.userName,
-								recipientType: 'therapist',
-								patientName: appointment.patient || patient?.name || 'Patient',
-								patientEmail: staffMember.userEmail,
-								patientId: appointment.patientId,
-								appointmentDate: appointment.date,
-								appointmentTime: appointment.time,
-								freeSessionsRemaining: sessionUsageResult.remainingFreeSessions,
-								pendingPaidSessions: sessionUsageResult.allowance.pendingPaidSessions,
-								pendingChargeAmount: sessionUsageResult.allowance.pendingChargeAmount,
-							},
-						});
-					} catch (sessionEmailError) {
-						console.error('Failed to send session balance email to staff:', sessionEmailError);
-					}
-				}
-			}
-
-			setPendingDrafts(prev => {
-				const next = { ...prev };
-				delete next[appointmentId];
-				return next;
-			});
-		} catch (error) {
-			console.error('Failed to save billing', error);
-			alert('Failed to save billing. Please try again.');
-		}
-	};
 
 	const openInvoice = (details: InvoiceDetails) => {
 		setInvoiceDetails(details);
@@ -2264,50 +1991,6 @@ export default function Billing() {
 		}
 	};
 
-	const _handleExportPending = (format: 'csv' | 'excel' = 'csv') => {
-		if (pendingRows.length === 0) {
-			alert('No pending items to export.');
-		 return;
-		}
-		const rows = [
-			['Patient', 'Clinician', 'Visit Date', 'Draft Amount (₹)', 'Draft Billing Date'],
-			...pendingRows.map(row => {
-				const draft = pendingDrafts[row.appointment.id] ?? { amount: '', date: defaultBillingDate };
-				return [
-					row.patientName || '',
-					row.appointment.doctor || '',
-					row.appointment.date || '',
-					draft.amount || '',
-					draft.date || '',
-				];
-			}),
-		];
-		if (format === 'csv') {
-			const csv = rows.map(line => line.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
-			const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-			const url = URL.createObjectURL(blob);
-			const link = document.createElement('a');
-			link.href = url;
-			link.setAttribute('download', `pending-billing-${new Date().toISOString().slice(0, 10)}.csv`);
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-			URL.revokeObjectURL(url);
-		} else {
-			const ws = XLSX.utils.aoa_to_sheet(rows);
-			const wb = XLSX.utils.book_new();
-			XLSX.utils.book_append_sheet(wb, ws, 'Pending Billing');
-			ws['!cols'] = [
-				{ wch: 25 }, // Patient
-				{ wch: 20 }, // Clinician
-				{ wch: 14 }, // Visit Date
-				{ wch: 16 }, // Draft Amount
-				{ wch: 16 }, // Draft Billing Date
-			];
-			XLSX.writeFile(wb, `pending-billing-${new Date().toISOString().slice(0, 10)}.xlsx`);
-		}
-	};
-
 	const isWithinCycle = (dateIso: string | undefined, cycle?: { startDate?: string; endDate?: string }) => {
 		if (!dateIso || !cycle?.startDate || !cycle?.endDate) return false;
 		const d = new Date(dateIso);
@@ -2609,20 +2292,6 @@ export default function Billing() {
 					</select>
 				</div>
 				<div className="min-w-[200px]">
-					<label className="block text-sm font-medium text-indigo-900">Pending Billing Period</label>
-					<select
-						value={pendingWindow}
-						onChange={event => setPendingWindow(event.target.value as DateFilter)}
-						className="mt-1 w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm text-slate-700 transition focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-					>
-						{dateOptions.map(option => (
-							<option key={option.value} value={option.value}>
-								{option.label}
-							</option>
-						))}
-					</select>
-				</div>
-				<div className="min-w-[200px]">
 					<label className="block text-sm font-medium text-slate-700">Completed Payments Period</label>
 					<select
 						value={completedWindow}
@@ -2642,106 +2311,7 @@ export default function Billing() {
 				Total Collections (filtered): <span className="font-semibold">{rupee(totalCollections)}</span>
 			</p>
 
-			<section className="mx-auto mt-4 grid max-w-6xl gap-4 lg:grid-cols-2">
-				<article className="flex flex-col rounded-2xl bg-white shadow-[0_20px_50px_rgba(30,58,138,0.15)] border border-navy-100 max-h-[calc(100vh-280px)]">
-					<header className="flex items-center justify-between rounded-t-2xl bg-gradient-to-r from-indigo-100 to-blue-100 px-4 py-3 border-b border-indigo-200 flex-shrink-0">
-						<div>
-							<h2 className="text-base font-semibold text-indigo-900">Pending Billing</h2>
-							<p className="text-xs text-indigo-700">
-								Completed appointments awaiting a recorded payment.
-							</p>
-						</div>
-						<div className="flex items-center gap-2">
-						<span className="inline-flex h-6 min-w-7 items-center justify-center rounded-full bg-navy-600 px-2 text-xs font-semibold text-white shadow-md">
-							{pendingRows.length}
-						</span>
-						</div>
-					</header>
-					<div className="overflow-x-auto overflow-y-auto px-4 pb-4 pt-2 flex-1">
-						<table className="min-w-full divide-y divide-indigo-200 text-left text-xs text-slate-700">
-							<thead className="bg-indigo-50 text-xs uppercase tracking-wide text-indigo-900 sticky top-0">
-								<tr>
-									<th className="px-2 py-1.5 font-semibold">Patient / Department</th>
-									<th className="px-2 py-1.5 font-semibold">Clinician</th>
-									<th className="px-2 py-1.5 font-semibold">Visit Date</th>
-									<th className="px-2 py-1.5 font-semibold">Amount (₹)</th>
-									<th className="px-2 py-1.5 font-semibold">Billing Date</th>
-									<th className="px-2 py-1.5 font-semibold text-right">Action</th>
-								</tr>
-							</thead>
-							<tbody className="divide-y divide-indigo-100">
-								{pendingRows.length === 0 ? (
-									<tr>
-										<td colSpan={6} className="px-2 py-4 text-center text-xs text-slate-500">
-											No pending billing items for the selected filters.
-										</td>
-									</tr>
-								) : (
-									pendingRows.map(row => {
-										const draft = pendingDrafts[row.appointment.id] ?? {
-											amount: '',
-											date: defaultBillingDate,
-										};
-										return (
-											<tr key={row.appointment.id}>
-												<td className="px-2 py-2 font-medium text-slate-800">
-													<div className="text-xs">{row.patientName}</div>
-													{row.patientRecord?.department && (
-														<p className="mt-0.5 text-[10px] text-indigo-600 font-medium">{row.patientRecord.department}</p>
-													)}
-													{row.patientRecord?.patientType === 'DYES' && (
-														<p className="mt-0.5 text-[10px] text-amber-600">
-															Pending sessions:{' '}
-															{row.patientRecord.sessionAllowance?.pendingPaidSessions ?? 0}
-															{row.patientRecord.sessionAllowance
-																? ` · Free left: ${getRemainingFreeSessions(row.patientRecord.sessionAllowance)}`
-																: ''}
-														</p>
-													)}
-												</td>
-												<td className="px-2 py-2 text-xs text-slate-600">{row.appointment.doctor || '—'}</td>
-												<td className="px-2 py-2 text-xs text-slate-600">{row.appointment.date || '—'}</td>
-												<td className="px-2 py-2">
-													<input
-														type="number"
-														min="0"
-														step="0.01"
-														value={draft.amount}
-														onChange={event =>
-															handlePendingDraftChange(row.appointment.id, 'amount', event.target.value)
-														}
-														className="w-24 rounded border border-amber-200 px-1.5 py-0.5 text-xs text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-200"
-													/>
-												</td>
-												<td className="px-2 py-2">
-													<input
-														type="date"
-														value={draft.date}
-														onChange={event =>
-															handlePendingDraftChange(row.appointment.id, 'date', event.target.value)
-														}
-														className="w-32 rounded border border-amber-200 px-1.5 py-0.5 text-xs text-slate-700 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-200"
-													/>
-												</td>
-												<td className="px-2 py-2 text-right">
-													<button
-														type="button"
-														onClick={() => handleSaveBilling(row.appointment.id)}
-														className="inline-flex items-center rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-white transition hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-emerald-500"
-													>
-														<i className="fas fa-save mr-1 text-[9px]" aria-hidden="true" />
-														Save
-													</button>
-												</td>
-											</tr>
-										);
-									})
-								)}
-							</tbody>
-						</table>
-					</div>
-				</article>
-
+			<section className="mx-auto mt-4 max-w-6xl">
 				<article className="flex flex-col rounded-2xl bg-white shadow-[0_18px_40px_rgba(15,23,42,0.07)] max-h-[calc(100vh-280px)]">
 					<header className="flex items-center justify-between rounded-t-2xl bg-sky-500 px-4 py-3 text-white flex-shrink-0">
 						<div>

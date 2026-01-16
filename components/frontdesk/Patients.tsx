@@ -21,7 +21,7 @@ import ReportModal from '@/components/frontdesk/ReportModal';
 import PatientProgressAnalytics from '@/components/patient/PatientProgressAnalytics';
 
 type PaymentTypeOption = 'with' | 'without';
-type PatientTypeOption = 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'REFERRAL' | '';
+type PatientTypeOption = 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | 'REFERRAL' | '';
 
 // ROM constants for report display
 const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
@@ -312,6 +312,7 @@ const PATIENT_TYPE_OPTIONS: Array<{ value: PatientTypeOption; label: string }> =
 	{ value: 'VIP', label: 'VIP' },
 	{ value: 'PAID', label: 'PAID' },
 	{ value: 'GETHNA', label: 'GETHNA' },
+	{ value: 'STAFF', label: 'STAFF' },
 	{ value: 'OTHERS', label: 'Others' },
 ];
 
@@ -1880,9 +1881,19 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 
 	setRegisterSubmitting(true);
 	try {
+		// Check if patient with this phone number already exists
+		const trimmedPhone = registerForm.phone.trim();
+		const phoneQuery = query(collection(db, 'patients'), where('phone', '==', trimmedPhone));
+		const phoneSnapshot = await getDocs(phoneQuery);
+		
+		if (!phoneSnapshot.empty) {
+			alert('Patient with this phone number is already registered.');
+			setRegisterSubmitting(false);
+			return;
+		}
+
 		const patientId = await generatePatientId();
 		const trimmedEmail = registerForm.email.trim();
-		const trimmedPhone = registerForm.phone.trim();
 		const patientData = {
 			patientId,
 			name: registerForm.fullName.trim(),
@@ -2404,6 +2415,14 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 
 	const validateForm = () => {
 		const errors: Partial<Record<keyof typeof formState, string>> = {};
+		
+		// Validate patientId if user is Admin or specific frontdesk user
+		if ((user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.email === 'chandrashekhar@css.com')) {
+			if (!formState.patientId.trim()) {
+				errors.patientId = 'Please enter the patient ID.';
+			}
+		}
+		
 		if (!formState.name.trim()) {
 			errors.name = 'Please enter the patient\'s full name.';
 		}
@@ -2437,6 +2456,25 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 		if (!validateForm() || !editingId) return;
 
 		try {
+			// Check for duplicate patient ID if user is Admin or specific frontdesk user and patientId is being changed
+			if ((user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.email === 'chandrashekhar@css.com')) {
+				const currentPatient = patients.find(p => p.id === editingId);
+				const trimmedPatientId = formState.patientId.trim();
+				
+				if (currentPatient && currentPatient.patientId !== trimmedPatientId) {
+					// Patient ID is being changed, check for duplicates
+					const duplicateId = patients.some(patient => {
+						if (patient.id === editingId) return false; // Exclude current patient
+						return patient.patientId.toLowerCase() === trimmedPatientId.toLowerCase();
+					});
+					
+					if (duplicateId) {
+						alert('Another patient already uses this Patient ID. Please use a different ID.');
+						return;
+					}
+				}
+			}
+
 			const newDoctor = formState.assignedDoctor?.trim() || null;
 			const doctorChanged = newDoctor !== originalDoctor;
 
@@ -3151,7 +3189,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 										Type of Organization <span className="text-rose-600">*</span>
 									</label>
 									<div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-										{(['DYES', 'VIP', 'GETHNA', 'PAID', 'OTHERS'] as const).map(type => (
+										{(['DYES', 'VIP', 'GETHNA', 'PAID', 'STAFF', 'OTHERS'] as const).map(type => (
 											<label
 												key={type}
 												className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50 cursor-pointer"
@@ -3957,6 +3995,25 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 						</header>
 						<form id="patient-edit-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-4">
 							<div className="space-y-4">
+								{/* Row 0: Patient ID - Only editable for Admin and specific frontdesk user */}
+								{(user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.email === 'chandrashekhar@css.com') && (
+									<div className="grid gap-4 md:grid-cols-12">
+										<div className="md:col-span-6">
+											<label className="block text-sm font-medium text-slate-700">
+												Patient ID <span className="text-rose-600">*</span>
+											</label>
+											<input
+												type="text"
+												value={formState.patientId}
+												onChange={handleFormChange('patientId')}
+												className="input-base"
+												placeholder="Patient ID"
+												required
+											/>
+											{formErrors.patientId && <p className="mt-1 text-xs text-rose-500">{formErrors.patientId}</p>}
+										</div>
+									</div>
+								)}
 								{/* Row 1: Full Name (6 cols), DOB (3 cols), Gender (3 cols) */}
 								<div className="grid gap-4 md:grid-cols-12">
 									<div className="md:col-span-6">
@@ -4070,7 +4127,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 											Type of Organization <span className="text-rose-600">*</span>
 										</label>
 										<div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-											{(['DYES', 'VIP', 'GETHNA', 'PAID', 'OTHERS'] as const).map(type => (
+											{(['DYES', 'VIP', 'GETHNA', 'PAID', 'STAFF', 'OTHERS'] as const).map(type => (
 												<label key={type} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50 cursor-pointer">
 													<input
 														type="radio"

@@ -531,6 +531,9 @@ export default function EditReport() {
 	const [headerConfig, setHeaderConfig] = useState<HeaderConfig | null>(null);
 	const [showReportModal, setShowReportModal] = useState(false);
 	const [reportModalPatientId, setReportModalPatientId] = useState<string | null>(null);
+	const [showReportTypeModal, setShowReportTypeModal] = useState(false);
+	const [pendingPatientId, setPendingPatientId] = useState<string | null>(null);
+	const [selectedReportType, setSelectedReportType] = useState<'report' | 'strength-conditioning' | 'psychology' | null>(null);
 	const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
 	const [analyticsModalPatientId, setAnalyticsModalPatientId] = useState<string | null>(null);
 	const [analyticsModalPatientName, setAnalyticsModalPatientName] = useState<string | null>(null);
@@ -1605,17 +1608,35 @@ export default function EditReport() {
 			alert('Patient ID is missing. Cannot open report.');
 			return;
 		}
-		console.log('Opening report modal for patient:', patientId);
-		console.log('Current state before update - showReportModal:', showReportModal, 'reportModalPatientId:', reportModalPatientId);
-		// Set both states in a single batch
-		setReportModalPatientId(patientId);
-		setShowReportModal(true);
-		console.log('State updated - should open modal now');
+		// Show report type selection modal first
+		setPendingPatientId(patientId);
+		setShowReportTypeModal(true);
+	};
+
+	const handleSelectReportType = (reportType: 'report' | 'strength-conditioning' | 'psychology') => {
+		if (!pendingPatientId) return;
+		// Set the report type first, then open the modal
+		setSelectedReportType(reportType);
+		setReportModalPatientId(pendingPatientId);
+		// Use setTimeout to ensure state is updated before opening modal
+		setTimeout(() => {
+			setShowReportModal(true);
+			setShowReportTypeModal(false);
+			setPendingPatientId(null);
+		}, 0);
+	};
+
+	const handleCloseReportTypeModal = () => {
+		setShowReportTypeModal(false);
+		setPendingPatientId(null);
+		setSelectedReportType(null);
 	};
 
 	const handleCloseReportModal = () => {
 		setShowReportModal(false);
 		setReportModalPatientId(null);
+		// Don't reset selectedReportType here - keep it for next time modal opens
+		// setSelectedReportType(null);
 	};
 
 	const handlePackageFormChange =
@@ -3463,11 +3484,71 @@ export default function EditReport() {
 					</section>
 				</div>
 
+				{/* Report Type Selection Modal */}
+				{showReportTypeModal && (
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 px-4">
+						<div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+							<div className="flex items-center justify-between p-6 border-b border-slate-200">
+								<h2 className="text-xl font-semibold text-slate-900">Select Report Type</h2>
+								<button
+									type="button"
+									onClick={handleCloseReportTypeModal}
+									className="text-slate-400 hover:text-slate-600 transition"
+									aria-label="Close"
+								>
+									<i className="fas fa-times text-xl" />
+								</button>
+							</div>
+							<div className="p-6 space-y-3">
+								<button
+									type="button"
+									onClick={() => handleSelectReportType('report')}
+									className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-slate-200 hover:border-sky-500 hover:bg-sky-50 transition text-left"
+								>
+									<div className="flex-shrink-0 w-12 h-12 rounded-full bg-sky-100 flex items-center justify-center">
+										<i className="fas fa-user-md text-sky-600 text-xl" />
+									</div>
+									<div>
+										<h3 className="font-semibold text-slate-900">Physiotherapy</h3>
+										<p className="text-sm text-slate-600">View physiotherapy assessment and treatment report</p>
+									</div>
+								</button>
+								<button
+									type="button"
+									onClick={() => handleSelectReportType('strength-conditioning')}
+									className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-slate-200 hover:border-purple-500 hover:bg-purple-50 transition text-left"
+								>
+									<div className="flex-shrink-0 w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center">
+										<i className="fas fa-dumbbell text-purple-600 text-xl" />
+									</div>
+									<div>
+										<h3 className="font-semibold text-slate-900">Strength & Conditioning</h3>
+										<p className="text-sm text-slate-600">View strength and conditioning assessment report</p>
+									</div>
+								</button>
+								<button
+									type="button"
+									onClick={() => handleSelectReportType('psychology')}
+									className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 transition text-left"
+								>
+									<div className="flex-shrink-0 w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center">
+										<i className="fas fa-brain text-indigo-600 text-xl" />
+									</div>
+									<div>
+										<h3 className="font-semibold text-slate-900">Psychology</h3>
+										<p className="text-sm text-slate-600">View psychological assessment and evaluation report</p>
+									</div>
+								</button>
+							</div>
+						</div>
+					</div>
+				)}
+
 				{/* Report Modal - Always available */}
 				<EditReportModal
 					isOpen={showReportModal}
 					patientId={reportModalPatientId}
-					initialTab="report"
+					initialTab={selectedReportType || 'report'}
 					onClose={handleCloseReportModal}
 					editable={true}
 				/>
@@ -3487,6 +3568,7 @@ export default function EditReport() {
 
 				{/* Booking Modal */}
 				<AppointmentBookingModal
+					allowPastTimeSlots={true}
 					isOpen={showBookingModal}
 					onClose={handleCloseBookingModal}
 					patient={bookingModalPatient ? {
@@ -5658,11 +5740,71 @@ export default function EditReport() {
 				</div>
 			)}
 
+			{/* Report Type Selection Modal */}
+			{showReportTypeModal && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 px-4">
+					<div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+						<div className="flex items-center justify-between p-6 border-b border-slate-200">
+							<h2 className="text-xl font-semibold text-slate-900">Select Report Type</h2>
+							<button
+								type="button"
+								onClick={handleCloseReportTypeModal}
+								className="text-slate-400 hover:text-slate-600 transition"
+								aria-label="Close"
+							>
+								<i className="fas fa-times text-xl" />
+							</button>
+						</div>
+						<div className="p-6 space-y-3">
+							<button
+								type="button"
+								onClick={() => handleSelectReportType('report')}
+								className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-slate-200 hover:border-sky-500 hover:bg-sky-50 transition text-left"
+							>
+								<div className="flex-shrink-0 w-12 h-12 rounded-full bg-sky-100 flex items-center justify-center">
+									<i className="fas fa-user-md text-sky-600 text-xl" />
+								</div>
+								<div>
+									<h3 className="font-semibold text-slate-900">Physiotherapy</h3>
+									<p className="text-sm text-slate-600">View physiotherapy assessment and treatment report</p>
+								</div>
+							</button>
+							<button
+								type="button"
+								onClick={() => handleSelectReportType('strength-conditioning')}
+								className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-slate-200 hover:border-purple-500 hover:bg-purple-50 transition text-left"
+							>
+								<div className="flex-shrink-0 w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center">
+									<i className="fas fa-dumbbell text-purple-600 text-xl" />
+								</div>
+								<div>
+									<h3 className="font-semibold text-slate-900">Strength & Conditioning</h3>
+									<p className="text-sm text-slate-600">View strength and conditioning assessment report</p>
+								</div>
+							</button>
+							<button
+								type="button"
+								onClick={() => handleSelectReportType('psychology')}
+								className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 transition text-left"
+							>
+								<div className="flex-shrink-0 w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center">
+									<i className="fas fa-brain text-indigo-600 text-xl" />
+								</div>
+								<div>
+									<h3 className="font-semibold text-slate-900">Psychology</h3>
+									<p className="text-sm text-slate-600">View psychological assessment and evaluation report</p>
+								</div>
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
 			{/* Report Modal */}
 			<EditReportModal
 				isOpen={showReportModal}
 				patientId={reportModalPatientId}
-				initialTab="report"
+				initialTab={selectedReportType || 'report'}
 				onClose={handleCloseReportModal}
 			/>
 

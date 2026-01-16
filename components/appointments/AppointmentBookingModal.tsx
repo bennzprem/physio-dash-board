@@ -62,6 +62,7 @@ interface AppointmentBookingModalProps {
 	hideClinicianSelection?: boolean; // Hide clinician selection (use defaultClinician)
 	appointments?: Array<{ patientId?: string; doctor: string; date: string; time: string; status: string; duration?: number; isConsultation?: boolean }>; // Existing appointments for conflict checking
 	initialAppointment?: Appointment | null; // If provided, update this appointment instead of creating a new one
+	allowPastTimeSlots?: boolean; // Allow booking past time slots (for clinical team)
 }
 
 async function generateAppointmentId(): Promise<string> {
@@ -152,6 +153,7 @@ export default function AppointmentBookingModal({
 	hideClinicianSelection = false,
 	appointments = [],
 	initialAppointment = null,
+	allowPastTimeSlots = false,
 }: AppointmentBookingModalProps) {
 	const [form, setForm] = useState({
 		doctor: defaultClinician || '',
@@ -517,8 +519,8 @@ export default function AppointmentBookingModal({
 					continue;
 				}
 
-				// Filter out slots whose END time has passed for today
-				if (isToday) {
+				// Filter out slots whose END time has passed for today (unless allowPastTimeSlots is true)
+				if (isToday && !allowPastTimeSlots) {
 					// Calculate slot end time (start time + 30 minutes)
 					const slotEndTime = new Date(currentTime);
 					slotEndTime.setMinutes(slotEndTime.getMinutes() + SLOT_INTERVAL_MINUTES);

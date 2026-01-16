@@ -13,6 +13,7 @@ import { getHeaderConfig, getDefaultHeaderConfig } from '@/lib/headerConfig';
 import type { HeaderConfig } from '@/components/admin/HeaderManagement';
 import ExerciseLibrarySelector from '@/components/clinical-team/ExerciseLibrarySelector';
 import SpecialTestsLibrarySelector from '@/components/clinical-team/SpecialTestsLibrarySelector';
+import PsychologyReport from '@/components/clinical-team/PsychologyReport';
 
 // Constants
 const VAS_EMOJIS = ['😀','😁','🙂','😊','😌','😟','😣','😢','😭','😱'];
@@ -468,16 +469,17 @@ function renderMmtView(mmtData: Record<string, any> | undefined) {
 interface EditReportModalProps {
 	isOpen: boolean;
 	patientId: string | null;
-	initialTab?: 'report' | 'strength-conditioning';
+	initialTab?: 'report' | 'strength-conditioning' | 'psychology';
 	onClose: () => void;
 	editable?: boolean; // If true, fields are editable; if false, read-only (for frontdesk)
 }
 
 export default function EditReportModal({ isOpen, patientId, initialTab = 'report', onClose, editable = true }: EditReportModalProps) {
 	const { user } = useAuth();
-	const [activeReportTab, setActiveReportTab] = useState<'report' | 'strength-conditioning'>(initialTab);
+	const [activeReportTab, setActiveReportTab] = useState<'report' | 'strength-conditioning' | 'psychology'>(initialTab as 'report' | 'strength-conditioning' | 'psychology');
 	const [reportPatientData, setReportPatientData] = useState<any>(null);
 	const [strengthConditioningData, setStrengthConditioningData] = useState<any>(null);
+	const [psychologyData, setPsychologyData] = useState<any>(null);
 	const [currentDate, setCurrentDate] = useState<string>('');
 
 	// Set current date only on client to avoid hydration mismatch
@@ -485,11 +487,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		setCurrentDate(new Date().toLocaleDateString());
 	}, []);
 	const [strengthConditioningFormData, setStrengthConditioningFormData] = useState<StrengthConditioningData>({});
+	const [psychologyFormData, setPsychologyFormData] = useState<any>({});
 	const [clinicalTeamMembers, setClinicalTeamMembers] = useState<Array<{ id: string; userName: string; userEmail?: string }>>([]);
 	const [loadingReport, setLoadingReport] = useState(false);
 	const [loadingStrengthConditioning, setLoadingStrengthConditioning] = useState(false);
 	const [savingStrengthConditioning, setSavingStrengthConditioning] = useState(false);
 	const [savedStrengthConditioningMessage, setSavedStrengthConditioningMessage] = useState(false);
+	const [savingPsychology, setSavingPsychology] = useState(false);
+	const [savedPsychologyMessage, setSavedPsychologyMessage] = useState(false);
 	const [uploadingPdf, setUploadingPdf] = useState(false);
 	const [uploadedPdfUrl, setUploadedPdfUrl] = useState<string | null>(null);
 	const strengthConditioningUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -585,6 +590,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const hydrationValue = Number(formData.hydration || '4');
 	const hydrationEmoji =
 		HYDRATION_EMOJIS[Math.min(HYDRATION_EMOJIS.length - 1, Math.max(1, hydrationValue) - 1)];
+
+	// Update active tab when initialTab changes (when modal opens with different tab)
+	useEffect(() => {
+		if (isOpen) {
+			// Always update the tab when modal opens or initialTab changes
+			const tabToSet = (initialTab || 'report') as 'report' | 'strength-conditioning' | 'psychology';
+			setActiveReportTab(tabToSet);
+		}
+	}, [isOpen, initialTab]);
 
 	// Reset state when modal closes
 	useEffect(() => {
@@ -858,7 +872,43 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		};
 
 		loadData();
-	}, [isOpen, patientId]);
+
+		// Load psychology data if psychology tab is active
+		if (isOpen && patientId && activeReportTab === 'psychology') {
+			const loadPsychologyData = async () => {
+				try {
+					const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
+					if (!patientSnap.empty) {
+						const patientDoc = patientSnap.docs[0];
+						const documentId = patientDoc.id || patientId;
+						
+						const psychologyRef = doc(db, 'psychologyReports', documentId);
+						const unsubscribe = onSnapshot(psychologyRef, (docSnap) => {
+							if (docSnap.exists()) {
+								const data = docSnap.data();
+								setPsychologyData(data);
+								if (editable) {
+									setPsychologyFormData(data);
+								}
+							} else {
+								setPsychologyData(null);
+								if (editable) {
+									setPsychologyFormData({});
+								}
+							}
+						}, (error) => {
+							console.error('Error loading psychology report:', error);
+							setPsychologyData(null);
+						});
+					}
+				} catch (error) {
+					console.error('Failed to load psychology report', error);
+					setPsychologyData(null);
+				}
+			};
+			loadPsychologyData();
+		}
+	}, [isOpen, patientId, activeReportTab]);
 
 	// Load clinical team members
 	useEffect(() => {
@@ -1793,6 +1843,49 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			alert('Failed to save report. Please try again.');
 		} finally {
 			setSavingStrengthConditioning(false);
+		}
+	};
+
+	const handleSavePsychology = async () => {
+		if (!editable || !reportPatientData || savingPsychology || !patientId) {
+			if (!editable) {
+				console.log('Save blocked: not editable');
+				return;
+			}
+			alert('Please select a patient first');
+			return;
+		}
+
+		const dataToSave = {
+			...psychologyFormData,
+			patientId: reportPatientData.patientId,
+			patientName: reportPatientData.name || '',
+			updatedAt: new Date().toISOString(),
+			updatedBy: user?.email || user?.displayName || 'Unknown',
+		};
+
+		setSavingPsychology(true);
+		try {
+			let documentIdToUse = patientDocId;
+			if (!documentIdToUse) {
+				const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
+				if (patientSnap.empty) {
+					alert('Patient not found. Please try again.');
+					setSavingPsychology(false);
+					return;
+				}
+				documentIdToUse = patientSnap.docs[0].id;
+				setPatientDocId(documentIdToUse);
+			}
+			const docRef = doc(db, 'psychologyReports', documentIdToUse);
+			await setDoc(docRef, dataToSave, { merge: true });
+			setSavedPsychologyMessage(true);
+			setTimeout(() => setSavedPsychologyMessage(false), 3000);
+		} catch (error) {
+			console.error('Failed to save psychology report:', error);
+			alert('Failed to save psychology report. Please try again.');
+		} finally {
+			setSavingPsychology(false);
 		}
 	};
 
@@ -2754,36 +2847,57 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				{/* Tab Navigation */}
 				<div className="border-b border-slate-200 px-6">
 					<nav className="flex gap-4" aria-label="Report tabs">
-						<button
-							type="button"
-							onClick={() => {
-								setActiveReportTab('report');
-								setSessionCompleted(false);
-							}}
-							className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
-								activeReportTab === 'report'
-									? 'border-sky-600 text-sky-600'
-									: 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-							}`}
-						>
-							<i className="fas fa-file-medical mr-2" aria-hidden="true" />
-							Report
-						</button>
-						<button
-							type="button"
-							onClick={() => {
-								setActiveReportTab('strength-conditioning');
-								setSessionCompleted(false);
-							}}
-							className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
-								activeReportTab === 'strength-conditioning'
-									? 'border-sky-600 text-sky-600'
-									: 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-							}`}
-						>
-							<i className="fas fa-dumbbell mr-2" aria-hidden="true" />
-							Strength and Conditioning
-						</button>
+						{activeReportTab === 'report' && (
+							<button
+								type="button"
+								onClick={() => {
+									setActiveReportTab('report');
+									setSessionCompleted(false);
+								}}
+								className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
+									activeReportTab === 'report'
+										? 'border-sky-600 text-sky-600'
+										: 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+								}`}
+							>
+								<i className="fas fa-file-medical mr-2" aria-hidden="true" />
+								Physiotherapy
+							</button>
+						)}
+						{activeReportTab === 'strength-conditioning' && (
+							<button
+								type="button"
+								onClick={() => {
+									setActiveReportTab('strength-conditioning');
+									setSessionCompleted(false);
+								}}
+								className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
+									activeReportTab === 'strength-conditioning'
+										? 'border-sky-600 text-sky-600'
+										: 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+								}`}
+							>
+								<i className="fas fa-dumbbell mr-2" aria-hidden="true" />
+								Strength & Conditioning
+							</button>
+						)}
+						{activeReportTab === 'psychology' && (
+							<button
+								type="button"
+								onClick={() => {
+									setActiveReportTab('psychology');
+									setSessionCompleted(false);
+								}}
+								className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
+									activeReportTab === 'psychology'
+										? 'border-sky-600 text-sky-600'
+										: 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+								}`}
+							>
+								<i className="fas fa-brain mr-2" aria-hidden="true" />
+								Psychology
+							</button>
+						)}
 					</nav>
 				</div>
 
@@ -5390,12 +5504,62 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</>
 							)}
 						</div>
+					) : reportPatientData && activeReportTab === 'psychology' ? (
+						<div className="space-y-6">
+							{loadingReport ? (
+								<div className="text-center py-12">
+									<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
+									<p className="mt-4 text-sm text-slate-600">Loading psychology data...</p>
+								</div>
+							) : (
+								<>
+									{/* Patient Information */}
+									<div className="mb-8 border-b border-slate-200 pb-6">
+										<h2 className="mb-4 text-xl font-bold text-indigo-600">Psychology Assessment</h2>
+										<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Patient Name</label>
+												<p className="text-sm font-medium text-slate-900">{reportPatientData.name || '—'}</p>
+											</div>
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Patient ID</label>
+												<p className="text-sm font-medium text-slate-900">{reportPatientData.patientId || '—'}</p>
+											</div>
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Date of Birth</label>
+												<p className="text-sm font-medium text-slate-900">{reportPatientData.dob || '—'}</p>
+											</div>
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Gender</label>
+												<p className="text-sm font-medium text-slate-900">{reportPatientData.gender || '—'}</p>
+											</div>
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
+												<p className="text-sm font-medium text-slate-900">{reportPatientData.phone || '—'}</p>
+											</div>
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
+												<p className="text-sm font-medium text-slate-900">{reportPatientData.email || '—'}</p>
+											</div>
+										</div>
+									</div>
+
+									{/* Psychology Report Component */}
+									<PsychologyReport
+										patientData={reportPatientData}
+										formData={psychologyFormData}
+										onChange={setPsychologyFormData}
+										editable={editable}
+									/>
+								</>
+							)}
+						</div>
 					) : null}
 				</div>
 				
 				{/* Footer */}
 				<footer className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
-					{(activeReportTab === 'report' || activeReportTab === 'strength-conditioning') && reportPatientData && (
+					{(activeReportTab === 'report' || activeReportTab === 'strength-conditioning' || activeReportTab === 'psychology') && reportPatientData && (
 						<button
 							type="button"
 							onClick={activeReportTab === 'report' ? handleViewVersionHistory : handleViewVersionHistory}
@@ -5407,14 +5571,30 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						</button>
 					)}
 					<div className="flex items-center gap-3">
-						{editable && (reportPatientData || strengthConditioningData) && (
+						{editable && (reportPatientData || strengthConditioningData || psychologyData) && (
 							<button
 								type="button"
-								onClick={activeReportTab === 'strength-conditioning' ? handleSaveStrengthConditioning : handleSave}
-								disabled={activeReportTab === 'strength-conditioning' ? savingStrengthConditioning : saving}
+								onClick={
+									activeReportTab === 'strength-conditioning' 
+										? handleSaveStrengthConditioning 
+										: activeReportTab === 'psychology'
+										? handleSavePsychology
+										: handleSave
+								}
+								disabled={
+									activeReportTab === 'strength-conditioning' 
+										? savingStrengthConditioning 
+										: activeReportTab === 'psychology'
+										? savingPsychology
+										: saving
+								}
 								className="inline-flex items-center rounded-lg border border-sky-600 bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								{(activeReportTab === 'strength-conditioning' ? savingStrengthConditioning : saving) ? (
+								{(activeReportTab === 'strength-conditioning' 
+									? savingStrengthConditioning 
+									: activeReportTab === 'psychology'
+									? savingPsychology
+									: saving) ? (
 									<>
 										<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
 										Saving...

@@ -165,11 +165,12 @@ const GENDER_OPTIONS: Array<{ value: AdminGenderOption; label: string }> = [
 	{ value: 'Female', label: 'Female' },
 	{ value: 'Other', label: 'Other' },
 ];
-const PATIENT_TYPE_OPTIONS: Array<{ value: 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | ''; label: string }> = [
+const PATIENT_TYPE_OPTIONS: Array<{ value: 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | ''; label: string }> = [
 	{ value: 'DYES', label: 'DYES' },
 	{ value: 'VIP', label: 'VIP' },
 	{ value: 'PAID', label: 'PAID' },
 	{ value: 'GETHNA', label: 'GETHNA' },
+	{ value: 'STAFF', label: 'STAFF' },
 	{ value: 'OTHERS', label: 'Others' },
 ];
 
@@ -232,7 +233,7 @@ export default function Appointments() {
 		phone: '',
 		email: '',
 		address: '',
-		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
+		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
 	});
 	const [registerFormErrors, setRegisterFormErrors] = useState<Partial<Record<keyof typeof registerForm, string>>>({});
 	const [registerSubmitting, setRegisterSubmitting] = useState(false);
@@ -628,25 +629,13 @@ export default function Appointments() {
 
 			// Only generate slots within this specific availability range
 			// Show ALL slots (including booked ones) - we'll display patient counts
+			// Clinical team users can book appointments even if the time has passed
 			let currentTime = new Date(startTime);
 			while (currentTime < endTime) {
 				const timeString = `${String(currentTime.getHours()).padStart(2, '0')}:${String(currentTime.getMinutes()).padStart(2, '0')}`;
 				
-				// If it's today, filter out slots whose END time has passed
-				if (isToday) {
-					// Calculate slot end time (start time + 30 minutes)
-					const slotEndTime = new Date(currentTime);
-					slotEndTime.setMinutes(slotEndTime.getMinutes() + SLOT_INTERVAL_MINUTES);
-					const slotEndTimeString = `${String(slotEndTime.getHours()).padStart(2, '0')}:${String(slotEndTime.getMinutes()).padStart(2, '0')}`;
-					
-					// Compare slot END time with current time - only hide if end time has passed
-					if (slotEndTimeString <= currentTimeString) {
-						currentTime.setMinutes(currentTime.getMinutes() + SLOT_INTERVAL_MINUTES);
-						continue; // Skip slots whose end time has passed
-					}
-				}
-				
 				// Include all slots (booked or not) - we'll show patient counts
+				// Note: Clinical team users can book past time slots
 				slots.push(timeString);
 				currentTime.setMinutes(currentTime.getMinutes() + SLOT_INTERVAL_MINUTES);
 			}
@@ -1715,9 +1704,19 @@ export default function Appointments() {
 
 		setRegisterSubmitting(true);
 		try {
+			// Check if patient with this phone number already exists
+			const trimmedPhone = registerForm.phone.trim();
+			const phoneQuery = query(collection(db, 'patients'), where('phone', '==', trimmedPhone));
+			const phoneSnapshot = await getDocs(phoneQuery);
+			
+			if (!phoneSnapshot.empty) {
+				alert('Patient with this phone number is already registered.');
+				setRegisterSubmitting(false);
+				return;
+			}
+
 			const patientId = await generatePatientId();
 			const trimmedEmail = registerForm.email.trim();
-			const trimmedPhone = registerForm.phone.trim();
 			
 			// Get clinician info for registeredBy field
 			const clinicianName = user?.displayName || user?.email?.split('@')[0] || 'Clinical Team';
@@ -1735,7 +1734,7 @@ export default function Appointments() {
 				complaint: '',
 				status: 'pending' as AdminPatientStatus,
 				registeredAt: serverTimestamp(),
-				patientType: registerForm.patientType as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS',
+				patientType: registerForm.patientType as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF',
 				paymentType: 'without' as 'with' | 'without',
 				paymentDescription: null,
 				packageAmount: null,
@@ -1803,7 +1802,7 @@ export default function Appointments() {
 				phone: '',
 				email: '',
 				address: '',
-				patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
+				patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
 			});
 			setRegisterFormErrors({});
 			setShowRegisterModal(false);
@@ -3490,7 +3489,7 @@ export default function Appointments() {
 										phone: '',
 										email: '',
 										address: '',
-										patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
+										patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
 									});
 									setRegisterFormErrors({});
 									setRegisterNotice(null);
@@ -3684,7 +3683,7 @@ export default function Appointments() {
 											phone: '',
 											email: '',
 											address: '',
-											patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | '',
+											patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
 										});
 										setRegisterFormErrors({});
 										setRegisterNotice(null);
