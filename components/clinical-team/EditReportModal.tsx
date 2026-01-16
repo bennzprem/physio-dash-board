@@ -4425,6 +4425,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Rest (sec)</th>
 																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Distance</th>
 																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300">Heart Rate</th>
+																<th className="px-3 py-2 font-semibold text-slate-700 border border-slate-300 w-12">Action</th>
 															</tr>
 														</thead>
 														<tbody className="divide-y divide-slate-200 bg-white">
@@ -4527,6 +4528,20 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																			className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
 																			placeholder="HR"
 																		/>
+																	</td>
+																	<td className="px-3 py-2 border border-slate-300 bg-white text-center">
+																		<button
+																			type="button"
+																			onClick={() => {
+																				const exercises = [...(strengthConditioningFormData.exercises || [])];
+																				exercises.splice(idx, 1);
+																				handleFieldChangeStrengthConditioning('exercises', exercises);
+																			}}
+																			className="inline-flex items-center justify-center w-7 h-7 rounded-full text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
+																			title="Remove exercise"
+																		>
+																			<i className="fas fa-times text-sm" aria-hidden="true" />
+																		</button>
 																	</td>
 																</tr>
 															))}
