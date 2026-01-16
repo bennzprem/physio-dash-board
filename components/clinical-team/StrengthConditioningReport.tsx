@@ -194,19 +194,36 @@ export default function StrengthConditioningReport() {
 		setSaving(true);
 		try {
 			const docRef = doc(db, 'strengthConditioningReports', selectedPatient.id);
-			const dataToSave = {
+			// Helper function to recursively remove undefined values
+			const removeUndefined = (obj: any): any => {
+				if (obj === null || obj === undefined) return obj;
+				if (Array.isArray(obj)) {
+					return obj.map(item => removeUndefined(item)).filter(item => item !== undefined);
+				}
+				if (typeof obj === 'object' && !(obj instanceof Date)) {
+					const cleaned: any = {};
+					for (const key in obj) {
+						if (obj.hasOwnProperty(key)) {
+							const value = removeUndefined(obj[key]);
+							if (value !== undefined) {
+								cleaned[key] = value;
+							}
+						}
+					}
+					return cleaned;
+				}
+				return obj;
+			};
+			
+			const dataToSave = removeUndefined({
 				...formData,
 				therapistName: formData.therapistName || user?.displayName || user?.email || '',
 				patientId: selectedPatient.patientId,
-				patientName: selectedPatient.name,
+				patientName: selectedPatient.name || '',
 				updatedAt: new Date().toISOString(),
 				updatedBy: user?.email || user?.displayName || 'Unknown',
-			};
-			// Remove undefined values before saving to Firestore
-			const cleanedData = Object.fromEntries(
-				Object.entries(dataToSave).filter(([_, value]) => value !== undefined)
-			) as typeof dataToSave;
-			await setDoc(docRef, cleanedData, { merge: true });
+			});
+			await setDoc(docRef, dataToSave, { merge: true });
 
 			setSavedMessage(true);
 			setTimeout(() => setSavedMessage(false), 3000);

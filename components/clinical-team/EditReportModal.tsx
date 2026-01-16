@@ -104,19 +104,59 @@ const MOTION_TO_MMT: Record<string, string> = {
 
 // Helper functions
 function removeUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
+	if (!obj || typeof obj !== 'object') {
+		return obj as any;
+	}
+	
 	const cleaned: Partial<T> = {};
 	for (const key in obj) {
-		const value = obj[key];
-		if (value !== undefined) {
-			if (value !== null && typeof value === 'object' && !Array.isArray(value) && !((value as any) instanceof Date)) {
-				const cleanedNested = removeUndefined(value);
-				if (Object.keys(cleanedNested).length > 0) {
-					cleaned[key] = cleanedNested as any;
-				}
-			} else {
-				cleaned[key] = value;
-			}
+		if (!obj.hasOwnProperty(key)) continue;
+		
+		const value: any = obj[key];
+		
+		// Skip undefined values
+		if (value === undefined) {
+			continue;
 		}
+		
+		// Handle null values (keep them)
+		if (value === null) {
+			cleaned[key] = null as any;
+			continue;
+		}
+		
+		// Handle arrays - clean each element if it's an object
+		if (Array.isArray(value)) {
+			const cleanedArray = value.map((item: any) => {
+				if (item !== null && typeof item === 'object' && !(item instanceof Date)) {
+					return removeUndefined(item);
+				}
+				return item;
+			}).filter((item: any) => item !== undefined);
+			if (cleanedArray.length > 0) {
+				cleaned[key] = cleanedArray as any;
+			}
+			continue;
+		}
+		
+		// Handle Date objects (keep them as-is)
+		if (value instanceof Date) {
+			cleaned[key] = value as any;
+			continue;
+		}
+		
+		// Handle nested objects recursively
+		if (typeof value === 'object') {
+			const cleanedNested = removeUndefined(value as Record<string, any>);
+			// Only include if nested object has at least one property
+			if (Object.keys(cleanedNested).length > 0) {
+				cleaned[key] = cleanedNested as any;
+			}
+			continue;
+		}
+		
+		// Handle primitive values
+		cleaned[key] = value;
 	}
 	return cleaned;
 }
@@ -1584,15 +1624,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		}
 
 		// Preserve current form data to prevent it from being cleared
-		const dataToSave = {
+		const dataToSave = removeUndefined({
 			...strengthConditioningFormData,
 			uploadedPdfUrl: uploadedPdfUrl || strengthConditioningFormData.uploadedPdfUrl || null,
 			therapistName: strengthConditioningFormData.therapistName || user?.displayName || user?.email || '',
 			patientId: reportPatientData.patientId,
-			patientName: reportPatientData.name,
+			patientName: reportPatientData.name || '',
 			updatedAt: new Date().toISOString(),
 			updatedBy: user?.email || user?.displayName || 'Unknown',
-		};
+		});
 
 		setSavingStrengthConditioning(true);
 		try {
@@ -1637,15 +1677,16 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						? (versionsSnapshot.docs[0].data().version as number) + 1 
 						: 1;
 
-					await addDoc(collection(db, 'strengthConditioningReportVersions'), removeUndefined({
+					const versionData = removeUndefined({
 						patientId: reportPatientData.patientId,
-						patientName: reportPatientData.name,
+						patientName: reportPatientData.name || '',
 						version: nextVersion,
 						reportData: currentReportData,
 						createdBy: user?.displayName || user?.email || 'Unknown',
 						createdById: user?.uid || '',
 						createdAt: serverTimestamp(),
-					}));
+					});
+					await addDoc(collection(db, 'strengthConditioningReportVersions'), versionData);
 				} catch (versionError: any) {
 					// If orderBy fails (missing index), try without it
 					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
@@ -1661,15 +1702,16 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								? Math.max(...versionsSnapshot.docs.map(d => d.data().version as number)) + 1
 								: 1;
 
-							await addDoc(collection(db, 'strengthConditioningReportVersions'), removeUndefined({
+							const versionDataRetry = removeUndefined({
 								patientId: reportPatientData.patientId,
-								patientName: reportPatientData.name,
+								patientName: reportPatientData.name || '',
 								version: nextVersion,
 								reportData: currentReportData,
 								createdBy: user?.displayName || user?.email || 'Unknown',
 								createdById: user?.uid || '',
 								createdAt: serverTimestamp(),
-							}));
+							});
+							await addDoc(collection(db, 'strengthConditioningReportVersions'), versionDataRetry);
 						} catch (retryError) {
 							console.warn('Failed to save strength conditioning version history', retryError);
 							// Continue without version history
@@ -1681,7 +1723,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				}
 			}
 
-			await setDoc(docRef, removeUndefined(dataToSave), { merge: true });
+			await setDoc(docRef, dataToSave, { merge: true });
 
 			// Explicitly update form data with saved data to ensure it persists
 			// This prevents any timing issues with onSnapshot
