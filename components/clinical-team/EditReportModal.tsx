@@ -5504,9 +5504,9 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</>
 							)}
 						</div>
-					) : reportPatientData && activeReportTab === 'psychology' ? (
+					) : activeReportTab === 'psychology' ? (
 						<div className="space-y-6">
-							{loadingReport ? (
+							{loadingReport || !reportPatientData ? (
 								<div className="text-center py-12">
 									<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
 									<p className="mt-4 text-sm text-slate-600">Loading psychology data...</p>
