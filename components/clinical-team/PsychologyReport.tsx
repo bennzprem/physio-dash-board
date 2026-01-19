@@ -53,7 +53,7 @@ interface PsychologyReportData {
 	// History of Present Concerns
 	historyOfConcerns?: string;
 	
-	// Sensory & Neurofeedback
+	// Brain Training Assessment
 	sensoryStation?: {
 		visualClarity?: number;
 		contrastSensitivity?: number;
@@ -76,7 +76,7 @@ interface PsychologyReportData {
 		cognitiveFlexibility?: number;
 	};
 	
-	// Tracking, Reaction & Personality
+	// 
 	trackingSpeed?: number;
 	reactionTime?: number;
 	handEyeCoordination?: number;
@@ -597,9 +597,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 				)}
 			</div>
 
-			{/* Sensory & Neurofeedback */}
-			<div className="border-b border-slate-200 pb-6">
-				<h2 className="mb-4 text-lg font-semibold text-slate-900">Sensory & Neurofeedback</h2>
+			{/* Brain Training Assessment */}
+			<div className="pb-6">
+				<h2 className="mb-4 text-lg font-semibold text-slate-900">Brain Training Assessment</h2>
 				
 				{/* Sensory Station Assessment */}
 				<div className="mb-6">
@@ -759,13 +759,10 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 				</div>
 			</div>
 
-			{/* Tracking, Reaction & Personality */}
 			<div className="border-b border-slate-200 pb-6">
-				<h2 className="mb-4 text-lg font-semibold text-slate-900">Tracking, Reaction & Personality</h2>
-				
-				{/* 3D - Tracking Speed */}
+				{/* 3D - Multiple Object Tracking Assessment */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. 3D - Tracking Speed</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. 3D - Multiple Object Tracking Assessment</h3>
 					<div className="flex items-center justify-between">
 						<label className="text-sm font-medium text-slate-700 flex-1">Tracking Speed</label>
 						<div className="flex items-center gap-3">
@@ -842,7 +839,11 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 						</div>
 					</div>
 				</div>
+			</div>
 
+			{/* Psychological Assessment */}
+			<div className="pb-6">
+				<h2 className="mb-4 text-lg font-semibold text-slate-900">Psychological Assessment</h2>
 				{/* Competitive State Anxiety Test */}
 				<div className="mb-6">
 					<h3 className="mb-3 text-sm font-semibold text-slate-800">6. Competitive State Anxiety Test</h3>

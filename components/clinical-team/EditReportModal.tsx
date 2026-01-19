@@ -5515,7 +5515,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								<>
 									{/* Patient Information */}
 									<div className="mb-8 border-b border-slate-200 pb-6">
-										<h2 className="mb-4 text-xl font-bold text-indigo-600">Psychology Assessment</h2>
+										<h2 className="mb-4 text-xl font-bold text-indigo-600">Brain Training / Sports Psychology</h2>
 										<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 											<div>
 												<label className="block text-xs font-medium text-slate-500 mb-1">Patient Name</label>

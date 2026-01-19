@@ -12,22 +12,24 @@ interface Intern {
 	serialNumber: number;
 	name: string;
 	college: string;
-	degree: "Bachelor's Degree" | "Master's Degree";
+	degree: "Bachelor's Degree (BPT)" | "Master's Degree (MPT)";
 	dateOfJoining: string;
 	dateOfLeaving: string;
 	amount: number;
 	isPaid: boolean;
 	paymentDate?: string;
 	receiptNumber?: string;
+	paymentMode?: 'Cash' | 'Card/UPI';
+	utrNumber?: string;
 	createdAt: any;
 	updatedAt: any;
 }
 
-type DegreeType = "Bachelor's Degree" | "Master's Degree";
+type DegreeType = "Bachelor's Degree (BPT)" | "Master's Degree (MPT)";
 
 const DEGREE_AMOUNTS: Record<DegreeType, number> = {
-	"Bachelor's Degree": 2500,
-	"Master's Degree": 5000,
+	"Bachelor's Degree (BPT)": 2500,
+	"Master's Degree (MPT)": 5000,
 };
 
 export default function InternshipManagement() {
@@ -43,11 +45,13 @@ export default function InternshipManagement() {
 	const [formData, setFormData] = useState({
 		name: '',
 		college: '',
-		degree: "Bachelor's Degree" as DegreeType,
+		degree: "Bachelor's Degree (BPT)" as DegreeType,
 		dateOfJoining: '',
 		dateOfLeaving: '',
-		amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+		amount: DEGREE_AMOUNTS["Bachelor's Degree (BPT)"],
 		receiptNumber: '',
+		paymentMode: 'Cash' as 'Cash' | 'Card/UPI',
+		utrNumber: '',
 	});
 	const [submitting, setSubmitting] = useState(false);
 
@@ -63,13 +67,15 @@ export default function InternshipManagement() {
 						serialNumber: data.serialNumber || 0,
 						name: data.name || '',
 						college: data.college || '',
-						degree: data.degree || "Bachelor's Degree",
+						degree: data.degree || "Bachelor's Degree (BPT)",
 						dateOfJoining: data.dateOfJoining || '',
 						dateOfLeaving: data.dateOfLeaving || '',
 						amount: data.amount || 0,
 						isPaid: data.isPaid || false,
 						paymentDate: data.paymentDate || undefined,
 						receiptNumber: data.receiptNumber || undefined,
+						paymentMode: data.paymentMode || 'Cash',
+						utrNumber: data.utrNumber || undefined,
 						createdAt: data.createdAt,
 						updatedAt: data.updatedAt,
 					} as Intern;
@@ -115,13 +121,19 @@ export default function InternshipManagement() {
 	useEffect(() => {
 		setFormData(prev => ({
 			...prev,
-			amount: DEGREE_AMOUNTS[prev.degree],
+			amount: DEGREE_AMOUNTS[prev.degree] || 0,
 		}));
 	}, [formData.degree]);
 
 	const handleAddIntern = async () => {
 		if (!formData.name.trim() || !formData.college.trim() || !formData.dateOfJoining || !formData.dateOfLeaving) {
 			alert('Please fill in all required fields.');
+			return;
+		}
+
+		// Validate UTR number for Card/UPI payment mode
+		if (formData.paymentMode === 'Card/UPI' && !formData.utrNumber.trim()) {
+			alert('UTR Number is required when Payment Mode is Card/UPI.');
 			return;
 		}
 
@@ -150,6 +162,8 @@ export default function InternshipManagement() {
 				amount: Number(formData.amount),
 				isPaid: false,
 				receiptNumber: formData.receiptNumber.trim() || undefined,
+				paymentMode: formData.paymentMode,
+				utrNumber: formData.paymentMode === 'Card/UPI' ? formData.utrNumber.trim() || undefined : undefined,
 				createdAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
 			});
@@ -158,11 +172,13 @@ export default function InternshipManagement() {
 			setFormData({
 				name: '',
 				college: '',
-				degree: "Bachelor's Degree",
+				degree: "Bachelor's Degree (BPT)",
 				dateOfJoining: '',
 				dateOfLeaving: '',
-				amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+				amount: DEGREE_AMOUNTS["Bachelor's Degree (BPT)"],
 				receiptNumber: '',
+				paymentMode: 'Cash',
+				utrNumber: '',
 			});
 			setShowAddModal(false);
 			alert('Intern added successfully!');
@@ -227,6 +243,8 @@ export default function InternshipManagement() {
 			dateOfLeaving: intern.dateOfLeaving,
 			amount: intern.amount,
 			receiptNumber: intern.receiptNumber || '',
+			paymentMode: intern.paymentMode || 'Cash',
+			utrNumber: intern.utrNumber || '',
 		});
 		setShowEditModal(true);
 	};
@@ -236,6 +254,12 @@ export default function InternshipManagement() {
 		
 		if (!formData.name.trim() || !formData.college.trim() || !formData.dateOfJoining || !formData.dateOfLeaving) {
 			alert('Please fill in all required fields.');
+			return;
+		}
+
+		// Validate UTR number for Card/UPI payment mode
+		if (formData.paymentMode === 'Card/UPI' && !formData.utrNumber.trim()) {
+			alert('UTR Number is required when Payment Mode is Card/UPI.');
 			return;
 		}
 
@@ -257,6 +281,8 @@ export default function InternshipManagement() {
 				dateOfLeaving: formData.dateOfLeaving,
 				amount: Number(formData.amount),
 				receiptNumber: formData.receiptNumber.trim() || undefined,
+				paymentMode: formData.paymentMode,
+				utrNumber: formData.paymentMode === 'Card/UPI' ? formData.utrNumber.trim() || undefined : undefined,
 				updatedAt: serverTimestamp(),
 			});
 
@@ -264,11 +290,13 @@ export default function InternshipManagement() {
 			setFormData({
 				name: '',
 				college: '',
-				degree: "Bachelor's Degree",
+				degree: "Bachelor's Degree (BPT)",
 				dateOfJoining: '',
 				dateOfLeaving: '',
-				amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+				amount: DEGREE_AMOUNTS["Bachelor's Degree (BPT)"],
 				receiptNumber: '',
+				paymentMode: 'Cash',
+				utrNumber: '',
 			});
 			setEditingIntern(null);
 			setShowEditModal(false);
@@ -298,6 +326,23 @@ export default function InternshipManagement() {
 		} catch {
 			return dateStr;
 		}
+	};
+
+	const formatDegree = (degree: string): string => {
+		if (!degree) return 'N/A';
+		
+		// Fix any typos (Degee -> Degree)
+		const corrected = degree.replace(/Degee/gi, 'Degree');
+		
+		// Normalize to standard values
+		if (corrected.includes("Bachelor") || corrected.includes("BPT")) {
+			return "Bachelor's Degree (BPT)";
+		}
+		if (corrected.includes("Master") || corrected.includes("MPT")) {
+			return "Master's Degree (MPT)";
+		}
+		
+		return corrected;
 	};
 
 	// Calculate statistics
@@ -365,9 +410,9 @@ export default function InternshipManagement() {
 					</div>
 				) : (
 					<div className="bg-white rounded-lg shadow overflow-hidden">
-						<div className="overflow-x-auto">
+						<div className="overflow-x-auto max-h-[calc(100vh-400px)] overflow-y-auto">
 							<table className="min-w-full divide-y divide-slate-200">
-								<thead className="bg-slate-50">
+								<thead className="bg-slate-50 sticky top-0 z-10">
 									<tr>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Sl. No</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Name</th>
@@ -376,6 +421,8 @@ export default function InternshipManagement() {
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Date of Joining</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Date of Leaving</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Amount (₹)</th>
+										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Payment Mode</th>
+										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">UTR Number</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Receipt No.</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Status</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">Actions</th>
@@ -392,13 +439,19 @@ export default function InternshipManagement() {
 												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900">{intern.serialNumber}</td>
 												<td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-slate-900">{intern.name}</td>
 												<td className="px-4 py-3 text-sm text-slate-700">{intern.college}</td>
-												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">{intern.degree}</td>
+												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">{formatDegree(intern.degree)}</td>
 												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">{formatDate(intern.dateOfJoining)}</td>
 												<td className={`px-4 py-3 whitespace-nowrap text-sm ${expired ? 'font-semibold text-red-600' : 'text-slate-700'}`}>
 													{formatDate(intern.dateOfLeaving)}
 													{expired && <span className="ml-2 text-xs text-red-600">(Expired)</span>}
 												</td>
 												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-900 font-medium">₹{intern.amount.toLocaleString('en-IN')}</td>
+												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+													{intern.paymentMode || 'Cash'}
+												</td>
+												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
+													{intern.utrNumber || '—'}
+												</td>
 												<td className="px-4 py-3 whitespace-nowrap text-sm text-slate-700">
 													{intern.receiptNumber || '—'}
 												</td>
@@ -490,8 +543,8 @@ export default function InternshipManagement() {
 									onChange={(e) => setFormData({ ...formData, degree: e.target.value as DegreeType })}
 									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
 								>
-									<option value="Bachelor's Degree">Bachelor's Degree</option>
-									<option value="Master's Degree">Master's Degree</option>
+									<option value="Bachelor's Degree (BPT)">Bachelor's Degree (BPT)</option>
+									<option value="Master's Degree (MPT)">Master's Degree (MPT)</option>
 								</select>
 							</div>
 
@@ -525,16 +578,46 @@ export default function InternshipManagement() {
 								</label>
 								<input
 									type="number"
-									value={formData.amount}
+									value={formData.amount ?? 0}
 									onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
 									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
 									min="0"
 									step="0.01"
 								/>
 								<p className="mt-1 text-xs text-slate-500">
-									Auto-calculated: ₹{DEGREE_AMOUNTS[formData.degree].toLocaleString('en-IN')} for {formData.degree}. You can edit this amount.
+									Auto-calculated: ₹{(DEGREE_AMOUNTS[formData.degree] || 0).toLocaleString('en-IN')} for {formData.degree}. You can edit this amount.
 								</p>
 							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Payment Mode <span className="text-red-500">*</span>
+								</label>
+								<select
+									value={formData.paymentMode}
+									onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value as 'Cash' | 'Card/UPI', utrNumber: e.target.value === 'Cash' ? '' : formData.utrNumber })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+								>
+									<option value="Cash">Cash</option>
+									<option value="Card/UPI">Card/UPI</option>
+								</select>
+							</div>
+
+							{formData.paymentMode === 'Card/UPI' && (
+								<div>
+									<label className="block text-sm font-medium text-slate-700 mb-1">
+										UTR Number <span className="text-red-500">*</span>
+									</label>
+									<input
+										type="text"
+										value={formData.utrNumber}
+										onChange={(e) => setFormData({ ...formData, utrNumber: e.target.value })}
+										className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+										placeholder="Enter UTR number"
+										required={formData.paymentMode === 'Card/UPI'}
+									/>
+								</div>
+							)}
 
 							<div>
 								<label className="block text-sm font-medium text-slate-700 mb-1">
@@ -556,11 +639,13 @@ export default function InternshipManagement() {
 									setFormData({
 										name: '',
 										college: '',
-										degree: "Bachelor's Degree",
+										degree: "Bachelor's Degree (BPT)",
 										dateOfJoining: '',
 										dateOfLeaving: '',
-										amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+										amount: DEGREE_AMOUNTS["Bachelor's Degree (BPT)"],
 										receiptNumber: '',
+										paymentMode: 'Cash',
+										utrNumber: '',
 									});
 								}}
 								className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
@@ -623,8 +708,8 @@ export default function InternshipManagement() {
 									onChange={(e) => setFormData({ ...formData, degree: e.target.value as DegreeType })}
 									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
 								>
-									<option value="Bachelor's Degree">Bachelor's Degree</option>
-									<option value="Master's Degree">Master's Degree</option>
+									<option value="Bachelor's Degree (BPT)">Bachelor's Degree (BPT)</option>
+									<option value="Master's Degree (MPT)">Master's Degree (MPT)</option>
 								</select>
 							</div>
 
@@ -658,16 +743,46 @@ export default function InternshipManagement() {
 								</label>
 								<input
 									type="number"
-									value={formData.amount}
+									value={formData.amount ?? 0}
 									onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
 									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
 									min="0"
 									step="0.01"
 								/>
 								<p className="mt-1 text-xs text-slate-500">
-									Auto-calculated: ₹{DEGREE_AMOUNTS[formData.degree].toLocaleString('en-IN')} for {formData.degree}. You can edit this amount.
+									Auto-calculated: ₹{(DEGREE_AMOUNTS[formData.degree] || 0).toLocaleString('en-IN')} for {formData.degree}. You can edit this amount.
 								</p>
 							</div>
+
+							<div>
+								<label className="block text-sm font-medium text-slate-700 mb-1">
+									Payment Mode <span className="text-red-500">*</span>
+								</label>
+								<select
+									value={formData.paymentMode}
+									onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value as 'Cash' | 'Card/UPI', utrNumber: e.target.value === 'Cash' ? '' : formData.utrNumber })}
+									className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+								>
+									<option value="Cash">Cash</option>
+									<option value="Card/UPI">Card/UPI</option>
+								</select>
+							</div>
+
+							{formData.paymentMode === 'Card/UPI' && (
+								<div>
+									<label className="block text-sm font-medium text-slate-700 mb-1">
+										UTR Number <span className="text-red-500">*</span>
+									</label>
+									<input
+										type="text"
+										value={formData.utrNumber}
+										onChange={(e) => setFormData({ ...formData, utrNumber: e.target.value })}
+										className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white"
+										placeholder="Enter UTR number"
+										required={formData.paymentMode === 'Card/UPI'}
+									/>
+								</div>
+							)}
 
 							<div>
 								<label className="block text-sm font-medium text-slate-700 mb-1">
@@ -690,11 +805,13 @@ export default function InternshipManagement() {
 									setFormData({
 										name: '',
 										college: '',
-										degree: "Bachelor's Degree",
+										degree: "Bachelor's Degree (BPT)",
 										dateOfJoining: '',
 										dateOfLeaving: '',
-										amount: DEGREE_AMOUNTS["Bachelor's Degree"],
+										amount: DEGREE_AMOUNTS["Bachelor's Degree (BPT)"],
 										receiptNumber: '',
+										paymentMode: 'Cash',
+										utrNumber: '',
 									});
 								}}
 								className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"

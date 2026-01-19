@@ -194,7 +194,7 @@ export default function LoginPage() {
 											id="email"
 											type="email"
 											required
-											placeholder="your.email@centersports.com"
+											placeholder="username@css.com"
 											value={formState.email}
 											onChange={event => setFormState(current => ({ ...current, email: event.target.value }))}
 											disabled={loading}
