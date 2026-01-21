@@ -12,7 +12,7 @@ interface Intern {
 	serialNumber: number;
 	name: string;
 	college: string;
-	degree: "Bachelor's Degree (BPT)" | "Master's Degree (MPT)";
+	degree: "Bachelor's Degree (BPT)" | "Master's Degree (MPT)" | "Clinical";
 	dateOfJoining: string;
 	dateOfLeaving: string;
 	amount: number;
@@ -25,11 +25,12 @@ interface Intern {
 	updatedAt: any;
 }
 
-type DegreeType = "Bachelor's Degree (BPT)" | "Master's Degree (MPT)";
+type DegreeType = "Bachelor's Degree (BPT)" | "Master's Degree (MPT)" | "Clinical";
 
 const DEGREE_AMOUNTS: Record<DegreeType, number> = {
 	"Bachelor's Degree (BPT)": 2500,
 	"Master's Degree (MPT)": 5000,
+	"Clinical": 2500,
 };
 
 export default function InternshipManagement() {
@@ -152,7 +153,8 @@ export default function InternshipManagement() {
 				? Math.max(...interns.map(i => i.serialNumber)) + 1 
 				: 1;
 
-			await addDoc(collection(db, 'interns'), {
+			// Build document data, only including fields with values
+			const docData: Record<string, any> = {
 				serialNumber: nextSerialNumber,
 				name: formData.name.trim(),
 				college: formData.college.trim(),
@@ -161,12 +163,22 @@ export default function InternshipManagement() {
 				dateOfLeaving: formData.dateOfLeaving,
 				amount: Number(formData.amount),
 				isPaid: false,
-				receiptNumber: formData.receiptNumber.trim() || undefined,
 				paymentMode: formData.paymentMode,
-				utrNumber: formData.paymentMode === 'Card/UPI' ? formData.utrNumber.trim() || undefined : undefined,
 				createdAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
-			});
+			};
+
+			// Only include receiptNumber if it has a value
+			if (formData.receiptNumber.trim()) {
+				docData.receiptNumber = formData.receiptNumber.trim();
+			}
+
+			// Only include utrNumber if payment mode is Card/UPI and it has a value
+			if (formData.paymentMode === 'Card/UPI' && formData.utrNumber.trim()) {
+				docData.utrNumber = formData.utrNumber.trim();
+			}
+
+			await addDoc(collection(db, 'interns'), docData);
 
 			// Reset form
 			setFormData({
@@ -202,26 +214,32 @@ export default function InternshipManagement() {
 				const today = new Date().toISOString().split('T')[0];
 				
 				// Update intern record
-				await updateDoc(doc(db, 'interns', intern.id), {
+				const updateData: Record<string, any> = {
 					isPaid: true,
 					paymentDate: today,
-					receiptNumber: receiptNumber.trim() || undefined,
 					updatedAt: serverTimestamp(),
-				});
+				};
+				if (receiptNumber.trim()) {
+					updateData.receiptNumber = receiptNumber.trim();
+				}
+				await updateDoc(doc(db, 'interns', intern.id), updateData);
 
 				// Create expense transaction record
-				await addDoc(collection(db, 'expenses'), {
+				const expenseData: Record<string, any> = {
 					type: 'internship_payment',
 					description: `Internship payment for ${intern.name} (${intern.college})${receiptNumber.trim() ? ` - Receipt: ${receiptNumber.trim()}` : ''}`,
 					amount: intern.amount,
 					date: today,
 					internId: intern.id,
 					internName: intern.name,
-					receiptNumber: receiptNumber.trim() || undefined,
 					createdBy: user?.uid || null,
 					createdByName: user?.displayName || user?.email || null,
 					createdAt: serverTimestamp(),
-				});
+				};
+				if (receiptNumber.trim()) {
+					expenseData.receiptNumber = receiptNumber.trim();
+				}
+				await addDoc(collection(db, 'expenses'), expenseData);
 
 				alert('Payment recorded successfully!');
 			} catch (error) {
@@ -273,18 +291,29 @@ export default function InternshipManagement() {
 
 		setSubmitting(true);
 		try {
-			await updateDoc(doc(db, 'interns', editingIntern.id), {
+			// Build update data, only including fields with values
+			const updateData: Record<string, any> = {
 				name: formData.name.trim(),
 				college: formData.college.trim(),
 				degree: formData.degree,
 				dateOfJoining: formData.dateOfJoining,
 				dateOfLeaving: formData.dateOfLeaving,
 				amount: Number(formData.amount),
-				receiptNumber: formData.receiptNumber.trim() || undefined,
 				paymentMode: formData.paymentMode,
-				utrNumber: formData.paymentMode === 'Card/UPI' ? formData.utrNumber.trim() || undefined : undefined,
 				updatedAt: serverTimestamp(),
-			});
+			};
+
+			// Only include receiptNumber if it has a value
+			if (formData.receiptNumber.trim()) {
+				updateData.receiptNumber = formData.receiptNumber.trim();
+			}
+
+			// Only include utrNumber if payment mode is Card/UPI and it has a value
+			if (formData.paymentMode === 'Card/UPI' && formData.utrNumber.trim()) {
+				updateData.utrNumber = formData.utrNumber.trim();
+			}
+
+			await updateDoc(doc(db, 'interns', editingIntern.id), updateData);
 
 			// Reset form and close modal
 			setFormData({
@@ -340,6 +369,9 @@ export default function InternshipManagement() {
 		}
 		if (corrected.includes("Master") || corrected.includes("MPT")) {
 			return "Master's Degree (MPT)";
+		}
+		if (corrected.includes("Clinical") || corrected.toLowerCase().includes("clinical")) {
+			return "Clinical";
 		}
 		
 		return corrected;
@@ -545,6 +577,7 @@ export default function InternshipManagement() {
 								>
 									<option value="Bachelor's Degree (BPT)">Bachelor's Degree (BPT)</option>
 									<option value="Master's Degree (MPT)">Master's Degree (MPT)</option>
+									<option value="Clinical">Clinical</option>
 								</select>
 							</div>
 
@@ -710,6 +743,7 @@ export default function InternshipManagement() {
 								>
 									<option value="Bachelor's Degree (BPT)">Bachelor's Degree (BPT)</option>
 									<option value="Master's Degree (MPT)">Master's Degree (MPT)</option>
+									<option value="Clinical">Clinical</option>
 								</select>
 							</div>
 
