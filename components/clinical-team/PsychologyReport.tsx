@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { PatientRecordFull } from '@/lib/types';
 
 interface PsychologyReportData {
 	// Demographics
 	assessmentType?: 'pre' | 'post';
+	dateOfAssessment?: string;
 	name?: string;
 	age?: string;
 	gender?: string;
@@ -66,7 +67,7 @@ interface PsychologyReportData {
 	neurofeedbackHeadset?: {
 		neuralActivity?: number;
 		controls?: number;
-		oxygenation?: number;
+		"Oxygenation (%)"?: number;
 	};
 	brainSensing?: {
 		attention?: number;
@@ -101,6 +102,35 @@ interface PsychologyReportData {
 	
 	// Extra Assessments
 	extraAssessments?: string;
+	
+	// Follow-up Assessment Report
+	followUpAssessment?: {
+		neurofeedbackHeadset?: {
+			neuralActivity?: number;
+			controls?: number;
+			"Oxygenation (%)"?: number;
+		};
+		brainSensing?: {
+			attention?: number;
+			spatialAbility?: number;
+			decisionMaking?: number;
+			memory?: number;
+			cognitiveFlexibility?: number;
+		};
+		multipleObjectTracking?: {
+			trackingSpeed?: number;
+		};
+		reactionTimeHandEye?: {
+			reactionTime?: number;
+			handEyeCoordination?: number;
+		};
+		decisionMaking?: {
+			speed?: number; // ms
+			accuracy?: number; // %
+		};
+		vrMeditation?: string;
+		extraAssessment?: string;
+	};
 }
 
 interface PsychologyReportProps {
@@ -108,6 +138,8 @@ interface PsychologyReportProps {
 	formData: PsychologyReportData;
 	onChange: (data: PsychologyReportData) => void;
 	editable?: boolean;
+	sessionIndex?: number; // 0-based index (0 = first session)
+	totalSessions?: number; // Total number of sessions
 }
 
 // Helper functions for categorization
@@ -188,12 +220,48 @@ const getControlsCategory = (sec: number): string => {
 	]);
 };
 
-export default function PsychologyReport({ patientData, formData, onChange, editable = true }: PsychologyReportProps) {
+export default function PsychologyReport({ patientData, formData, onChange, editable = true, sessionIndex, totalSessions }: PsychologyReportProps) {
 	const [localData, setLocalData] = useState<PsychologyReportData>(formData);
+
+	// Determine if this is the first session
+	// Priority: 1) sessionIndex prop, 2) calculate from patient data, 3) default to first session
+	const isFirstSession = useMemo(() => {
+		if (sessionIndex !== undefined) {
+			return sessionIndex === 0;
+		}
+		if (totalSessions !== undefined) {
+			return totalSessions === 1;
+		}
+		// Calculate from patient data if available
+		if (patientData) {
+			const remaining = typeof patientData.remainingSessions === 'number' ? patientData.remainingSessions : null;
+			const total = typeof patientData.totalSessionsRequired === 'number' ? patientData.totalSessionsRequired : null;
+			if (remaining !== null && total !== null) {
+				// If remaining is equal to or very close to total, it's likely the first session
+				return remaining >= total - 1;
+			}
+			// If only total is available and it's 1, it's the first session
+			if (total === 1) {
+				return true;
+			}
+		}
+		// Default: assume first session if we can't determine
+		return true;
+	}, [sessionIndex, totalSessions, patientData]);
 
 	useEffect(() => {
 		setLocalData(formData);
 	}, [formData]);
+
+	// Auto-populate date of assessment with current date if not set (only on initial load)
+	useEffect(() => {
+		if (!formData.dateOfAssessment) {
+			const today = new Date();
+			const formattedDate = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+			updateField('dateOfAssessment', formattedDate);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []); // Only run once on mount
 
 	const updateField = (field: keyof PsychologyReportData, value: any) => {
 		const updated = { ...localData, [field]: value };
@@ -204,6 +272,13 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 	const updateNestedField = (parentField: keyof PsychologyReportData, field: string, value: any) => {
 		const parent = localData[parentField] as any || {};
 		const updated = { ...localData, [parentField]: { ...parent, [field]: value } };
+		setLocalData(updated);
+		onChange(updated);
+	};
+
+	const updateFollowUpNestedField = (subField: string, value: any) => {
+		const followUp = localData.followUpAssessment || {};
+		const updated = { ...localData, followUpAssessment: { ...followUp, [subField]: value } };
 		setLocalData(updated);
 		onChange(updated);
 	};
@@ -241,6 +316,28 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 						/>
 						<span className="text-sm font-medium text-slate-700">Post-Assessment</span>
 					</label>
+				</div>
+
+				<div className="mb-4">
+					<label className="block text-sm font-medium text-slate-700 mb-1">Date of Assessment</label>
+					{editable ? (
+						<input
+							type="date"
+							value={localData.dateOfAssessment || ''}
+							onChange={(e) => updateField('dateOfAssessment', e.target.value)}
+							className="w-full sm:w-auto rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+						/>
+					) : (
+						<p className="text-sm text-slate-900">
+							{localData.dateOfAssessment 
+								? new Date(localData.dateOfAssessment).toLocaleDateString('en-US', { 
+									year: 'numeric', 
+									month: 'long', 
+									day: 'numeric' 
+								})
+								: '—'}
+						</p>
+					)}
 				</div>
 
 				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -376,8 +473,11 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 				</div>
 			</div>
 
-			{/* Player's History */}
-			<div className="border-b border-slate-200 pb-6">
+			{/* Initial Assessment Sections - Only show on first session */}
+			{isFirstSession && (
+				<>
+					{/* Player's History */}
+					<div className="border-b border-slate-200 pb-6">
 				<h2 className="mb-4 text-lg font-semibold text-slate-900">Player's History</h2>
 				<div className="grid gap-4 sm:grid-cols-2">
 					<div>
@@ -699,18 +799,18 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							</div>
 						</div>
 						<div className="flex items-center justify-between">
-							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation</label>
+							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (%)</label>
 							{editable ? (
 								<input
 									type="number"
-									value={localData.neurofeedbackHeadset?.oxygenation || ''}
-									onChange={(e) => updateNestedField('neurofeedbackHeadset', 'oxygenation', e.target.value ? parseFloat(e.target.value) : undefined)}
+									value={localData.neurofeedbackHeadset?.["Oxygenation (%)"] || ''}
+									onChange={(e) => updateNestedField('neurofeedbackHeadset', 'Oxygenation (%)', e.target.value ? parseFloat(e.target.value) : undefined)}
 									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
 									placeholder="Value"
 								/>
 							) : (
 								<span className="text-sm text-slate-900 w-20 text-right">
-									{localData.neurofeedbackHeadset?.oxygenation || '—'}
+									{localData.neurofeedbackHeadset?.["Oxygenation (%)"] || '—'}
 								</span>
 							)}
 						</div>
@@ -983,6 +1083,351 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					<p className="text-sm text-slate-900 whitespace-pre-wrap">{localData.extraAssessments || '—'}</p>
 				)}
 			</div>
+				</>
+			)}
+
+			{/* Follow-up Assessment Report - Only show on subsequent sessions */}
+			{!isFirstSession && (
+			<div className="pb-6">
+				<h2 className="mb-4 text-lg font-semibold text-slate-900">Follow-up Assessment Report</h2>
+				
+				{/* Neurofeedback Headset Assessment */}
+				<div className="mb-6">
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">1. Neurofeedback Headset Assessment</h3>
+					<div className="space-y-3">
+						<div className="flex items-center justify-between">
+							<label className="text-sm font-medium text-slate-700 flex-1">a) Neural activity (%)</label>
+							<div className="flex items-center gap-3">
+								{editable ? (
+									<input
+										type="number"
+										min="1"
+										max="100"
+										value={localData.followUpAssessment?.neurofeedbackHeadset?.neuralActivity || ''}
+									onChange={(e) => {
+										const parent = localData.followUpAssessment?.neurofeedbackHeadset || {};
+										updateFollowUpNestedField('neurofeedbackHeadset', {
+											...parent,
+											neuralActivity: e.target.value ? parseInt(e.target.value) : undefined
+										});
+									}}
+										className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+										placeholder="Score"
+									/>
+								) : (
+									<span className="text-sm text-slate-900 w-20 text-right">
+										{localData.followUpAssessment?.neurofeedbackHeadset?.neuralActivity || '—'}
+									</span>
+								)}
+								{localData.followUpAssessment?.neurofeedbackHeadset?.neuralActivity && (
+									<span className="text-sm font-medium text-indigo-600 w-32">
+										({getSensoryCategory(localData.followUpAssessment.neurofeedbackHeadset.neuralActivity)})
+									</span>
+								)}
+							</div>
+						</div>
+						<div className="flex items-center justify-between">
+							<label className="text-sm font-medium text-slate-700 flex-1">b) Controls (sec)</label>
+							<div className="flex items-center gap-3">
+								{editable ? (
+									<input
+										type="number"
+										min="1"
+										max="50"
+										value={localData.followUpAssessment?.neurofeedbackHeadset?.controls || ''}
+									onChange={(e) => {
+										const parent = localData.followUpAssessment?.neurofeedbackHeadset || {};
+										updateFollowUpNestedField('neurofeedbackHeadset', {
+											...parent,
+											controls: e.target.value ? parseInt(e.target.value) : undefined
+										});
+									}}
+										className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+										placeholder="Seconds"
+									/>
+								) : (
+									<span className="text-sm text-slate-900 w-20 text-right">
+										{localData.followUpAssessment?.neurofeedbackHeadset?.controls || '—'}
+									</span>
+								)}
+								{localData.followUpAssessment?.neurofeedbackHeadset?.controls && (
+									<span className="text-sm font-medium text-indigo-600 w-32">
+										({getControlsCategory(localData.followUpAssessment.neurofeedbackHeadset.controls)})
+									</span>
+								)}
+							</div>
+						</div>
+						<div className="flex items-center justify-between">
+							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (%)</label>
+							{editable ? (
+								<input
+									type="number"
+									value={localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (%)"] || ''}
+									onChange={(e) => {
+										const parent = localData.followUpAssessment?.neurofeedbackHeadset || {};
+										updateFollowUpNestedField('neurofeedbackHeadset', {
+											...parent,
+											"Oxygenation (%)": e.target.value ? parseFloat(e.target.value) : undefined
+										});
+									}}
+									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+									placeholder="Value"
+								/>
+							) : (
+								<span className="text-sm text-slate-900 w-20 text-right">
+									{localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (%)"] || '—'}
+								</span>
+							)}
+						</div>
+					</div>
+				</div>
+
+				{/* Brain Sensing Cognitive Trainer Assessment */}
+				<div className="mb-6">
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Brain Sensing Cognitive Trainer Assessment</h3>
+					<div className="space-y-3">
+						{[
+							{ key: 'attention', label: 'Attention' },
+							{ key: 'spatialAbility', label: 'Spatial ability' },
+							{ key: 'decisionMaking', label: 'Decision making' },
+							{ key: 'memory', label: 'Memory' },
+							{ key: 'cognitiveFlexibility', label: 'Cognitive flexibility' },
+						].map(({ key, label }) => {
+							const score = localData.followUpAssessment?.brainSensing?.[key as keyof typeof localData.followUpAssessment.brainSensing] as number | undefined;
+							return (
+								<div key={key} className="flex items-center justify-between">
+									<label className="text-sm font-medium text-slate-700 flex-1">Parameters: {label}</label>
+									<div className="flex items-center gap-3">
+										{editable ? (
+											<input
+												type="number"
+												min="1"
+												max="100"
+												value={score || ''}
+												onChange={(e) => {
+													const parent = localData.followUpAssessment?.brainSensing || {};
+													updateFollowUpNestedField('brainSensing', {
+														...parent,
+														[key]: e.target.value ? parseInt(e.target.value) : undefined
+													});
+												}}
+												className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+												placeholder="Score"
+											/>
+										) : (
+											<span className="text-sm text-slate-900 w-20 text-right">{score || '—'}</span>
+										)}
+										{score && (
+											<span className="text-sm font-medium text-indigo-600 w-32">
+												({getSensoryCategory(score)})
+											</span>
+										)}
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+
+				{/* 3D - Multiple Object Tracking Assessment */}
+				<div className="mb-6">
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. 3D - Multiple Object Tracking Assessment</h3>
+					<div className="flex items-center justify-between">
+						<label className="text-sm font-medium text-slate-700 flex-1">Tracking Speed</label>
+						<div className="flex items-center gap-3">
+							{editable ? (
+								<input
+									type="number"
+									step="0.01"
+									min="0"
+									value={localData.followUpAssessment?.multipleObjectTracking?.trackingSpeed || ''}
+									onChange={(e) => {
+										const parent = localData.followUpAssessment?.multipleObjectTracking || {};
+										updateFollowUpNestedField('multipleObjectTracking', {
+											...parent,
+											trackingSpeed: e.target.value ? parseFloat(e.target.value) : undefined
+										});
+									}}
+									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+									placeholder="Value"
+								/>
+							) : (
+								<span className="text-sm text-slate-900 w-20 text-right">
+									{localData.followUpAssessment?.multipleObjectTracking?.trackingSpeed || '—'}
+								</span>
+							)}
+							{localData.followUpAssessment?.multipleObjectTracking?.trackingSpeed !== undefined && (
+								<span className="text-sm font-medium text-indigo-600 w-40">
+									({getTrackingSpeedCategory(localData.followUpAssessment.multipleObjectTracking.trackingSpeed)})
+								</span>
+							)}
+						</div>
+					</div>
+				</div>
+
+				{/* Reaction Time & Hand-Eye Coordination */}
+				<div className="mb-6">
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. Reaction Time & Hand-Eye Coordination</h3>
+					<div className="space-y-3">
+						<div className="flex items-center justify-between">
+							<label className="text-sm font-medium text-slate-700 flex-1">Reaction Time (ms)</label>
+							<div className="flex items-center gap-3">
+								{editable ? (
+									<input
+										type="number"
+										min="0"
+										value={localData.followUpAssessment?.reactionTimeHandEye?.reactionTime || ''}
+										onChange={(e) => {
+											const parent = localData.followUpAssessment?.reactionTimeHandEye || {};
+											updateFollowUpNestedField('reactionTimeHandEye', {
+												...parent,
+												reactionTime: e.target.value ? parseInt(e.target.value) : undefined
+											});
+										}}
+										className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+										placeholder="ms"
+									/>
+								) : (
+									<span className="text-sm text-slate-900 w-20 text-right">
+										{localData.followUpAssessment?.reactionTimeHandEye?.reactionTime || '—'}
+									</span>
+								)}
+								{localData.followUpAssessment?.reactionTimeHandEye?.reactionTime !== undefined && (
+									<span className="text-sm font-medium text-indigo-600 w-40">
+										({getReactionTimeCategory(localData.followUpAssessment.reactionTimeHandEye.reactionTime)})
+									</span>
+								)}
+							</div>
+						</div>
+						<div className="flex items-center justify-between">
+							<label className="text-sm font-medium text-slate-700 flex-1">Hand-Eye Coordination (cm)</label>
+							<div className="flex items-center gap-3">
+								{editable ? (
+									<input
+										type="number"
+										step="0.1"
+										min="0"
+										value={localData.followUpAssessment?.reactionTimeHandEye?.handEyeCoordination || ''}
+										onChange={(e) => {
+											const parent = localData.followUpAssessment?.reactionTimeHandEye || {};
+											updateFollowUpNestedField('reactionTimeHandEye', {
+												...parent,
+												handEyeCoordination: e.target.value ? parseFloat(e.target.value) : undefined
+											});
+										}}
+										className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+										placeholder="cm"
+									/>
+								) : (
+									<span className="text-sm text-slate-900 w-20 text-right">
+										{localData.followUpAssessment?.reactionTimeHandEye?.handEyeCoordination || '—'}
+									</span>
+								)}
+								{localData.followUpAssessment?.reactionTimeHandEye?.handEyeCoordination !== undefined && (
+									<span className="text-sm font-medium text-indigo-600 w-40">
+										({getHandEyeCoordinationCategory(localData.followUpAssessment.reactionTimeHandEye.handEyeCoordination)})
+									</span>
+								)}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				{/* Decision making speed (ms) & Accuracy (%) */}
+				<div className="mb-6">
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">5. Decision making speed (ms) & Accuracy (%)</h3>
+					<div className="space-y-3">
+						<div className="flex items-center justify-between">
+							<label className="text-sm font-medium text-slate-700 flex-1">Decision making speed (ms)</label>
+							{editable ? (
+								<input
+									type="number"
+									min="0"
+									value={localData.followUpAssessment?.decisionMaking?.speed || ''}
+									onChange={(e) => {
+										const parent = localData.followUpAssessment?.decisionMaking || {};
+										updateFollowUpNestedField('decisionMaking', {
+											...parent,
+											speed: e.target.value ? parseInt(e.target.value) : undefined
+										});
+									}}
+									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+									placeholder="ms"
+								/>
+							) : (
+								<span className="text-sm text-slate-900 w-20 text-right">
+									{localData.followUpAssessment?.decisionMaking?.speed || '—'}
+								</span>
+							)}
+						</div>
+						<div className="flex items-center justify-between">
+							<label className="text-sm font-medium text-slate-700 flex-1">Accuracy (%)</label>
+							{editable ? (
+								<input
+									type="number"
+									min="0"
+									max="100"
+									value={localData.followUpAssessment?.decisionMaking?.accuracy || ''}
+									onChange={(e) => {
+										const parent = localData.followUpAssessment?.decisionMaking || {};
+										updateFollowUpNestedField('decisionMaking', {
+											...parent,
+											accuracy: e.target.value ? parseInt(e.target.value) : undefined
+										});
+									}}
+									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
+									placeholder="%"
+								/>
+							) : (
+								<span className="text-sm text-slate-900 w-20 text-right">
+									{localData.followUpAssessment?.decisionMaking?.accuracy || '—'}
+								</span>
+							)}
+						</div>
+					</div>
+				</div>
+
+				{/* VR Meditation */}
+				<div className="mb-6">
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">6. VR Meditation</h3>
+					{editable ? (
+						<textarea
+							value={localData.followUpAssessment?.vrMeditation || ''}
+							onChange={(e) => {
+								updateFollowUpNestedField('vrMeditation', e.target.value);
+							}}
+							rows={4}
+							className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+							placeholder="Enter VR Meditation assessment details..."
+						/>
+					) : (
+						<p className="text-sm text-slate-900 whitespace-pre-wrap">
+							{localData.followUpAssessment?.vrMeditation || '—'}
+						</p>
+					)}
+				</div>
+
+				{/* Extra Assessment */}
+				<div>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">7. Extra Assessment</h3>
+					{editable ? (
+						<textarea
+							value={localData.followUpAssessment?.extraAssessment || ''}
+							onChange={(e) => {
+								updateFollowUpNestedField('extraAssessment', e.target.value);
+							}}
+							rows={4}
+							className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+							placeholder="Enter extra assessment details..."
+						/>
+					) : (
+						<p className="text-sm text-slate-900 whitespace-pre-wrap">
+							{localData.followUpAssessment?.extraAssessment || '—'}
+						</p>
+					)}
+				</div>
+			</div>
+			)}
 		</div>
 	);
 }

@@ -3097,6 +3097,28 @@ export default function EditReport() {
 																<span className="text-xs font-semibold text-slate-700">
 																	{(() => {
 																		const total = patient.totalSessionsRequired;
+																		// Count completed package sessions from appointments
+																		// patientAppointments is keyed by patient document ID (patient.id), not patientId
+																		const patientApts = patientAppointments[patient.id];
+																		
+																		// If appointments are loaded, count from them
+																		if (patientApts && patientApts.length > 0) {
+																			// Filter for completed appointments that are part of the package
+																			// If patient has a package, count completed non-consultation appointments as package sessions
+																			// Exclude consultations
+																			const completedPackageSessions = patientApts.filter(apt => {
+																				if (apt.status !== 'completed') return false;
+																				if (apt.isConsultation) return false;
+																				// If appointment has sessionNumber or packageBillingId, it's definitely a package session
+																				if (apt.sessionNumber !== undefined || apt.packageBillingId) return true;
+																				// If patient has a package and appointment is not a consultation, count it as package session
+																				// (this handles legacy appointments that might not have sessionNumber set)
+																				return true;
+																			}).length;
+																			return `${completedPackageSessions} / ${total}`;
+																		}
+																		
+																		// Fallback: calculate from remainingSessions if appointments not loaded yet
 																		const remaining = typeof patient.remainingSessions === 'number' ? patient.remainingSessions : total;
 																		const completed = total - remaining;
 																		return `${completed} / ${total}`;
@@ -3109,6 +3131,24 @@ export default function EditReport() {
 																	style={{
 																		width: `${(() => {
 																			const total = patient.totalSessionsRequired;
+																			// Count completed package sessions from appointments
+																			// patientAppointments is keyed by patient document ID (patient.id), not patientId
+																			const patientApts = patientAppointments[patient.id];
+																			
+																			// If appointments are loaded, count from them
+																			if (patientApts && patientApts.length > 0) {
+																				const completedPackageSessions = patientApts.filter(apt => {
+																					if (apt.status !== 'completed') return false;
+																					if (apt.isConsultation) return false;
+																					// If appointment has sessionNumber or packageBillingId, it's definitely a package session
+																					if (apt.sessionNumber !== undefined || apt.packageBillingId) return true;
+																					// If patient has a package and appointment is not a consultation, count it as package session
+																					return true;
+																				}).length;
+																				return total > 0 ? Math.min((completedPackageSessions / total) * 100, 100) : 0;
+																			}
+																			
+																			// Fallback: calculate from remainingSessions if appointments not loaded yet
 																			const remaining = typeof patient.remainingSessions === 'number' ? patient.remainingSessions : total;
 																			const completed = total - remaining;
 																			return total > 0 ? Math.min((completed / total) * 100, 100) : 0;

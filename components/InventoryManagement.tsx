@@ -1099,6 +1099,7 @@ export default function InventoryManagement() {
 							<table className="min-w-full divide-y divide-slate-200">
 								<thead className="bg-slate-50 sticky top-0 z-10">
 									<tr>
+										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Serial No</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Item Name</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Category</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Type</th>
@@ -1112,8 +1113,9 @@ export default function InventoryManagement() {
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-slate-100 bg-white">
-									{filteredItems.map(item => (
+									{filteredItems.map((item, index) => (
 										<tr key={item.id} className="hover:bg-slate-50">
+											<td className="px-4 py-3 text-sm text-slate-600">{index + 1}</td>
 											<td className="px-4 py-3 text-sm font-medium text-slate-900">{item.name}</td>
 											<td className="px-4 py-3 text-sm">
 												<span
@@ -1192,10 +1194,11 @@ export default function InventoryManagement() {
 					{issueRecords.length === 0 ? (
 						<div className="text-center py-8 text-slate-500">No issue records found</div>
 					) : (
-						<div className="overflow-x-auto">
+						<div className="overflow-x-auto max-h-[600px] overflow-y-auto border border-slate-200 rounded-lg">
 							<table className="min-w-full divide-y divide-slate-200">
-								<thead className="bg-slate-50">
+								<thead className="bg-slate-50 sticky top-0 z-10">
 									<tr>
+										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Serial No</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Item</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Type</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Quantity</th>
@@ -1209,13 +1212,14 @@ export default function InventoryManagement() {
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-slate-100 bg-white">
-									{issueRecords.map(record => {
+									{issueRecords.map((record, index) => {
 										const remainingToReturn = record.quantity - (record.returnedQuantity || 0);
 										const isConsumable = record.itemCategory === 'consumable';
 										const canReturn = isAdminOrSuperAdmin && remainingToReturn > 0 && !isConsumable;
 										
 										return (
 											<tr key={record.id} className="hover:bg-slate-50">
+												<td className="px-4 py-3 text-sm text-slate-600">{index + 1}</td>
 												<td className="px-4 py-3 text-sm font-medium text-slate-900">{record.itemName}</td>
 												<td className="px-4 py-3 text-sm text-slate-600">{record.itemType}</td>
 												<td className="px-4 py-3 text-sm text-slate-600">{record.quantity}</td>
