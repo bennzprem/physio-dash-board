@@ -61,7 +61,7 @@ export default function InternshipManagement() {
 	// Load interns from Firestore
 	useEffect(() => {
 		const unsubscribe = onSnapshot(
-			query(collection(db, 'interns'), orderBy('serialNumber', 'asc')),
+			query(collection(db, 'interns'), orderBy('createdAt', 'asc')),
 			(snapshot: QuerySnapshot) => {
 				const loadedInterns = snapshot.docs.map(docSnap => {
 					const data = docSnap.data();
