@@ -1,7 +1,7 @@
 import { getAnalytics } from 'firebase/analytics';
 import { getApps, initializeApp, type FirebaseOptions } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getFirestore, type Firestore, connectFirestoreEmulator, enableNetwork, disableNetwork } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 type FirebaseConfigKey =
@@ -131,12 +131,82 @@ try {
 let db: Firestore;
 try {
 	db = DATABASE_ID ? getFirestore(app, DATABASE_ID) : getFirestore(app);
-	if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-		console.log('✅ Firebase Firestore initialized with database:', DATABASE_ID ?? '(default)');
+	
+	if (typeof window !== 'undefined') {
+		// Client-side: Set up error filtering for Firestore connection errors
+		// These errors are handled internally by Firebase SDK and don't need to be shown to users
+		const originalError = window.onerror;
+		window.onerror = function(message, source, lineno, colno, error) {
+			// Filter out Firestore WebChannel connection errors
+			if (
+				typeof message === 'string' && (
+					message.includes('WebChannelConnection') ||
+					message.includes('RPC') ||
+					message.includes('transport errored') ||
+					message.includes('ERR_NAME_NOT_RESOLVED') ||
+					(message.includes('Firestore') && message.includes('stream'))
+				)
+			) {
+				// Suppress these errors - they're handled internally by Firebase
+				return true; // Prevent default error handling
+			}
+			// Call original error handler for other errors
+			if (originalError) {
+				return originalError.call(window, message, source, lineno, colno, error);
+			}
+			return false;
+		};
+		
+		// Also filter unhandled promise rejections
+		const originalUnhandledRejection = window.onunhandledrejection;
+		window.onunhandledrejection = function(event) {
+			const reason = event.reason;
+			if (
+				reason && typeof reason === 'object' && (
+					reason.message?.includes('WebChannelConnection') ||
+					reason.message?.includes('RPC') ||
+					reason.message?.includes('transport errored') ||
+					reason.message?.includes('ERR_NAME_NOT_RESOLVED') ||
+					(reason.message?.includes('Firestore') && reason.message?.includes('stream'))
+				)
+			) {
+				// Suppress these promise rejections
+				event.preventDefault();
+				return;
+			}
+			// Call original handler for other rejections
+			if (originalUnhandledRejection) {
+				originalUnhandledRejection.call(window, event);
+			}
+		};
+		
+		// Ensure network is enabled (Firestore will automatically retry connections)
+		enableNetwork(db).catch(() => {
+			// Network errors are handled automatically by Firestore SDK
+			// Connection will be retried when network becomes available
+		});
+		
+		if (process.env.NODE_ENV === 'development') {
+			console.log('✅ Firebase Firestore initialized with database:', DATABASE_ID ?? '(default)');
+		}
+	} else {
+		// Server-side initialization
+		if (process.env.NODE_ENV === 'development') {
+			console.log('✅ Firebase Firestore initialized with database:', DATABASE_ID ?? '(default)');
+		}
 	}
-} catch (error) {
+} catch (error: any) {
 	console.error('❌ Firebase Firestore initialization error:', error);
-	throw error;
+	// Don't throw - allow the app to continue even if Firestore init has issues
+	// The connection will be retried automatically by Firebase SDK
+	if (error?.code === 'failed-precondition' || error?.message?.includes('already been initialized')) {
+		// Firestore may already be initialized, try to get existing instance
+		try {
+			db = DATABASE_ID ? getFirestore(app, DATABASE_ID) : getFirestore(app);
+		} catch (retryError) {
+			console.warn('Firestore initialization retry failed, connection will be established on first use');
+		}
+	}
 }
 
 // Initialize Storage

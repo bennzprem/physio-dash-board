@@ -1463,27 +1463,71 @@ export default function EditReport() {
 
 			// Create report snapshot if there's existing report data
 			if (hasReportData) {
-				// Get the latest report number for this patient
-				const versionsQuery = query(
-					collection(db, 'reportVersions'),
-					where('patientId', '==', selectedPatient.patientId),
-					orderBy('version', 'desc')
-				);
-				const versionsSnapshot = await getDocs(versionsQuery);
-				const nextVersion = versionsSnapshot.docs.length > 0 
-					? (versionsSnapshot.docs[0].data().version as number) + 1 
-					: 1;
+				try {
+					// Get the latest report number for this patient
+					const versionsQuery = query(
+						collection(db, 'reportVersions'),
+						where('patientId', '==', selectedPatient.patientId),
+						orderBy('version', 'desc')
+					);
+					const versionsSnapshot = await getDocs(versionsQuery);
+					const nextVersion = versionsSnapshot.docs.length > 0 
+						? (versionsSnapshot.docs[0].data().version as number) + 1 
+						: 1;
 
-				// Save report snapshot (remove undefined values for Firestore)
-				await addDoc(collection(db, 'reportVersions'), {
-					patientId: selectedPatient.patientId,
-					patientName: selectedPatient.name,
-					version: nextVersion,
-					reportData: removeUndefined(currentReportData),
-					createdBy: user?.displayName || user?.email || 'Unknown',
-					createdById: user?.uid || '',
-					createdAt: serverTimestamp(),
-				});
+					// Save report snapshot (remove undefined values for Firestore)
+					await addDoc(collection(db, 'reportVersions'), {
+						patientId: selectedPatient.patientId,
+						patientName: selectedPatient.name,
+						version: nextVersion,
+						reportData: removeUndefined(currentReportData),
+						createdBy: user?.displayName || user?.email || 'Unknown',
+						createdById: user?.uid || '',
+						createdAt: serverTimestamp(),
+					});
+				} catch (versionError: any) {
+					// If orderBy fails (missing index), try without it
+					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
+						console.warn('Report version index not found, retrying without orderBy', versionError);
+						try {
+							// Retry query without orderBy
+							const versionsQueryWithoutOrder = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', selectedPatient.patientId)
+							);
+							const versionsSnapshot = await getDocs(versionsQueryWithoutOrder);
+							
+							// Manually sort by version number
+							const versions = versionsSnapshot.docs.map(doc => ({
+								id: doc.id,
+								version: (doc.data().version as number) || 0,
+								data: doc.data(),
+							}));
+							versions.sort((a, b) => b.version - a.version);
+							
+							const nextVersion = versions.length > 0 
+								? versions[0].version + 1 
+								: 1;
+
+							// Save report snapshot
+							await addDoc(collection(db, 'reportVersions'), {
+								patientId: selectedPatient.patientId,
+								patientName: selectedPatient.name,
+								version: nextVersion,
+								reportData: removeUndefined(currentReportData),
+								createdBy: user?.displayName || user?.email || 'Unknown',
+								createdById: user?.uid || '',
+								createdAt: serverTimestamp(),
+							});
+						} catch (retryError: any) {
+							console.error('Failed to save report version even with fallback:', retryError);
+							// Still continue - don't block the main save operation
+						}
+					} else {
+						console.error('Failed to save report version:', versionError);
+						// Still continue - don't block the main save operation
+					}
+				}
 			}
 
 			// Update the patient document with new report data

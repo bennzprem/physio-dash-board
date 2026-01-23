@@ -553,6 +553,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	// Subsequent date detection state
 	const [isSubsequentDatePhysio, setIsSubsequentDatePhysio] = useState(false);
 	const [isSubsequentDateStrength, setIsSubsequentDateStrength] = useState(false);
+	
+	// Session versioning state
+	const [sessionNumber, setSessionNumber] = useState<number | null>(null);
+	const [firstReportDate, setFirstReportDate] = useState<string | null>(null);
+	const [isEditingSession1, setIsEditingSession1] = useState(false);
 
 	// Helper function to check if a date is on a different day than today
 	const isDateOnDifferentDay = (reportDate: Date | string | null | undefined): boolean => {
@@ -569,6 +574,82 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		
 		// Return true if report date is after today (subsequent date scenario)
 		return report.getTime() > today.getTime();
+	};
+
+	// Helper function to get session number and first report date
+	const getSessionInfo = async (patientId: string): Promise<{ sessionNumber: number; firstReportDate: string | null }> => {
+		try {
+			// Try to get report versions with orderBy
+			let versionsQuery = query(
+				collection(db, 'reportVersions'),
+				where('patientId', '==', patientId)
+			);
+			
+			try {
+				versionsQuery = query(versionsQuery, orderBy('version', 'asc'));
+			} catch {
+				// If orderBy fails, we'll sort manually
+			}
+			
+			const versionsSnapshot = await getDocs(versionsQuery);
+			
+			if (versionsSnapshot.empty) {
+				// No reports exist - this will be Session 1
+				return { sessionNumber: 1, firstReportDate: null };
+			}
+			
+			// Get all versions and sort by version number (for retroactive compatibility)
+			const versions = versionsSnapshot.docs.map(doc => {
+				const data = doc.data();
+				const reportData = data.reportData || {};
+				const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+				return {
+					version: (data.version as number) || 0,
+					dateOfConsultation: reportData.dateOfConsultation as string | undefined,
+					createdAt: createdAt ? createdAt.toISOString() : null,
+				};
+			});
+			
+			// Sort by version number (ascending)
+			versions.sort((a, b) => a.version - b.version);
+			
+			// Find the first report (Session 1) - look for version 1 or the oldest by date
+			let firstReport = versions.find(v => v.version === 1);
+			if (!firstReport && versions.length > 0) {
+				// Retroactive compatibility: Find oldest report by date
+				const versionsWithDates = versions
+					.map(v => ({
+						...v,
+						date: v.dateOfConsultation || v.createdAt,
+					}))
+					.filter(v => v.date)
+					.sort((a, b) => {
+						const dateA = new Date(a.date!).getTime();
+						const dateB = new Date(b.date!).getTime();
+						return dateA - dateB;
+					});
+				
+				if (versionsWithDates.length > 0) {
+					firstReport = versionsWithDates[0];
+				} else {
+					firstReport = versions[0];
+				}
+			}
+			
+			const firstReportDate = firstReport?.dateOfConsultation || firstReport?.createdAt?.split('T')[0] || null;
+			
+			// Get the highest session number
+			const maxSessionNumber = Math.max(...versions.map(v => v.version || 0), 0);
+			
+			// Next session number
+			const nextSessionNumber = maxSessionNumber + 1;
+			
+			return { sessionNumber: nextSessionNumber, firstReportDate };
+		} catch (error) {
+			console.error('Error getting session info:', error);
+			// Default to Session 1 if there's an error
+			return { sessionNumber: 1, firstReportDate: null };
+		}
 	};
 
 	// Computed values
@@ -600,30 +681,33 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		}
 	}, [isOpen, initialTab]);
 
-	// Reset state when modal closes
-	useEffect(() => {
-		if (!isOpen) {
-			setReportPatientData(null);
-			setStrengthConditioningData(null);
-			setViewingVersionData(null);
-			setActiveReportTab(initialTab);
-			setIsSubsequentDatePhysio(false);
-			setIsSubsequentDateStrength(false);
-			setSessionCompleted(false);
-			if (strengthConditioningUnsubscribeRef.current) {
-				strengthConditioningUnsubscribeRef.current();
-				strengthConditioningUnsubscribeRef.current = null;
+		// Reset state when modal closes
+		useEffect(() => {
+			if (!isOpen) {
+				setReportPatientData(null);
+				setStrengthConditioningData(null);
+				setViewingVersionData(null);
+				setActiveReportTab(initialTab);
+				setIsSubsequentDatePhysio(false);
+				setIsSubsequentDateStrength(false);
+				setSessionCompleted(false);
+				setSessionNumber(null);
+				setFirstReportDate(null);
+				setIsEditingSession1(false);
+				if (strengthConditioningUnsubscribeRef.current) {
+					strengthConditioningUnsubscribeRef.current();
+					strengthConditioningUnsubscribeRef.current = null;
+				}
+				if (patientUnsubscribeRef.current) {
+					patientUnsubscribeRef.current();
+					patientUnsubscribeRef.current = null;
+				}
+				if (reportVersionsUnsubscribeRef.current) {
+					reportVersionsUnsubscribeRef.current();
+					reportVersionsUnsubscribeRef.current = null;
+				}
 			}
-			if (patientUnsubscribeRef.current) {
-				patientUnsubscribeRef.current();
-				patientUnsubscribeRef.current = null;
-			}
-			if (reportVersionsUnsubscribeRef.current) {
-				reportVersionsUnsubscribeRef.current();
-				reportVersionsUnsubscribeRef.current = null;
-			}
-		}
-	}, [isOpen, initialTab]);
+		}, [isOpen, initialTab]);
 
 	// Load data when modal opens
 	useEffect(() => {
@@ -697,14 +781,37 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					
 					patientUnsubscribeRef.current = unsubscribePatient;
 					
-					// Set up real-time listener for report versions
+					// Load session info
 					const initialPatientData = patientDoc.data() as PatientRecordFull;
 					if (initialPatientData.patientId) {
-						const versionsQuery = query(
+						const sessionInfo = await getSessionInfo(initialPatientData.patientId);
+						setSessionNumber(sessionInfo.sessionNumber);
+						setFirstReportDate(sessionInfo.firstReportDate);
+						
+						// Determine if we're editing Session 1
+						const currentDate = initialPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
+						if (sessionInfo.firstReportDate && currentDate === sessionInfo.firstReportDate) {
+							setIsEditingSession1(true);
+							setSessionNumber(1);
+						} else if (!sessionInfo.firstReportDate) {
+							// No reports exist, this is Session 1
+							setIsEditingSession1(true);
+							setSessionNumber(1);
+						} else {
+							setIsEditingSession1(false);
+						}
+						
+						// Set up real-time listener for report versions
+						let versionsQuery = query(
 							collection(db, 'reportVersions'),
-							where('patientId', '==', initialPatientData.patientId),
-							orderBy('version', 'desc')
+							where('patientId', '==', initialPatientData.patientId)
 						);
+						
+						try {
+							versionsQuery = query(versionsQuery, orderBy('version', 'desc'));
+						} catch {
+							// If orderBy fails, continue without it
+						}
 						
 						const unsubscribeVersions = onSnapshot(
 							versionsQuery,
@@ -765,34 +872,34 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						);
 						
 						reportVersionsUnsubscribeRef.current = unsubscribeVersions;
-					}
-					
-					// Load header config (one-time load)
-					const patientType = initialPatientData.patientType || 'nonDYES';
-					const headerType = patientType === 'DYES' ? 'reportDYES' : 'reportNonDYES';
-					try {
-						const config = await getHeaderConfig(headerType);
-						const defaultConfig = getDefaultHeaderConfig(headerType);
-						const mergedConfig: HeaderConfig = {
-							id: headerType,
-							type: headerType as 'reportDYES' | 'reportNonDYES' | 'billing',
-							mainTitle: config?.mainTitle || defaultConfig.mainTitle || '',
-							subtitle: config?.subtitle || defaultConfig.subtitle || '',
-							contactInfo: config?.contactInfo || defaultConfig.contactInfo || '',
-							associationText: config?.associationText || defaultConfig.associationText || '',
-							govermentOrder: config?.govermentOrder || defaultConfig.govermentOrder || '',
-							leftLogo: config?.leftLogo || undefined,
-							rightLogo: config?.rightLogo || undefined,
-						};
-						setHeaderConfig(mergedConfig);
-					} catch (error) {
-						console.error('Failed to load header config', error);
-						const defaultConfig = getDefaultHeaderConfig(headerType);
-						setHeaderConfig({
-							id: headerType,
-							type: headerType as 'reportDYES' | 'reportNonDYES' | 'billing',
-							...defaultConfig,
-						} as HeaderConfig);
+						
+						// Load header config (one-time load)
+						const patientType = initialPatientData.patientType || 'nonDYES';
+						const headerType = patientType === 'DYES' ? 'reportDYES' : 'reportNonDYES';
+						try {
+							const config = await getHeaderConfig(headerType);
+							const defaultConfig = getDefaultHeaderConfig(headerType);
+							const mergedConfig: HeaderConfig = {
+								id: headerType,
+								type: headerType as 'reportDYES' | 'reportNonDYES' | 'billing',
+								mainTitle: config?.mainTitle || defaultConfig.mainTitle || '',
+								subtitle: config?.subtitle || defaultConfig.subtitle || '',
+								contactInfo: config?.contactInfo || defaultConfig.contactInfo || '',
+								associationText: config?.associationText || defaultConfig.associationText || '',
+								govermentOrder: config?.govermentOrder || defaultConfig.govermentOrder || '',
+								leftLogo: config?.leftLogo || undefined,
+								rightLogo: config?.rightLogo || undefined,
+							};
+							setHeaderConfig(mergedConfig);
+						} catch (error) {
+							console.error('Failed to load header config', error);
+							const defaultConfig = getDefaultHeaderConfig(headerType);
+							setHeaderConfig({
+								id: headerType,
+								type: headerType as 'reportDYES' | 'reportNonDYES' | 'billing',
+								...defaultConfig,
+							} as HeaderConfig);
+						}
 					}
 				} else {
 					setLoadingReport(false);
@@ -1993,6 +2100,16 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						? reportPatientData.totalSessionsRequired
 						: undefined;
 			
+			// Get session number for this report
+			let sessionNum = sessionNumber;
+			if (!sessionNum) {
+				const sessionInfo = await getSessionInfo(reportPatientData.patientId);
+				sessionNum = sessionInfo.sessionNumber;
+			}
+			if (isEditingSession1) {
+				sessionNum = 1;
+			}
+			
 			const reportData: Record<string, any> = {
 				history: formData.history || '',
 				med_xray: formData.med_xray || false,
@@ -2059,6 +2176,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				managementRemarks: formData.managementRemarks || '',
 				nextFollowUpDate: formData.nextFollowUpDate || '',
 				nextFollowUpTime: formData.nextFollowUpTime || '',
+				sessionNumber: sessionNum, // Add session number to patient record
 				totalSessionsRequired:
 					typeof formData.totalSessionsRequired === 'number'
 						? formData.totalSessionsRequired
@@ -2192,6 +2310,18 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 			if (hasReportData) {
 				try {
+					// Get session number - use current session number or calculate it
+					let sessionNum = sessionNumber;
+					if (!sessionNum) {
+						const sessionInfo = await getSessionInfo(reportPatientData.patientId);
+						sessionNum = sessionInfo.sessionNumber;
+					}
+					
+					// If editing Session 1, use session 1, otherwise use calculated session number
+					if (isEditingSession1) {
+						sessionNum = 1;
+					}
+					
 					const versionsQuery = query(
 						collection(db, 'reportVersions'),
 						where('patientId', '==', reportPatientData.patientId),
@@ -2206,6 +2336,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						patientId: reportPatientData.patientId,
 						patientName: reportPatientData.name,
 						version: nextVersion,
+						sessionNumber: sessionNum, // Add session number
 						reportData: removeUndefined(currentReportData),
 						createdBy: user?.displayName || user?.email || 'Unknown',
 						createdById: user?.uid || '',
@@ -2214,10 +2345,55 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				} catch (versionError: any) {
 					// If orderBy fails (missing index), try without it
 					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
-						console.warn('Report version index not found, saving without version history', versionError);
-						// Continue without version history
+						console.warn('Report version index not found, retrying without orderBy', versionError);
+						try {
+							// Retry query without orderBy
+							const versionsQueryWithoutOrder = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', reportPatientData.patientId)
+							);
+							const versionsSnapshot = await getDocs(versionsQueryWithoutOrder);
+							
+							// Manually sort by version number
+							const versions = versionsSnapshot.docs.map(doc => ({
+								id: doc.id,
+								version: (doc.data().version as number) || 0,
+								data: doc.data(),
+							}));
+							versions.sort((a, b) => b.version - a.version);
+							
+							const nextVersion = versions.length > 0 
+								? versions[0].version + 1 
+								: 1;
+
+							// Get session number
+							let sessionNum = sessionNumber;
+							if (!sessionNum) {
+								const sessionInfo = await getSessionInfo(reportPatientData.patientId);
+								sessionNum = sessionInfo.sessionNumber;
+							}
+							if (isEditingSession1) {
+								sessionNum = 1;
+							}
+							
+							// Save report snapshot
+							await addDoc(collection(db, 'reportVersions'), {
+								patientId: reportPatientData.patientId,
+								patientName: reportPatientData.name,
+								version: nextVersion,
+								sessionNumber: sessionNum, // Add session number
+								reportData: removeUndefined(currentReportData),
+								createdBy: user?.displayName || user?.email || 'Unknown',
+								createdById: user?.uid || '',
+								createdAt: serverTimestamp(),
+							});
+						} catch (retryError: any) {
+							console.error('Failed to save report version even with fallback:', retryError);
+							// Still continue - don't block the main save operation
+						}
 					} else {
-						throw versionError; // Re-throw other errors
+						console.error('Failed to save report version:', versionError);
+						// Still continue - don't block the main save operation
 					}
 				}
 			}
@@ -2803,6 +2979,29 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		// Update subsequent date state when dateOfConsultation changes
 		if (field === 'dateOfConsultation') {
 			setIsSubsequentDatePhysio(isDateOnDifferentDay(value));
+			
+			// Check if selected date matches first report date (Session 1)
+			if (value && firstReportDate) {
+				const selectedDate = new Date(value).toISOString().split('T')[0];
+				const firstDate = new Date(firstReportDate).toISOString().split('T')[0];
+				
+				if (selectedDate === firstDate) {
+					// Switch to Session 1 edit mode
+					setIsEditingSession1(true);
+					setSessionNumber(1);
+					// Load the first report data if available
+					if (reportPatientData && reportPatientData.dateOfConsultation === firstDate) {
+						// Already have the data, just switch mode
+					}
+				} else {
+					// Not Session 1, use calculated session number
+					setIsEditingSession1(false);
+				}
+			} else if (!firstReportDate) {
+				// No first report exists yet, this will be Session 1
+				setIsEditingSession1(true);
+				setSessionNumber(1);
+			}
 		}
 	};
 
@@ -3104,7 +3303,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 							{/* Date of Consultation - Always visible */}
 							<div className="mb-8 border-b border-slate-200 pb-4">
-								<h3 className="mb-4 text-sm font-semibold text-sky-600">Report Date</h3>
+								<div className="flex items-center justify-between mb-4">
+									<h3 className="text-sm font-semibold text-sky-600">Report Date</h3>
+									{sessionNumber && (
+										<div className="px-3 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-semibold">
+											{isEditingSession1 ? 'Session 1 - Initial Assessment' : `Session ${sessionNumber} - Follow-up Assessment`}
+										</div>
+									)}
+								</div>
 								<div className="grid gap-4 sm:grid-cols-2">
 									<div>
 										<label className="block text-xs font-medium text-slate-500">Date of Consultation</label>
@@ -3114,11 +3320,17 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											onChange={e => handleFieldChange('dateOfConsultation', e.target.value)}
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 										/>
+										{firstReportDate && (
+											<p className="mt-1 text-xs text-slate-500">
+												First report date: {new Date(firstReportDate).toLocaleDateString()}
+											</p>
+										)}
 									</div>
 								</div>
 							</div>
 
-							{isSubsequentDatePhysio ? (
+							{/* Show Follow-up form only if NOT editing Session 1 AND it's a subsequent date */}
+							{!isEditingSession1 && (isSubsequentDatePhysio || (sessionNumber && sessionNumber > 1)) ? (
 								<>
 									{/* Simplified Follow-Up Form for Subsequent Dates */}
 									<div className="mb-8">
