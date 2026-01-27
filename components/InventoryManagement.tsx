@@ -40,6 +40,7 @@ interface IssueRecord {
 	returnedAt: any;
 	returnedBy: string | null;
 	returnedQuantity: number;
+	remarks: string | null;
 	createdAt: any;
 	updatedAt: any;
 }
@@ -68,9 +69,11 @@ export default function InventoryManagement() {
 		totalQuantity: 0 
 	});
 	const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-	const [issueForm, setIssueForm] = useState({ itemId: '', quantity: 0, issuedTo: '' });
+	const [issueForm, setIssueForm] = useState({ itemId: '', quantity: 0, issuedTo: '', remarks: '' });
 	const [returnForm, setReturnForm] = useState({ issueRecordId: '', quantity: 0 });
 	const [selectedIssueRecord, setSelectedIssueRecord] = useState<IssueRecord | null>(null);
+	const [editingRemarksId, setEditingRemarksId] = useState<string | null>(null);
+	const [editingRemarksValue, setEditingRemarksValue] = useState<string>('');
 	const [staff, setStaff] = useState<Array<{
 		id: string;
 		userName: string;
@@ -230,6 +233,7 @@ export default function InventoryManagement() {
 						returnedAt: data.returnedAt,
 						returnedBy: data.returnedBy || null,
 						returnedQuantity: data.returnedQuantity || 0,
+						remarks: data.remarks || null,
 						createdAt: data.createdAt,
 						updatedAt: data.updatedAt,
 					} as IssueRecord;
@@ -395,6 +399,7 @@ export default function InventoryManagement() {
 			itemId: item.id,
 			quantity: 0,
 			issuedTo: '',
+			remarks: '',
 		});
 		setShowIssueModal(true);
 	};
@@ -507,11 +512,12 @@ export default function InventoryManagement() {
 				issuedToEmail: selectedStaff.userEmail || null,
 				status: 'acknowledged',
 				returnedQuantity: 0,
+				remarks: issueForm.remarks.trim() || null,
 				createdAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
 			});
 
-			setIssueForm({ itemId: '', quantity: 0, issuedTo: '' });
+			setIssueForm({ itemId: '', quantity: 0, issuedTo: '', remarks: '' });
 			setShowIssueModal(false);
 			alert('Item issued successfully!');
 		} catch (error) {
@@ -589,6 +595,38 @@ export default function InventoryManagement() {
 		}
 	};
 
+
+	const handleEditRemarks = (record: IssueRecord) => {
+		setEditingRemarksId(record.id);
+		setEditingRemarksValue(record.remarks || '');
+	};
+
+	const handleSaveRemarks = async (recordId: string) => {
+		if (!user) {
+			alert('User not authenticated');
+			return;
+		}
+
+		setSubmitting(true);
+		try {
+			await updateDoc(doc(db, 'inventoryIssues', recordId), {
+				remarks: editingRemarksValue.trim() || null,
+				updatedAt: serverTimestamp(),
+			});
+			setEditingRemarksId(null);
+			setEditingRemarksValue('');
+		} catch (error) {
+			console.error('Failed to update remarks:', error);
+			alert('Failed to update remarks. Please try again.');
+		} finally {
+			setSubmitting(false);
+		}
+	};
+
+	const handleCancelEditRemarks = () => {
+		setEditingRemarksId(null);
+		setEditingRemarksValue('');
+	};
 
 	const handleAdminReturnItem = async (record: IssueRecord) => {
 		if (!user || !isAdminOrSuperAdmin) {
@@ -997,7 +1035,7 @@ export default function InventoryManagement() {
 							<button
 								type="button"
 								onClick={() => {
-									setIssueForm({ itemId: '', quantity: 0, issuedTo: '' });
+									setIssueForm({ itemId: '', quantity: 0, issuedTo: '', remarks: '' });
 									setShowIssueModal(true);
 								}}
 								className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:from-indigo-700 hover:via-indigo-800 hover:to-purple-700 transition-all duration-200 hover:scale-105"
@@ -1206,6 +1244,7 @@ export default function InventoryManagement() {
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Issued To</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Status</th>
 										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Returned</th>
+										<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Remarks</th>
 										{isAdminOrSuperAdmin && (
 											<th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Actions</th>
 										)}
@@ -1243,6 +1282,58 @@ export default function InventoryManagement() {
 													</span>
 												</td>
 												<td className="px-4 py-3 text-sm text-slate-600">{record.returnedQuantity || 0}</td>
+												<td className="px-4 py-3 text-sm text-slate-600">
+													{editingRemarksId === record.id ? (
+														<div className="flex items-start gap-2">
+															<textarea
+																value={editingRemarksValue}
+																onChange={e => setEditingRemarksValue(e.target.value)}
+																rows={2}
+																className="flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-200 resize-none"
+																placeholder="Enter remarks..."
+																autoFocus
+															/>
+															<div className="flex flex-col gap-1">
+																<button
+																	type="button"
+																	onClick={() => handleSaveRemarks(record.id)}
+																	disabled={submitting}
+																	className="inline-flex items-center justify-center rounded bg-green-600 px-2 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+																	title="Save remarks"
+																>
+																	<i className="fas fa-check text-xs" aria-hidden="true" />
+																</button>
+																<button
+																	type="button"
+																	onClick={handleCancelEditRemarks}
+																	disabled={submitting}
+																	className="inline-flex items-center justify-center rounded bg-slate-400 px-2 py-1 text-xs font-semibold text-white hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
+																	title="Cancel"
+																>
+																	<i className="fas fa-times text-xs" aria-hidden="true" />
+																</button>
+															</div>
+														</div>
+													) : (
+														<div className="flex items-start gap-2 group">
+															<span className="flex-1 text-slate-600 min-w-0 break-words">
+																{record.remarks || (
+																	<span className="text-slate-400 italic">No remarks</span>
+																)}
+															</span>
+															{canManageInventory && (
+																<button
+																	type="button"
+																	onClick={() => handleEditRemarks(record)}
+																	className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center justify-center rounded bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+																	title="Edit remarks"
+																>
+																	<i className="fas fa-edit text-xs" aria-hidden="true" />
+																</button>
+															)}
+														</div>
+													)}
+												</td>
 												{isAdminOrSuperAdmin && (
 													<td className="px-4 py-3 text-sm">
 														{canReturn ? (
@@ -1474,12 +1565,25 @@ export default function InventoryManagement() {
 									))}
 								</select>
 							</div>
+							<div>
+								<label htmlFor="issueRemarks" className="block text-sm font-medium text-slate-700 mb-2">
+									Remarks
+								</label>
+								<textarea
+									id="issueRemarks"
+									value={issueForm.remarks}
+									onChange={e => setIssueForm({ ...issueForm, remarks: e.target.value })}
+									rows={3}
+									placeholder="Enter any remarks or notes about this issue..."
+									className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+								/>
+							</div>
 							<div className="flex items-center gap-3 justify-end pt-4">
 								<button
 									type="button"
 								onClick={() => {
 									setShowIssueModal(false);
-									setIssueForm({ itemId: '', quantity: 0, issuedTo: '' });
+									setIssueForm({ itemId: '', quantity: 0, issuedTo: '', remarks: '' });
 								}}
 									className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900"
 								>
