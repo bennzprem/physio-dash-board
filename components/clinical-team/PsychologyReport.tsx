@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import type { PatientRecordFull } from '@/lib/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface PsychologyReportData {
 	// Demographics
@@ -13,6 +14,7 @@ interface PsychologyReportData {
 	fatherName?: string;
 	motherName?: string;
 	sport?: string;
+	psychologist?: string;
 	phone?: string;
 	email?: string;
 	stateCity?: string;
@@ -141,6 +143,8 @@ interface PsychologyReportProps {
 	sessionIndex?: number; // 0-based index (0 = first session)
 	totalSessions?: number; // Total number of sessions
 	hasExistingVersions?: boolean; // Whether there are existing report versions
+	isViewingSavedVersion?: boolean; // When true, follow-up visibility is based only on saved data content
+	isEditingLoadedVersion?: boolean; // When true, form was loaded from a version for editing - follow-up visibility from form data
 }
 
 // Helper functions for categorization
@@ -239,12 +243,28 @@ const calculateAge = (dob?: string): string => {
 	}
 };
 
-export default function PsychologyReport({ patientData, formData, onChange, editable = true, sessionIndex, totalSessions, hasExistingVersions = false }: PsychologyReportProps) {
+export default function PsychologyReport({ patientData, formData, onChange, editable = true, sessionIndex, totalSessions, hasExistingVersions = false, isViewingSavedVersion = false, isEditingLoadedVersion = false }: PsychologyReportProps) {
 	const [localData, setLocalData] = useState<PsychologyReportData>(formData);
+	const { user } = useAuth();
+
+	// Helper function to check if an object has any actual values (not just empty object)
+	const hasActualValues = (obj: any): boolean => {
+		if (!obj || typeof obj !== 'object') return false;
+		return Object.values(obj).some(val => val !== undefined && val !== null && val !== '');
+	};
 
 	// Determine if this is the first session
-	// Priority: 1) hasExistingVersions prop (if false, it's first session), 2) sessionIndex prop, 3) check for existing psychology report data, 4) calculate from patient data, 5) default to first session
+	// When viewing OR editing a loaded version: show follow-up ONLY if that version's data contains follow-up content
+	// Otherwise: 1) hasExistingVersions, 2) sessionIndex, 3) check form data, 4) patient data, 5) default first session
 	const isFirstSession = useMemo(() => {
+		// When viewing or editing a loaded version, derive from that version's form data only
+		if ((isViewingSavedVersion || isEditingLoadedVersion) && formData) {
+			const dataToCheck = formData;
+			// Show follow-up section only if THIS version's data has follow-up assessment content
+			const hasFollowUpContent = hasActualValues(dataToCheck.followUpAssessment);
+			return !hasFollowUpContent; // First session = no follow-up data in this version
+		}
+
 		// If hasExistingVersions is explicitly false, this is the first session
 		if (hasExistingVersions === false) {
 			return true;
@@ -260,12 +280,6 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 		if (totalSessions !== undefined) {
 			return totalSessions === 1;
 		}
-		
-		// Helper function to check if an object has any actual values (not just empty object)
-		const hasActualValues = (obj: any): boolean => {
-			if (!obj || typeof obj !== 'object') return false;
-			return Object.values(obj).some(val => val !== undefined && val !== null && val !== '');
-		};
 		
 		// Helper to safely check string values
 		const hasStringValue = (val: any): boolean => {
@@ -321,7 +335,7 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 		}
 		// Default: assume first session if we can't determine
 		return true;
-	}, [sessionIndex, totalSessions, patientData, formData, localData]);
+	}, [sessionIndex, totalSessions, patientData, formData, localData, isViewingSavedVersion, isEditingLoadedVersion]);
 
 	useEffect(() => {
 		setLocalData(formData);
@@ -336,6 +350,14 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []); // Only run once on mount
+
+	// Auto-populate psychologist field with logged-in user's name if not set
+	useEffect(() => {
+		if (!localData.psychologist && user?.displayName && editable) {
+			updateField('psychologist', user.displayName);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [user?.displayName]); // Run when user becomes available
 
 	const updateField = (field: keyof PsychologyReportData, value: any) => {
 		const updated = { ...localData, [field]: value };
@@ -1107,6 +1129,24 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 				) : (
 					<p className="text-sm text-slate-900 whitespace-pre-wrap">{localData.extraAssessments || '—'}</p>
 				)}
+			</div>
+
+			{/* Psychologist */}
+			<div className="border-b border-slate-200 pb-6">
+				<h2 className="mb-4 text-lg font-semibold text-slate-900">Psychologist</h2>
+				<div className="max-w-md">
+					{editable ? (
+						<input
+							type="text"
+							value={localData.psychologist || ''}
+							onChange={(e) => updateField('psychologist', e.target.value)}
+							className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+							placeholder="Enter psychologist name"
+						/>
+					) : (
+						<p className="text-sm text-slate-900">{localData.psychologist || '—'}</p>
+					)}
+				</div>
 			</div>
 				</>
 			)}

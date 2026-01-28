@@ -1490,3 +1490,657 @@ export async function generateStrengthConditioningPDF(
 		throw error;
 	}
 }
+
+// Psychology Report PDF Data Interface
+export interface PsychologyReportPDFData {
+	patient: {
+		name?: string;
+		patientId?: string;
+		dob?: string;
+		gender?: string;
+		phone?: string;
+		email?: string;
+	};
+	formData: {
+		// Demographics
+		assessmentType?: 'pre' | 'post';
+		dateOfAssessment?: string;
+		age?: string;
+		fatherName?: string;
+		motherName?: string;
+		sport?: string;
+		psychologist?: string;
+		stateCity?: string;
+		
+		// Player's History
+		playingSince?: string;
+		highestAchievement?: string;
+		currentLevel?: string;
+		currentConcerns?: string[];
+		
+		// Current Psychological Stressor
+		stressors?: {
+			lackOfFocusExternal?: number;
+			lackOfFocusInternal?: number;
+			nervousness?: number;
+			performancePressure?: number;
+			attentionDisruption?: number;
+			fearOfFailure?: number;
+			thoughtsWondering?: number;
+			lowReactionTime?: number;
+			lackOfMentalPreparation?: number;
+			overthinking?: number;
+			none?: boolean;
+			other?: string;
+		};
+		
+		// Social Environment & Family History
+		socialEnvironment?: {
+			parents?: string;
+			siblings?: string;
+			friends?: string;
+			relatives?: string;
+		};
+		familyHistory?: {
+			maternalFamily?: string;
+			paternalFamily?: string;
+		};
+		
+		// History of Present Concerns
+		historyOfConcerns?: string;
+		
+		// Brain Training Assessment
+		sensoryStation?: {
+			visualClarity?: number;
+			contrastSensitivity?: number;
+			depthPerception?: number;
+			nearFarQuickness?: number;
+			perceptionSpan?: number;
+			multipleObjectTracking?: number;
+			reactionTime?: number;
+		};
+		neurofeedbackHeadset?: {
+			neuralActivity?: number;
+			controls?: number;
+			"Oxygenation (%)"?: number;
+		};
+		brainSensing?: {
+			attention?: number;
+			spatialAbility?: number;
+			decisionMaking?: number;
+			memory?: number;
+			cognitiveFlexibility?: number;
+		};
+		
+		trackingSpeed?: number;
+		reactionTime?: number;
+		handEyeCoordination?: number;
+		competitiveStateAnxiety?: {
+			cognitiveStateAnxiety?: number;
+			somaticStateAnxiety?: number;
+			selfConfidence?: number;
+		};
+		mentalToughness?: {
+			commitment?: number;
+			concentration?: number;
+			controlUnderPressure?: number;
+			confidence?: number;
+		};
+		bigFivePersonality?: {
+			extroversion?: number;
+			agreeableness?: number;
+			conscientiousness?: number;
+			neuroticism?: number;
+			opennessToExperience?: number;
+		};
+		
+		// Extra Assessments
+		extraAssessments?: string;
+		
+		// Follow-up Assessment Report
+		followUpAssessment?: {
+			neurofeedbackHeadset?: {
+				neuralActivity?: number;
+				controls?: number;
+				"Oxygenation (%)"?: number;
+			};
+			brainSensing?: {
+				attention?: number;
+				spatialAbility?: number;
+				decisionMaking?: number;
+				memory?: number;
+				cognitiveFlexibility?: number;
+			};
+			multipleObjectTracking?: {
+				trackingSpeed?: number;
+			};
+			reactionTimeHandEye?: {
+				reactionTime?: number;
+				handEyeCoordination?: number;
+			};
+			decisionMaking?: {
+				speed?: number;
+				accuracy?: number;
+			};
+			vrMeditation?: string;
+			extraAssessment?: string;
+		};
+	};
+}
+
+export async function generatePsychologyPDF(
+	data: PsychologyReportPDFData,
+	options?: { forPrint?: boolean }
+): Promise<void> {
+	try {
+		const [{ default: jsPDF }, autoTableModule] = await Promise.all([
+			import('jspdf'),
+			import('jspdf-autotable'),
+		]);
+
+		const autoTable = (autoTableModule as any).default || autoTableModule;
+		const doc = new jsPDF('p', 'mm', 'a4');
+		const pageWidth = 210;
+		const pageHeight = 297;
+		const pageMargin = 10;
+		let y = 20;
+
+		// Title
+		doc.setFontSize(16);
+		doc.setFont('helvetica', 'bold');
+		doc.setTextColor(99, 102, 241); // Indigo color
+		doc.text('Brain Training / Sports Psychology Report', pageWidth / 2, y, { align: 'center' });
+		y += 10;
+
+		// Patient Details
+		doc.setFontSize(12);
+		doc.setFont('helvetica', 'bold');
+		doc.setTextColor(0, 0, 0);
+		doc.text('Patient Information', pageMargin, y);
+		y += 8;
+
+		doc.setFontSize(10);
+		doc.setFont('helvetica', 'normal');
+		const patientInfo = [
+			['Patient Name', data.patient.name || ''],
+			['Patient ID', data.patient.patientId || ''],
+			['Date of Birth', data.patient.dob || ''],
+			['Gender', data.patient.gender || ''],
+			['Phone', data.patient.phone || ''],
+			['Email', data.patient.email || ''],
+		];
+
+		autoTable(doc, {
+			startY: y,
+			head: [['Field', 'Value']],
+			body: patientInfo,
+			theme: 'grid',
+			headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+			styles: { fontSize: 9, cellPadding: 3 },
+			columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+			margin: { left: pageMargin, right: pageMargin },
+		});
+		y = (doc as any).lastAutoTable.finalY + 10;
+
+		// Demographics Details
+		if (data.formData.assessmentType || data.formData.dateOfAssessment || data.formData.age || data.formData.fatherName || data.formData.motherName || data.formData.sport || data.formData.stateCity) {
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Demographics Details', pageMargin, y);
+			y += 8;
+
+			doc.setFontSize(10);
+			doc.setFont('helvetica', 'normal');
+			const demographics: string[][] = [];
+			if (data.formData.assessmentType) {
+				demographics.push(['Assessment Type', data.formData.assessmentType === 'pre' ? 'Pre-Assessment' : 'Post-Assessment']);
+			}
+			if (data.formData.dateOfAssessment) {
+				demographics.push(['Date of Assessment', data.formData.dateOfAssessment]);
+			}
+			if (data.formData.age) {
+				demographics.push(['Age', data.formData.age]);
+			}
+			if (data.formData.fatherName) {
+				demographics.push(['Father\'s Name', data.formData.fatherName]);
+			}
+			if (data.formData.motherName) {
+				demographics.push(['Mother\'s Name', data.formData.motherName]);
+			}
+			if (data.formData.sport) {
+				demographics.push(['Sport', data.formData.sport]);
+			}
+			if (data.formData.stateCity) {
+				demographics.push(['State/City', data.formData.stateCity]);
+			}
+
+			if (demographics.length > 0) {
+				autoTable(doc, {
+					startY: y,
+					head: [['Field', 'Value']],
+					body: demographics,
+					theme: 'grid',
+					headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+					styles: { fontSize: 9, cellPadding: 3 },
+					columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+					margin: { left: pageMargin, right: pageMargin },
+				});
+				y = (doc as any).lastAutoTable.finalY + 10;
+			}
+		}
+
+		// Player's History
+		if (data.formData.playingSince || data.formData.highestAchievement || data.formData.currentLevel || (data.formData.currentConcerns && data.formData.currentConcerns.length > 0)) {
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Player\'s History', pageMargin, y);
+			y += 8;
+
+			doc.setFontSize(10);
+			doc.setFont('helvetica', 'normal');
+			const playerHistory: string[][] = [];
+			if (data.formData.playingSince) {
+				playerHistory.push(['Playing Since', data.formData.playingSince]);
+			}
+			if (data.formData.highestAchievement) {
+				playerHistory.push(['Highest Achievement', data.formData.highestAchievement]);
+			}
+			if (data.formData.currentLevel) {
+				playerHistory.push(['Current Level', data.formData.currentLevel]);
+			}
+			if (data.formData.currentConcerns && data.formData.currentConcerns.length > 0) {
+				playerHistory.push(['Current Concerns', data.formData.currentConcerns.join(', ')]);
+			}
+
+			if (playerHistory.length > 0) {
+				autoTable(doc, {
+					startY: y,
+					head: [['Field', 'Value']],
+					body: playerHistory,
+					theme: 'grid',
+					headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+					styles: { fontSize: 9, cellPadding: 3 },
+					columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
+					margin: { left: pageMargin, right: pageMargin },
+				});
+				y = (doc as any).lastAutoTable.finalY + 10;
+			}
+		}
+
+		// Current Psychological Stressor
+		if (data.formData.stressors) {
+			const stressors = data.formData.stressors;
+			const hasStressorData = Object.values(stressors).some(val => val !== undefined && val !== null && val !== '');
+			if (hasStressorData) {
+				doc.setFontSize(12);
+				doc.setFont('helvetica', 'bold');
+				doc.text('Current Psychological Stressor', pageMargin, y);
+				y += 8;
+
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal');
+				const stressorRows: string[][] = [];
+				if (stressors.lackOfFocusExternal !== undefined) stressorRows.push(['Lack of Focus (External)', String(stressors.lackOfFocusExternal)]);
+				if (stressors.lackOfFocusInternal !== undefined) stressorRows.push(['Lack of Focus (Internal)', String(stressors.lackOfFocusInternal)]);
+				if (stressors.nervousness !== undefined) stressorRows.push(['Nervousness', String(stressors.nervousness)]);
+				if (stressors.performancePressure !== undefined) stressorRows.push(['Performance Pressure', String(stressors.performancePressure)]);
+				if (stressors.attentionDisruption !== undefined) stressorRows.push(['Attention Disruption', String(stressors.attentionDisruption)]);
+				if (stressors.fearOfFailure !== undefined) stressorRows.push(['Fear of Failure', String(stressors.fearOfFailure)]);
+				if (stressors.thoughtsWondering !== undefined) stressorRows.push(['Thoughts Wondering', String(stressors.thoughtsWondering)]);
+				if (stressors.lowReactionTime !== undefined) stressorRows.push(['Low Reaction Time', String(stressors.lowReactionTime)]);
+				if (stressors.lackOfMentalPreparation !== undefined) stressorRows.push(['Lack of Mental Preparation', String(stressors.lackOfMentalPreparation)]);
+				if (stressors.overthinking !== undefined) stressorRows.push(['Overthinking', String(stressors.overthinking)]);
+				if (stressors.none) stressorRows.push(['None', 'Yes']);
+				if (stressors.other) stressorRows.push(['Other', stressors.other]);
+
+				if (stressorRows.length > 0) {
+					autoTable(doc, {
+						startY: y,
+						head: [['Stressor', 'Value']],
+						body: stressorRows,
+						theme: 'grid',
+						headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+						styles: { fontSize: 9, cellPadding: 3 },
+						margin: { left: pageMargin, right: pageMargin },
+					});
+					y = (doc as any).lastAutoTable.finalY + 10;
+				}
+			}
+		}
+
+		// Social Environment & Family History
+		if (data.formData.socialEnvironment || data.formData.familyHistory) {
+			const hasSocialData = data.formData.socialEnvironment && Object.values(data.formData.socialEnvironment).some(v => v);
+			const hasFamilyData = data.formData.familyHistory && Object.values(data.formData.familyHistory).some(v => v);
+			
+			if (hasSocialData || hasFamilyData) {
+				doc.setFontSize(12);
+				doc.setFont('helvetica', 'bold');
+				doc.text('Social Environment & Family History', pageMargin, y);
+				y += 8;
+
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal');
+				const socialRows: string[][] = [];
+				
+				if (hasSocialData && data.formData.socialEnvironment) {
+					if (data.formData.socialEnvironment.parents) socialRows.push(['Parents', data.formData.socialEnvironment.parents]);
+					if (data.formData.socialEnvironment.siblings) socialRows.push(['Siblings', data.formData.socialEnvironment.siblings]);
+					if (data.formData.socialEnvironment.friends) socialRows.push(['Friends', data.formData.socialEnvironment.friends]);
+					if (data.formData.socialEnvironment.relatives) socialRows.push(['Relatives', data.formData.socialEnvironment.relatives]);
+				}
+				
+				if (hasFamilyData && data.formData.familyHistory) {
+					if (data.formData.familyHistory.maternalFamily) socialRows.push(['Maternal Family', data.formData.familyHistory.maternalFamily]);
+					if (data.formData.familyHistory.paternalFamily) socialRows.push(['Paternal Family', data.formData.familyHistory.paternalFamily]);
+				}
+
+				if (socialRows.length > 0) {
+					autoTable(doc, {
+						startY: y,
+						head: [['Category', 'Details']],
+						body: socialRows,
+						theme: 'grid',
+						headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+						styles: { fontSize: 9, cellPadding: 3 },
+						margin: { left: pageMargin, right: pageMargin },
+					});
+					y = (doc as any).lastAutoTable.finalY + 10;
+				}
+			}
+		}
+
+		// History of Present Concerns
+		if (data.formData.historyOfConcerns) {
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('History of Present Concerns', pageMargin, y);
+			y += 8;
+
+			doc.setFontSize(10);
+			doc.setFont('helvetica', 'normal');
+			const concernsText = doc.splitTextToSize(data.formData.historyOfConcerns, pageWidth - 2 * pageMargin);
+			doc.text(concernsText, pageMargin, y);
+			y += concernsText.length * 5 + 5;
+		}
+
+		// Brain Training Assessment
+		const hasBrainTraining = data.formData.sensoryStation || data.formData.neurofeedbackHeadset || data.formData.brainSensing || 
+			data.formData.trackingSpeed !== undefined || data.formData.reactionTime !== undefined || data.formData.handEyeCoordination !== undefined;
+		
+		if (hasBrainTraining) {
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Brain Training Assessment', pageMargin, y);
+			y += 8;
+
+			doc.setFontSize(10);
+			doc.setFont('helvetica', 'normal');
+			const brainRows: string[][] = [];
+
+			// Sensory Station
+			if (data.formData.sensoryStation) {
+				const ss = data.formData.sensoryStation;
+				if (ss.visualClarity !== undefined) brainRows.push(['Visual Clarity', String(ss.visualClarity)]);
+				if (ss.contrastSensitivity !== undefined) brainRows.push(['Contrast Sensitivity', String(ss.contrastSensitivity)]);
+				if (ss.depthPerception !== undefined) brainRows.push(['Depth Perception', String(ss.depthPerception)]);
+				if (ss.nearFarQuickness !== undefined) brainRows.push(['Near-Far Quickness', String(ss.nearFarQuickness)]);
+				if (ss.perceptionSpan !== undefined) brainRows.push(['Perception Span', String(ss.perceptionSpan)]);
+				if (ss.multipleObjectTracking !== undefined) brainRows.push(['Multiple Object Tracking', String(ss.multipleObjectTracking)]);
+				if (ss.reactionTime !== undefined) brainRows.push(['Reaction Time', String(ss.reactionTime)]);
+			}
+
+			// Neurofeedback Headset
+			if (data.formData.neurofeedbackHeadset) {
+				const nh = data.formData.neurofeedbackHeadset;
+				if (nh.neuralActivity !== undefined) brainRows.push(['Neural Activity (%)', String(nh.neuralActivity)]);
+				if (nh.controls !== undefined) brainRows.push(['Controls', String(nh.controls)]);
+				if (nh["Oxygenation (%)"] !== undefined) brainRows.push(['Oxygenation (%)', String(nh["Oxygenation (%)"])]);
+			}
+
+			// Brain Sensing
+			if (data.formData.brainSensing) {
+				const bs = data.formData.brainSensing;
+				if (bs.attention !== undefined) brainRows.push(['Attention', String(bs.attention)]);
+				if (bs.spatialAbility !== undefined) brainRows.push(['Spatial Ability', String(bs.spatialAbility)]);
+				if (bs.decisionMaking !== undefined) brainRows.push(['Decision Making', String(bs.decisionMaking)]);
+				if (bs.memory !== undefined) brainRows.push(['Memory', String(bs.memory)]);
+				if (bs.cognitiveFlexibility !== undefined) brainRows.push(['Cognitive Flexibility', String(bs.cognitiveFlexibility)]);
+			}
+
+			// Additional metrics
+			if (data.formData.trackingSpeed !== undefined) brainRows.push(['Tracking Speed', String(data.formData.trackingSpeed)]);
+			if (data.formData.reactionTime !== undefined) brainRows.push(['Reaction Time', String(data.formData.reactionTime)]);
+			if (data.formData.handEyeCoordination !== undefined) brainRows.push(['Hand-Eye Coordination', String(data.formData.handEyeCoordination)]);
+
+			if (brainRows.length > 0) {
+				autoTable(doc, {
+					startY: y,
+					head: [['Assessment', 'Score']],
+					body: brainRows,
+					theme: 'grid',
+					headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+					styles: { fontSize: 9, cellPadding: 3 },
+					margin: { left: pageMargin, right: pageMargin },
+				});
+				y = (doc as any).lastAutoTable.finalY + 10;
+			}
+		}
+
+		// Competitive State Anxiety
+		if (data.formData.competitiveStateAnxiety) {
+			const csa = data.formData.competitiveStateAnxiety;
+			const hasCSAData = csa.cognitiveStateAnxiety !== undefined || csa.somaticStateAnxiety !== undefined || csa.selfConfidence !== undefined;
+			if (hasCSAData) {
+				doc.setFontSize(12);
+				doc.setFont('helvetica', 'bold');
+				doc.text('Competitive State Anxiety', pageMargin, y);
+				y += 8;
+
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal');
+				const csaRows: string[][] = [];
+				if (csa.cognitiveStateAnxiety !== undefined) csaRows.push(['Cognitive State Anxiety', String(csa.cognitiveStateAnxiety)]);
+				if (csa.somaticStateAnxiety !== undefined) csaRows.push(['Somatic State Anxiety', String(csa.somaticStateAnxiety)]);
+				if (csa.selfConfidence !== undefined) csaRows.push(['Self Confidence', String(csa.selfConfidence)]);
+
+				if (csaRows.length > 0) {
+					autoTable(doc, {
+						startY: y,
+						head: [['Category', 'Score']],
+						body: csaRows,
+						theme: 'grid',
+						headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+						styles: { fontSize: 9, cellPadding: 3 },
+						margin: { left: pageMargin, right: pageMargin },
+					});
+					y = (doc as any).lastAutoTable.finalY + 10;
+				}
+			}
+		}
+
+		// Mental Toughness
+		if (data.formData.mentalToughness) {
+			const mt = data.formData.mentalToughness;
+			const hasMTData = mt.commitment !== undefined || mt.concentration !== undefined || mt.controlUnderPressure !== undefined || mt.confidence !== undefined;
+			if (hasMTData) {
+				doc.setFontSize(12);
+				doc.setFont('helvetica', 'bold');
+				doc.text('Mental Toughness', pageMargin, y);
+				y += 8;
+
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal');
+				const mtRows: string[][] = [];
+				if (mt.commitment !== undefined) mtRows.push(['Commitment', String(mt.commitment)]);
+				if (mt.concentration !== undefined) mtRows.push(['Concentration', String(mt.concentration)]);
+				if (mt.controlUnderPressure !== undefined) mtRows.push(['Control Under Pressure', String(mt.controlUnderPressure)]);
+				if (mt.confidence !== undefined) mtRows.push(['Confidence', String(mt.confidence)]);
+
+				if (mtRows.length > 0) {
+					autoTable(doc, {
+						startY: y,
+						head: [['Category', 'Score']],
+						body: mtRows,
+						theme: 'grid',
+						headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+						styles: { fontSize: 9, cellPadding: 3 },
+						margin: { left: pageMargin, right: pageMargin },
+					});
+					y = (doc as any).lastAutoTable.finalY + 10;
+				}
+			}
+		}
+
+		// Big Five Personality
+		if (data.formData.bigFivePersonality) {
+			const bfp = data.formData.bigFivePersonality;
+			const hasBFPData = bfp.extroversion !== undefined || bfp.agreeableness !== undefined || bfp.conscientiousness !== undefined || 
+				bfp.neuroticism !== undefined || bfp.opennessToExperience !== undefined;
+			if (hasBFPData) {
+				doc.setFontSize(12);
+				doc.setFont('helvetica', 'bold');
+				doc.text('Big Five Personality', pageMargin, y);
+				y += 8;
+
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal');
+				const bfpRows: string[][] = [];
+				if (bfp.extroversion !== undefined) bfpRows.push(['Extroversion', String(bfp.extroversion)]);
+				if (bfp.agreeableness !== undefined) bfpRows.push(['Agreeableness', String(bfp.agreeableness)]);
+				if (bfp.conscientiousness !== undefined) bfpRows.push(['Conscientiousness', String(bfp.conscientiousness)]);
+				if (bfp.neuroticism !== undefined) bfpRows.push(['Neuroticism', String(bfp.neuroticism)]);
+				if (bfp.opennessToExperience !== undefined) bfpRows.push(['Openness to Experience', String(bfp.opennessToExperience)]);
+
+				if (bfpRows.length > 0) {
+					autoTable(doc, {
+						startY: y,
+						head: [['Trait', 'Score']],
+						body: bfpRows,
+						theme: 'grid',
+						headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+						styles: { fontSize: 9, cellPadding: 3 },
+						margin: { left: pageMargin, right: pageMargin },
+					});
+					y = (doc as any).lastAutoTable.finalY + 10;
+				}
+			}
+		}
+
+		// Extra Assessments
+		if (data.formData.extraAssessments) {
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Extra Assessments', pageMargin, y);
+			y += 8;
+
+			doc.setFontSize(10);
+			doc.setFont('helvetica', 'normal');
+			const extraText = doc.splitTextToSize(data.formData.extraAssessments, pageWidth - 2 * pageMargin);
+			doc.text(extraText, pageMargin, y);
+			y += extraText.length * 5 + 5;
+		}
+
+		// Psychologist
+		if (data.formData.psychologist) {
+			doc.setFontSize(12);
+			doc.setFont('helvetica', 'bold');
+			doc.text('Psychologist', pageMargin, y);
+			y += 8;
+
+			doc.setFontSize(10);
+			doc.setFont('helvetica', 'normal');
+			doc.text(data.formData.psychologist, pageMargin, y);
+			y += 8;
+		}
+
+		// Follow-up Assessment Report
+		if (data.formData.followUpAssessment) {
+			const fu = data.formData.followUpAssessment;
+			const hasFollowUpData = fu.neurofeedbackHeadset || fu.brainSensing || fu.multipleObjectTracking || 
+				fu.reactionTimeHandEye || fu.decisionMaking || fu.vrMeditation || fu.extraAssessment;
+			
+			if (hasFollowUpData) {
+				// Check if we need a new page
+				if (y > pageHeight - 50) {
+					doc.addPage();
+					y = 20;
+				}
+
+				doc.setFontSize(12);
+				doc.setFont('helvetica', 'bold');
+				doc.text('Follow-up Assessment Report', pageMargin, y);
+				y += 8;
+
+				doc.setFontSize(10);
+				doc.setFont('helvetica', 'normal');
+				const followUpRows: string[][] = [];
+
+				// Neurofeedback Headset
+				if (fu.neurofeedbackHeadset) {
+					const nh = fu.neurofeedbackHeadset;
+					if (nh.neuralActivity !== undefined) followUpRows.push(['Neurofeedback - Neural Activity (%)', String(nh.neuralActivity)]);
+					if (nh.controls !== undefined) followUpRows.push(['Neurofeedback - Controls', String(nh.controls)]);
+					if (nh["Oxygenation (%)"] !== undefined) followUpRows.push(['Neurofeedback - Oxygenation (%)', String(nh["Oxygenation (%)"])]);
+				}
+
+				// Brain Sensing
+				if (fu.brainSensing) {
+					const bs = fu.brainSensing;
+					if (bs.attention !== undefined) followUpRows.push(['Brain Sensing - Attention', String(bs.attention)]);
+					if (bs.spatialAbility !== undefined) followUpRows.push(['Brain Sensing - Spatial Ability', String(bs.spatialAbility)]);
+					if (bs.decisionMaking !== undefined) followUpRows.push(['Brain Sensing - Decision Making', String(bs.decisionMaking)]);
+					if (bs.memory !== undefined) followUpRows.push(['Brain Sensing - Memory', String(bs.memory)]);
+					if (bs.cognitiveFlexibility !== undefined) followUpRows.push(['Brain Sensing - Cognitive Flexibility', String(bs.cognitiveFlexibility)]);
+				}
+
+				// Multiple Object Tracking
+				if (fu.multipleObjectTracking && fu.multipleObjectTracking.trackingSpeed !== undefined) {
+					followUpRows.push(['3D - Multiple Object Tracking - Tracking Speed', String(fu.multipleObjectTracking.trackingSpeed)]);
+				}
+
+				// Reaction Time & Hand-Eye Coordination
+				if (fu.reactionTimeHandEye) {
+					if (fu.reactionTimeHandEye.reactionTime !== undefined) followUpRows.push(['Reaction Time & Hand-Eye Coordination - Reaction Time', String(fu.reactionTimeHandEye.reactionTime)]);
+					if (fu.reactionTimeHandEye.handEyeCoordination !== undefined) followUpRows.push(['Reaction Time & Hand-Eye Coordination - Hand-Eye Coordination', String(fu.reactionTimeHandEye.handEyeCoordination)]);
+				}
+
+				// Decision Making
+				if (fu.decisionMaking) {
+					if (fu.decisionMaking.speed !== undefined) followUpRows.push(['Decision Making - Speed (ms)', String(fu.decisionMaking.speed)]);
+					if (fu.decisionMaking.accuracy !== undefined) followUpRows.push(['Decision Making - Accuracy (%)', String(fu.decisionMaking.accuracy)]);
+				}
+
+				// VR Meditation
+				if (fu.vrMeditation) {
+					followUpRows.push(['VR Meditation', fu.vrMeditation]);
+				}
+
+				// Extra Assessment
+				if (fu.extraAssessment) {
+					followUpRows.push(['Extra Assessment', fu.extraAssessment]);
+				}
+
+				if (followUpRows.length > 0) {
+					autoTable(doc, {
+						startY: y,
+						head: [['Assessment', 'Value']],
+						body: followUpRows,
+						theme: 'grid',
+						headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+						styles: { fontSize: 9, cellPadding: 3 },
+						margin: { left: pageMargin, right: pageMargin },
+					});
+					y = (doc as any).lastAutoTable.finalY + 10;
+				}
+			}
+		}
+
+		// Save PDF
+		const fileName = `Psychology_Report_${data.patient.patientId || 'Unknown'}_${data.formData.dateOfAssessment || new Date().toISOString().split('T')[0]}.pdf`;
+		doc.save(fileName);
+	} catch (error) {
+		console.error('Error in generatePsychologyPDF:', error);
+		throw error;
+	}
+}
