@@ -3288,29 +3288,99 @@ export default function EditReport() {
 											{/* Expanded Content */}
 											{isExpanded && (
 												<div className="border-t border-slate-200 px-4 py-4 bg-slate-50">
-													{/* Appointments Section */}
+													{/* Appointments Section - display list matches session count when patient has totalSessionsRequired */}
+													{(() => {
+														const apts = patientAppointments[patient.id];
+														const totalRequired = typeof patient.totalSessionsRequired === 'number' && patient.totalSessionsRequired > 0
+															? patient.totalSessionsRequired
+															: null;
+														const hasLoaded = apts !== undefined;
+														const displayList: Array<{
+															id: string;
+															isPlaceholder?: boolean;
+															appointmentId?: string;
+															patientId?: string;
+															date: string;
+															time: string;
+															doctor: string;
+															status: string;
+															notes?: string;
+															packageBillingId?: string;
+															sessionNumber?: number;
+															totalSessions?: number;
+															isConsultation?: boolean;
+															packageCategory?: string;
+															duration?: number;
+															transferredFrom?: string;
+														}> = !hasLoaded
+															? []
+															: totalRequired != null
+																? [
+																		...(apts || []).slice(0, totalRequired),
+																		...Array.from({ length: Math.max(0, totalRequired - (apts?.length || 0)) }, (_, i) => ({
+																			id: `placeholder-${patient.id}-${i}`,
+																			isPlaceholder: true as const,
+																			date: '',
+																			time: '',
+																			doctor: '',
+																			status: 'pending',
+																		})),
+																	]
+																: (apts || []);
+														const displayCount = totalRequired != null ? totalRequired : (apts?.length || 0);
+														return (
 													<div>
 														<p className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-3">
 															Appointments
-															{patientAppointments[patient.id] !== undefined && (
+															{hasLoaded && (
 																<span className="ml-2 text-xs font-normal text-slate-500">
-																	({patientAppointments[patient.id]?.length || 0})
+																	({displayCount})
 																</span>
 															)}
 														</p>
-														{patientAppointments[patient.id] === undefined ? (
+														{!hasLoaded ? (
 															<div className="flex items-center gap-2 py-2">
 																<div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-sky-600" />
 																<p className="text-sm text-slate-500">Loading appointments...</p>
 															</div>
-														) : patientAppointments[patient.id] && patientAppointments[patient.id].length > 0 ? (
+														) : displayList.length > 0 ? (
 															<div className="space-y-2">
-																{patientAppointments[patient.id].map(appointment => {
+																{displayList.map((appointmentOrPlaceholder, index) => {
+																	const isPlaceholder = 'isPlaceholder' in appointmentOrPlaceholder && appointmentOrPlaceholder.isPlaceholder;
+																	if (isPlaceholder) {
+																		return (
+																			<div
+																				key={appointmentOrPlaceholder.id}
+																				className="rounded-lg border border-dashed border-slate-300 bg-slate-50/50 p-3"
+																			>
+																				<div className="flex items-center justify-between gap-2">
+																					<span className="text-sm text-slate-500">
+																						Session {index + 1} — Not yet booked
+																					</span>
+																					{patient.patientId && (
+																						<button
+																							type="button"
+																							onClick={(e) => {
+																								e.stopPropagation();
+																								handleOpenBookingModal(patient, undefined);
+																							}}
+																							className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-green-500 hover:bg-green-50 hover:text-green-700 focus-visible:outline-none"
+																						>
+																							<i className="fas fa-calendar-plus text-xs" aria-hidden="true" />
+																							Book Appointment
+																						</button>
+																					)}
+																				</div>
+																			</div>
+																		);
+																	}
+																	const appointment = appointmentOrPlaceholder;
 																	// Get packageCategory from appointment or find it from other appointments in the same package
+																	const patientApts = patientAppointments[patient.id] || [];
 																	let displayCategory = appointment.packageCategory;
 																	if (!displayCategory && appointment.packageBillingId) {
 																		// Find category from other appointments in the same package
-																		const packageAppointment = patientAppointments[patient.id].find(
+																		const packageAppointment = patientApts.find(
 																			apt => apt.packageBillingId === appointment.packageBillingId && apt.packageCategory
 																		);
 																		displayCategory = packageAppointment?.packageCategory;
@@ -3558,6 +3628,8 @@ export default function EditReport() {
 															<p className="text-sm text-slate-500 italic">No appointments found for this patient.</p>
 														)}
 													</div>
+														);
+													})()}
 												</div>
 											)}
 										</div>
