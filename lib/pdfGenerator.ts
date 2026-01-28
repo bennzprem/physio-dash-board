@@ -134,17 +134,29 @@ const buildCurrentStatus = (data: PatientReportData) => {
 
 const baseStyles = {
 	fontSize: 9,
-	cellPadding: 2,
+	cellPadding: 1.5,
 	lineWidth: 0.1,
+	minCellHeight: 5,
 };
 
 const headStyles = {
 	fillColor: [7, 89, 133] as [number, number, number],
 	fontSize: 10,
 	halign: 'left' as const,
-	cellPadding: 2,
+	cellPadding: 1.5,
 	textColor: [255, 255, 255] as [number, number, number],
 };
+
+/** Collapse multiple newlines/spaces and trim to reduce unwanted blank lines in PDF */
+function normalizePdfText(value: string | undefined | null): string {
+	if (value == null || value === '') return '';
+	return String(value)
+		.replace(/\r\n/g, '\n')
+		.replace(/\r/g, '\n')
+		.replace(/\n{3,}/g, '\n\n')
+		.replace(/[ \t]+/g, ' ')
+		.trim();
+}
 
 export type ReportSection = 
 	| 'patientInformation'
@@ -396,14 +408,14 @@ export async function generatePhysiotherapyReportPDF(
 			doc.setTextColor(0, 0, 0);
 			// Center text across full page width
 			doc.text(headerSettings.associationText, pageCenterX, y, { align: 'center' });
-			y += 4;
+			y += 3.5;
 		}
 		if (headerSettings.govermentOrder) {
 			doc.setFontSize(8);
 			doc.text(headerSettings.govermentOrder, pageCenterX, y, { align: 'center' });
-			y += 4;
+			y += 3.5;
 		}
-		y += 6; // One line space
+		y += 3;
 	} else {
 		// For all non-DYES patients (PAID, VIP, GETHNA, or any other type), show phone and address just below title (from config)
 		if (headerSettings.contactInfo) {
@@ -413,8 +425,8 @@ export async function generatePhysiotherapyReportPDF(
 			const contactLines = doc.splitTextToSize(headerSettings.contactInfo, 180);
 			// Center text across full page width - positioned just below "CENTRE FOR SPORTS SCIENCE"
 			doc.text(contactLines, pageCenterX, y, { align: 'center' });
-			y += contactLines.length * 3.5; // Adjust spacing based on number of lines
-			y += 2.5; // Additional spacing to make it one line space total
+			y += contactLines.length * 3;
+			y += 2;
 		}
 	}
 	
@@ -425,13 +437,13 @@ export async function generatePhysiotherapyReportPDF(
 		doc.setTextColor(0, 128, 0); // Green color
 		// Center text across full page width
 		doc.text(headerSettings.subtitle, pageCenterX, y, { align: 'center' });
-		y += 6;
+		y += 4;
 	}
 
-	y += 6;
+	y += 4;
 	doc.setDrawColor(0, 51, 102);
 	doc.line(12, y, 198, y);
-	y += 4;
+	y += 3;
 
 	// Helper function to check if we need a new page before adding a table
 	const checkPageBreak = (requiredSpace: number = 30) => {
@@ -479,29 +491,30 @@ export async function generatePhysiotherapyReportPDF(
 			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
 			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+		y = (doc as any).lastAutoTable.finalY + 3;
 	}
 
 	if (includeSection('assessmentOverview')) {
+		const historyText = data.history || ((data as any).presentHistory || '') + ((data as any).pastHistory ? '\n' + (data as any).pastHistory : '');
 		autoTable(doc, {
 			startY: y,
 			theme: 'grid',
 			head: [['ASSESSMENT OVERVIEW', '']],
-		body: [
-			['History', data.history || ((data as any).presentHistory || '') + ((data as any).pastHistory ? '\n' + (data as any).pastHistory : '')],
-			['Medical History', data.medicalHistory || ''],
-			['Surgical History', data.surgicalHistory || ''],
-			['Sleep Cycle', data.sleepCycle || ''],
-			['Hydration', getHydrationDescriptor(data.hydration)],
-			['Nutrition', data.nutrition || ''],
-		],
-		headStyles,
-		styles: baseStyles,
-		columnStyles: { 0: { cellWidth: 60 } },
-		margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-		didDrawPage: addFooter,
+			body: [
+				['History', normalizePdfText(historyText)],
+				['Medical History', normalizePdfText(data.medicalHistory)],
+				['Surgical History', normalizePdfText(data.surgicalHistory)],
+				['Sleep Cycle', data.sleepCycle || ''],
+				['Hydration', getHydrationDescriptor(data.hydration)],
+				['Nutrition', data.nutrition || ''],
+			],
+			headStyles,
+			styles: baseStyles,
+			columnStyles: { 0: { cellWidth: 60 } },
+			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+		y = (doc as any).lastAutoTable.finalY + 3;
 	}
 
 	if (includeSection('painAssessment')) {
@@ -509,25 +522,25 @@ export async function generatePhysiotherapyReportPDF(
 			startY: y,
 			theme: 'grid',
 			head: [['PAIN ASSESSMENT', '']],
-		body: [
-			['Site and Side', data.siteSide || ''],
-			['Onset', data.onset || ''],
-			['Duration', data.duration || ''],
-			['Nature of Injury', data.natureOfInjury || ''],
-			['Pain Type', data.painType || ''],
-			['Pain Intensity', data.painIntensity || ''],
-			['VAS Scale', getVasDescriptor(data.vasScale)],
-			['Aggravating Factors', data.aggravatingFactor || ''],
-			['Relieving Factors', data.relievingFactor || ''],
-			['Mechanism of Injury', data.mechanismOfInjury || ''],
-		],
-		headStyles,
-		styles: baseStyles,
-		columnStyles: { 0: { cellWidth: 60 } },
-		margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-		didDrawPage: addFooter,
+			body: [
+				['Site and Side', data.siteSide || ''],
+				['Onset', data.onset || ''],
+				['Duration', data.duration || ''],
+				['Nature of Injury', normalizePdfText(data.natureOfInjury)],
+				['Pain Type', data.painType || ''],
+				['Pain Intensity', data.painIntensity || ''],
+				['VAS Scale', getVasDescriptor(data.vasScale)],
+				['Aggravating Factors', normalizePdfText(data.aggravatingFactor)],
+				['Relieving Factors', normalizePdfText(data.relievingFactor)],
+				['Mechanism of Injury', normalizePdfText(data.mechanismOfInjury)],
+			],
+			headStyles,
+			styles: baseStyles,
+			columnStyles: { 0: { cellWidth: 60 } },
+			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+		y = (doc as any).lastAutoTable.finalY + 3;
 	}
 
 	if (includeSection('onObservation')) {
@@ -538,12 +551,12 @@ export async function generatePhysiotherapyReportPDF(
 			head: [['ON OBSERVATION', '']],
 			body: [
 				['Built', data.built || ''],
-				['Posture', `${data.posture || ''}${data.postureManualNotes ? ` | Notes: ${data.postureManualNotes}` : ''}`],
+				['Posture', normalizePdfText(`${data.posture || ''}${data.postureManualNotes ? ` | Notes: ${data.postureManualNotes}` : ''}`)],
 				['Kinetisense Upload', data.postureFileName || '—'],
-				['GAIT Analysis', `${data.gaitAnalysis || ''}${data.gaitManualNotes ? ` | Notes: ${data.gaitManualNotes}` : ''}`],
+				['GAIT Analysis', normalizePdfText(`${data.gaitAnalysis || ''}${data.gaitManualNotes ? ` | Notes: ${data.gaitManualNotes}` : ''}`)],
 				['OptaGAIT Upload', data.gaitFileName || '—'],
 				['Mobility Aids', data.mobilityAids || ''],
-				['Local Observation', data.localObservation || ''],
+				['Local Observation', normalizePdfText(data.localObservation)],
 				['Swelling', data.swelling || ''],
 				['Muscle Wasting', data.muscleWasting || ''],
 			],
@@ -560,7 +573,7 @@ export async function generatePhysiotherapyReportPDF(
 			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
 			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+		y = (doc as any).lastAutoTable.finalY + 3;
 	}
 
 	if (includeSection('onPalpation')) {
@@ -588,63 +601,63 @@ export async function generatePhysiotherapyReportPDF(
 			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
 			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+		y = (doc as any).lastAutoTable.finalY + 3;
 	}
 
 	if (includeSection('rom')) {
 		const romRows = formatJointData(data.rom);
 		if (romRows.length) {
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['ON EXAMINATION — ROM (i)', 'Details']],
-			body: romRows,
-			headStyles,
-			styles: baseStyles,
-			columnStyles: { 0: { cellWidth: 60 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['ON EXAMINATION — ROM (i)', 'Details']],
+				body: romRows,
+				headStyles,
+				styles: baseStyles,
+				columnStyles: { 0: { cellWidth: 60 } },
+				margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				didDrawPage: addFooter,
+			});
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 	}
 
 	if (includeSection('mmt')) {
 		const mmtRows = formatJointData(data.mmt);
 		if (mmtRows.length) {
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['ON EXAMINATION — Manual Muscle Testing (ii)', 'Details']],
-			body: mmtRows,
-			headStyles,
-			styles: baseStyles,
-			columnStyles: { 0: { cellWidth: 80 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['ON EXAMINATION — Manual Muscle Testing (ii)', 'Details']],
+				body: mmtRows,
+				headStyles,
+				styles: baseStyles,
+				columnStyles: { 0: { cellWidth: 80 } },
+				margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				didDrawPage: addFooter,
+			});
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 	}
 
 	if (includeSection('advancedAssessment')) {
 		const advancedRows: string[][] = [];
-		if (data.specialTest) advancedRows.push(['Special Tests', data.specialTest]);
-		if (data.differentialDiagnosis) advancedRows.push(['Differential Diagnosis', data.differentialDiagnosis]);
-		if (data.finalDiagnosis) advancedRows.push(['Diagnosis', data.finalDiagnosis]);
+		if (data.specialTest) advancedRows.push(['Special Tests', normalizePdfText(data.specialTest)]);
+		if (data.differentialDiagnosis) advancedRows.push(['Differential Diagnosis', normalizePdfText(data.differentialDiagnosis)]);
+		if (data.finalDiagnosis) advancedRows.push(['Diagnosis', normalizePdfText(data.finalDiagnosis)]);
 		if (advancedRows.length) {
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['ADVANCED ASSESSMENT', '']],
-			body: advancedRows,
-			headStyles,
-			styles: baseStyles,
-			columnStyles: { 0: { cellWidth: 60 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['ADVANCED ASSESSMENT', '']],
+				body: advancedRows,
+				headStyles,
+				styles: baseStyles,
+				columnStyles: { 0: { cellWidth: 60 } },
+				margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				didDrawPage: addFooter,
+			});
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 	}
 
@@ -655,23 +668,23 @@ export async function generatePhysiotherapyReportPDF(
 
 	if (includeSection('physiotherapyManagement')) {
 		const managementRows: string[][] = [];
-	if (data.shortTermGoals) managementRows.push(['i) Short Term Goals', data.shortTermGoals]);
-	if (data.longTermGoals) managementRows.push(['ii) Long Term Goals', data.longTermGoals]);
-	if (data.treatment || data.treatmentProvided) managementRows.push(['iii) Treatment', data.treatment || data.treatmentProvided || '']);
-	if (data.advice) managementRows.push(['iv) Advice', data.advice]);
-	if (managementRows.length) {
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['PHYSIOTHERAPY MANAGEMENT', '']],
-			body: managementRows,
-			headStyles,
-			styles: baseStyles,
-			columnStyles: { 0: { cellWidth: 60 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+		if (data.shortTermGoals) managementRows.push(['i) Short Term Goals', normalizePdfText(data.shortTermGoals)]);
+		if (data.longTermGoals) managementRows.push(['ii) Long Term Goals', normalizePdfText(data.longTermGoals)]);
+		if (data.treatment || data.treatmentProvided) managementRows.push(['iii) Treatment', normalizePdfText(data.treatment || data.treatmentProvided || '')]);
+		if (data.advice) managementRows.push(['iv) Advice', normalizePdfText(data.advice)]);
+		if (managementRows.length) {
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['PHYSIOTHERAPY MANAGEMENT', '']],
+				body: managementRows,
+				headStyles,
+				styles: baseStyles,
+				columnStyles: { 0: { cellWidth: 60 } },
+				margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				didDrawPage: addFooter,
+			});
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 	}
 
@@ -680,13 +693,13 @@ export async function generatePhysiotherapyReportPDF(
 			startY: y,
 			theme: 'grid',
 			head: [['CURRENT STATUS']],
-		body: [[buildCurrentStatus(data)]],
-		headStyles,
-		styles: { ...baseStyles, cellPadding: 3 },
-		margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-		didDrawPage: addFooter,
+			body: [[buildCurrentStatus(data)]],
+			headStyles,
+			styles: baseStyles,
+			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 6;
+		y = (doc as any).lastAutoTable.finalY + 3;
 	}
 
 	if (includeSection('nextFollowUp') && (data.nextFollowUpDate || data.nextFollowUpTime)) {
@@ -704,9 +717,9 @@ export async function generatePhysiotherapyReportPDF(
 			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
 			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 10;
+		y = (doc as any).lastAutoTable.finalY + 4;
 	} else if (includeSection('nextFollowUp')) {
-		y += 10;
+		y += 4;
 	}
 
 	if (includeSection('signature')) {
@@ -945,13 +958,13 @@ export async function generateStrengthConditioningPDF(
 		doc.setFontSize(16);
 		doc.setFont('helvetica', 'bold');
 		doc.text('Strength and Conditioning Assessment Report', pageWidth / 2, y, { align: 'center' });
-		y += 10;
+		y += 6;
 
 		// Patient Details
 		doc.setFontSize(12);
 		doc.setFont('helvetica', 'bold');
 		doc.text('Patient Information', pageMargin, y);
-		y += 8;
+		y += 5;
 
 		doc.setFontSize(10);
 		doc.setFont('helvetica', 'normal');
@@ -969,19 +982,19 @@ export async function generateStrengthConditioningPDF(
 			head: [['Field', 'Value']],
 			body: patientInfo,
 			theme: 'grid',
-			headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-			styles: { fontSize: 9, cellPadding: 3 },
+			headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+			styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 			columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 			margin: { left: pageMargin, right: pageMargin },
 		});
-		y = (doc as any).lastAutoTable.finalY + 10;
+		y = (doc as any).lastAutoTable.finalY + 4;
 
 		// Date
 		if (data.formData.assessmentDate) {
 			doc.setFontSize(10);
 			doc.setFont('helvetica', 'normal');
 			doc.text(`Date: ${data.formData.assessmentDate}`, pageMargin, y);
-			y += 8;
+			y += 5;
 		}
 
 		// Therapist Name
@@ -989,7 +1002,7 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(10);
 			doc.setFont('helvetica', 'normal');
 			doc.text(`Therapist: ${data.formData.therapistName}`, pageMargin, y);
-			y += 8;
+			y += 5;
 		}
 
 		// Athlete Profile Section
@@ -1009,19 +1022,19 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('Athlete Profile', pageMargin, y);
-			y += 8;
+			y += 5;
 
 			autoTable(doc, {
 				startY: y,
 				head: [['Field', 'Value']],
 				body: athleteProfileFields,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Periodization Section
@@ -1040,19 +1053,19 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('Periodization', pageMargin, y);
-			y += 8;
+			y += 5;
 
 			autoTable(doc, {
 				startY: y,
 				head: [['Field', 'Value']],
 				body: periodizationFields,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Skill Training Section
@@ -1071,19 +1084,19 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('Skill Training', pageMargin, y);
-			y += 8;
+			y += 5;
 
 			autoTable(doc, {
 				startY: y,
 				head: [['Field', 'Value']],
 				body: skillTrainingFields,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Strength & Conditioning Section
@@ -1102,19 +1115,19 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('Strength & Conditioning', pageMargin, y);
-			y += 8;
+			y += 5;
 
 			autoTable(doc, {
 				startY: y,
 				head: [['Field', 'Value']],
 				body: scFields,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Exercise Log Section
@@ -1127,7 +1140,7 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('Exercise Log', pageMargin, y);
-			y += 8;
+			y += 5;
 
 			const exerciseRows = data.formData.exercises
 				.filter(ex => ex.exerciseName)
@@ -1147,11 +1160,11 @@ export async function generateStrengthConditioningPDF(
 					head: [['Exercise', 'Sets', 'Reps', 'Load (kg)', 'Rest (s)', 'Distance', 'Avg HR']],
 					body: exerciseRows,
 					theme: 'grid',
-					headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-					styles: { fontSize: 8, cellPadding: 2 },
+					headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+					styles: { fontSize: 8, cellPadding: 1.5, minCellHeight: 5 },
 					margin: { left: pageMargin, right: pageMargin },
 				});
-				y = (doc as any).lastAutoTable.finalY + 6;
+				y = (doc as any).lastAutoTable.finalY + 3;
 			}
 		}
 
@@ -1172,19 +1185,19 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('Wellness Score', pageMargin, y);
-			y += 8;
+			y += 5;
 
 			autoTable(doc, {
 				startY: y,
 				head: [['Field', 'Value']],
 				body: wellnessFields,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// ACWR Section
@@ -1203,26 +1216,26 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('ACWR (Acute:Chronic Workload Ratio)', pageMargin, y);
-			y += 8;
+			y += 5;
 
 			autoTable(doc, {
 				startY: y,
 				head: [['Field', 'Value']],
 				body: acwrFields,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Injury Risk Screening Section
 		doc.setFontSize(12);
 		doc.setFont('helvetica', 'bold');
 		doc.text('Injury Risk Screening', pageMargin, y);
-		y += 8;
+		y += 5;
 
 		// Build body rows for single-field items
 		const bodyRows: string[][] = [];
@@ -1244,11 +1257,11 @@ export async function generateStrengthConditioningPDF(
 				head: [['Field', 'Right', 'Left']],
 				body: upperBodyRows,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Add more single-field rows
@@ -1277,11 +1290,11 @@ export async function generateStrengthConditioningPDF(
 				head: [['Field', 'Right', 'Left']],
 				body: lowerBodyRows,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		if (data.formData.pronePlank) {
@@ -1300,11 +1313,11 @@ export async function generateStrengthConditioningPDF(
 				head: [['Field', 'Right', 'Left']],
 				body: balanceRows,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Additional fields
@@ -1320,12 +1333,12 @@ export async function generateStrengthConditioningPDF(
 				head: [['Field', 'Value']],
 				body: additionalFields,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Render single-field rows (scapularDyskinesiaTest, thoracicRotation, sitAndReachTest, pronePlank)
@@ -1340,12 +1353,12 @@ export async function generateStrengthConditioningPDF(
 				head: [['Field', 'Value']],
 				body: bodyRows,
 				theme: 'grid',
-				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255] },
-				styles: { fontSize: 9, cellPadding: 2 },
+				headStyles: { fillColor: [7, 89, 133], textColor: [255, 255, 255], cellPadding: 1.5 },
+				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 6;
+			y = (doc as any).lastAutoTable.finalY + 3;
 		}
 
 		// Summary
@@ -1358,7 +1371,7 @@ export async function generateStrengthConditioningPDF(
 			doc.setFontSize(12);
 			doc.setFont('helvetica', 'bold');
 			doc.text('Summary', pageMargin, y);
-			y += 6;
+			y += 5;
 
 			doc.setFontSize(10);
 			doc.setFont('helvetica', 'normal');
@@ -1381,18 +1394,18 @@ export async function generateStrengthConditioningPDF(
 				doc.setFontSize(12);
 				doc.setFont('helvetica', 'bold');
 				doc.text('Attached Document', pageMargin, y);
-				y += 8;
+				y += 5;
 				
 				doc.setFontSize(10);
 				doc.setFont('helvetica', 'normal');
 				doc.text('An attached PDF document has been uploaded and is available at:', pageMargin, y);
-				y += 6;
+				y += 4;
 				
 				// Add the URL as a clickable link (will appear as text in PDF)
 				doc.setTextColor(0, 0, 255);
 				const urlLines = doc.splitTextToSize(data.uploadedPdfUrl, pageWidth - 2 * pageMargin);
 				doc.text(urlLines, pageMargin, y);
-				y += urlLines.length * 5 + 5;
+				y += urlLines.length * 4 + 4;
 				doc.setTextColor(0, 0, 0);
 				
 				// Try to merge PDFs using pdf-lib if available
