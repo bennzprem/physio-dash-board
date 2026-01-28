@@ -140,6 +140,7 @@ interface PsychologyReportProps {
 	editable?: boolean;
 	sessionIndex?: number; // 0-based index (0 = first session)
 	totalSessions?: number; // Total number of sessions
+	hasExistingVersions?: boolean; // Whether there are existing report versions
 }
 
 // Helper functions for categorization
@@ -220,12 +221,39 @@ const getControlsCategory = (sec: number): string => {
 	]);
 };
 
-export default function PsychologyReport({ patientData, formData, onChange, editable = true, sessionIndex, totalSessions }: PsychologyReportProps) {
+// Helper function to calculate age from date of birth
+const calculateAge = (dob?: string): string => {
+	if (!dob) return '—';
+	try {
+		const birth = new Date(dob);
+		if (Number.isNaN(birth.getTime())) return '—';
+		const now = new Date();
+		let age = now.getFullYear() - birth.getFullYear();
+		const monthDiff = now.getMonth() - birth.getMonth();
+		if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birth.getDate())) {
+			age -= 1;
+		}
+		return age > 0 ? String(age) : '—';
+	} catch {
+		return '—';
+	}
+};
+
+export default function PsychologyReport({ patientData, formData, onChange, editable = true, sessionIndex, totalSessions, hasExistingVersions = false }: PsychologyReportProps) {
 	const [localData, setLocalData] = useState<PsychologyReportData>(formData);
 
 	// Determine if this is the first session
-	// Priority: 1) sessionIndex prop, 2) check for existing psychology report data, 3) calculate from patient data, 4) default to first session
+	// Priority: 1) hasExistingVersions prop (if false, it's first session), 2) sessionIndex prop, 3) check for existing psychology report data, 4) calculate from patient data, 5) default to first session
 	const isFirstSession = useMemo(() => {
+		// If hasExistingVersions is explicitly false, this is the first session
+		if (hasExistingVersions === false) {
+			return true;
+		}
+		// If hasExistingVersions is true, this is NOT the first session
+		if (hasExistingVersions === true) {
+			return false;
+		}
+		
 		if (sessionIndex !== undefined) {
 			return sessionIndex === 0;
 		}
@@ -388,49 +416,10 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 
 				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 					<div>
-						<label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
-						{editable ? (
-							<input
-								type="text"
-								value={localData.name || ''}
-								onChange={(e) => updateField('name', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-								placeholder="Enter name"
-							/>
-						) : (
-							<p className="text-sm text-slate-900">{localData.name || patientData?.name || '—'}</p>
-						)}
-					</div>
-					<div>
 						<label className="block text-sm font-medium text-slate-700 mb-1">Age</label>
-						{editable ? (
-							<input
-								type="text"
-								value={localData.age || ''}
-								onChange={(e) => updateField('age', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-								placeholder="Enter age"
-							/>
-						) : (
-							<p className="text-sm text-slate-900">{localData.age || '—'}</p>
-						)}
-					</div>
-					<div>
-						<label className="block text-sm font-medium text-slate-700 mb-1">Gender</label>
-						{editable ? (
-							<select
-								value={localData.gender || ''}
-								onChange={(e) => updateField('gender', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-							>
-								<option value="">Select</option>
-								<option value="Male">Male</option>
-								<option value="Female">Female</option>
-								<option value="Other">Other</option>
-							</select>
-						) : (
-							<p className="text-sm text-slate-900">{localData.gender || patientData?.gender || '—'}</p>
-						)}
+						<p className="text-sm text-slate-900 bg-slate-50 border border-slate-300 rounded-md px-3 py-2">
+							{calculateAge(patientData?.dob)}
+						</p>
 					</div>
 					<div>
 						<label className="block text-sm font-medium text-slate-700 mb-1">Father's name</label>
@@ -472,34 +461,6 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							/>
 						) : (
 							<p className="text-sm text-slate-900">{localData.sport || '—'}</p>
-						)}
-					</div>
-					<div>
-						<label className="block text-sm font-medium text-slate-700 mb-1">Phone no</label>
-						{editable ? (
-							<input
-								type="text"
-								value={localData.phone || ''}
-								onChange={(e) => updateField('phone', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-								placeholder="Enter phone number"
-							/>
-						) : (
-							<p className="text-sm text-slate-900">{localData.phone || patientData?.phone || '—'}</p>
-						)}
-					</div>
-					<div>
-						<label className="block text-sm font-medium text-slate-700 mb-1">Email ID</label>
-						{editable ? (
-							<input
-								type="email"
-								value={localData.email || ''}
-								onChange={(e) => updateField('email', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-								placeholder="Enter email"
-							/>
-						) : (
-							<p className="text-sm text-slate-900">{localData.email || patientData?.email || '—'}</p>
 						)}
 					</div>
 					<div>

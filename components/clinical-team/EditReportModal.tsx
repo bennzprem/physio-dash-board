@@ -525,13 +525,17 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		version: number;
 		createdAt: string;
 		createdBy: string;
-		data: Partial<PatientRecordFull> | StrengthConditioningData;
+		data: Partial<PatientRecordFull> | StrengthConditioningData | any;
 		isStrengthConditioning?: boolean;
+		isPsychology?: boolean;
 	}>>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | StrengthConditioningData | null>(null);
 	const [viewingVersionIsStrengthConditioning, setViewingVersionIsStrengthConditioning] = useState(false);
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
+	const [hasPsychologyVersions, setHasPsychologyVersions] = useState(false);
+	const [hasPhysiotherapyVersions, setHasPhysiotherapyVersions] = useState(false);
+	const [hasStrengthConditioningVersions, setHasStrengthConditioningVersions] = useState(false);
 	const [isExtraTreatment, setIsExtraTreatment] = useState(false);
 	
 	// Crisp report state
@@ -581,19 +585,43 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	// Helper function to get session number and first report date
 	const getSessionInfo = async (patientId: string): Promise<{ sessionNumber: number; firstReportDate: string | null }> => {
 		try {
-			// Try to get report versions with orderBy
+			// Try to get report versions with orderBy, filtered by reportType = 'physiotherapy'
 			let versionsQuery = query(
 				collection(db, 'reportVersions'),
-				where('patientId', '==', patientId)
+				where('patientId', '==', patientId),
+				where('reportType', '==', 'physiotherapy')
 			);
 			
+			let versionsSnapshot;
 			try {
 				versionsQuery = query(versionsQuery, orderBy('version', 'asc'));
+				versionsSnapshot = await getDocs(versionsQuery);
 			} catch {
-				// If orderBy fails, we'll sort manually
+				// If orderBy or reportType filter fails, try without reportType filter (for backward compatibility)
+				try {
+					versionsQuery = query(
+						collection(db, 'reportVersions'),
+						where('patientId', '==', patientId)
+					);
+					try {
+						versionsQuery = query(versionsQuery, orderBy('version', 'asc'));
+					} catch {
+						// If orderBy fails, we'll sort manually
+					}
+					versionsSnapshot = await getDocs(versionsQuery);
+					// Filter by reportType in memory for backward compatibility
+					versionsSnapshot = {
+						...versionsSnapshot,
+						docs: versionsSnapshot.docs.filter(doc => {
+							const data = doc.data();
+							return data.reportType === 'physiotherapy' || !data.reportType;
+						})
+					} as QuerySnapshot;
+				} catch (fallbackError) {
+					// If everything fails, return session 1
+					return { sessionNumber: 1, firstReportDate: null };
+				}
 			}
-			
-			const versionsSnapshot = await getDocs(versionsQuery);
 			
 			if (versionsSnapshot.empty) {
 				// No reports exist - this will be Session 1
@@ -809,94 +837,141 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					
 					// Load session info (use the data we already have)
 					if (initialPatientData.patientId) {
+						// Check for existing physiotherapy report versions first
+						let hasPhysioVersions = false;
+						try {
+							let physioVersionsQuery = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', initialPatientData.patientId),
+								where('reportType', '==', 'physiotherapy')
+							);
+							try {
+								const physioVersionsSnapshot = await getDocs(physioVersionsQuery);
+								hasPhysioVersions = physioVersionsSnapshot.docs.length > 0;
+								setHasPhysiotherapyVersions(hasPhysioVersions);
+							} catch {
+								// If reportType filter fails, try without it
+								const fallbackQuery = query(
+									collection(db, 'reportVersions'),
+									where('patientId', '==', initialPatientData.patientId)
+								);
+								const fallbackSnapshot = await getDocs(fallbackQuery);
+								hasPhysioVersions = fallbackSnapshot.docs.some(doc => {
+									const data = doc.data();
+									return data.reportType === 'physiotherapy' || !data.reportType;
+								});
+								setHasPhysiotherapyVersions(hasPhysioVersions);
+							}
+						} catch (err) {
+							console.error('Error checking physiotherapy report versions:', err);
+							setHasPhysiotherapyVersions(false);
+						}
+						
 						const sessionInfo = await getSessionInfo(initialPatientData.patientId);
 						setSessionNumber(sessionInfo.sessionNumber);
 						setFirstReportDate(sessionInfo.firstReportDate);
 						
 						// Determine if we're editing Session 1
-						const currentDate = initialPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
-						if (sessionInfo.firstReportDate && currentDate === sessionInfo.firstReportDate) {
-							setIsEditingSession1(true);
-							setSessionNumber(1);
-						} else if (!sessionInfo.firstReportDate) {
-							// No reports exist, this is Session 1
+						// If no versions exist, it's Session 1
+						if (!hasPhysioVersions && sessionInfo.sessionNumber === 1) {
 							setIsEditingSession1(true);
 							setSessionNumber(1);
 						} else {
-							setIsEditingSession1(false);
+							const currentDate = initialPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
+							if (sessionInfo.firstReportDate && currentDate === sessionInfo.firstReportDate) {
+								setIsEditingSession1(true);
+								setSessionNumber(1);
+							} else if (!sessionInfo.firstReportDate && !hasPhysioVersions) {
+								// No reports exist, this is Session 1
+								setIsEditingSession1(true);
+								setSessionNumber(1);
+							} else {
+								setIsEditingSession1(false);
+							}
 						}
 						
 						// Set up real-time listener for report versions
-						let versionsQuery = query(
-							collection(db, 'reportVersions'),
-							where('patientId', '==', initialPatientData.patientId)
-						);
-						
-						try {
-							versionsQuery = query(versionsQuery, orderBy('version', 'desc'));
-						} catch {
-							// If orderBy fails, continue without it
-						}
-						
-						const unsubscribeVersions = onSnapshot(
-							versionsQuery,
-							(snapshot) => {
-								const versions = snapshot.docs.map(doc => {
-									const data = doc.data();
-									const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
-									return {
-										id: doc.id,
-										version: data.version as number,
-										createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
-										createdBy: (data.createdBy as string) || 'Unknown',
-										data: (data.reportData as Partial<PatientRecordFull>) || {},
-										isStrengthConditioning: false,
-									};
-								});
-								
-								// Only update if version history is currently being viewed
-								if (showVersionHistory && activeReportTab === 'report') {
-									setVersionHistory(versions);
-								}
-							},
-							(error) => {
-								// If orderBy fails (missing index), try without it
-								if (error.code === 'failed-precondition' || error.message?.includes('index')) {
-									const versionsQueryNoOrder = query(
-										collection(db, 'reportVersions'),
-										where('patientId', '==', initialPatientData.patientId)
-									);
-									
-									onSnapshot(
-										versionsQueryNoOrder,
-										(snapshot) => {
-											const versions = snapshot.docs.map(doc => {
-												const data = doc.data();
-												const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
-												return {
-													id: doc.id,
-													version: data.version as number,
-													createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
-													createdBy: (data.createdBy as string) || 'Unknown',
-													data: (data.reportData as Partial<PatientRecordFull>) || {},
-													isStrengthConditioning: false,
-												};
-											});
-											versions.sort((a, b) => b.version - a.version);
-											
-											if (showVersionHistory && activeReportTab === 'report') {
-												setVersionHistory(versions);
-											}
-										},
-										(err) => console.error('Error loading report versions:', err)
-									);
-								} else {
-									console.error('Error loading report versions:', error);
-								}
+						// Only set up real-time listener for physiotherapy reports (activeReportTab === 'report')
+						// Psychology and Strength & Conditioning have their own collections
+						if (activeReportTab === 'report') {
+							let versionsQuery = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', initialPatientData.patientId),
+								where('reportType', '==', 'physiotherapy')
+							);
+							
+							try {
+								versionsQuery = query(versionsQuery, orderBy('version', 'desc'));
+							} catch {
+								// If orderBy fails, continue without it
 							}
-						);
-						
-						reportVersionsUnsubscribeRef.current = unsubscribeVersions;
+							
+							const unsubscribeVersions = onSnapshot(
+								versionsQuery,
+								(snapshot) => {
+									const versions = snapshot.docs.map(doc => {
+										const data = doc.data();
+										const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+										return {
+											id: doc.id,
+											version: data.version as number,
+											createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+											createdBy: (data.createdBy as string) || 'Unknown',
+											data: (data.reportData as Partial<PatientRecordFull>) || {},
+											isStrengthConditioning: false,
+											isPsychology: false,
+										};
+									});
+									
+									// Only update if version history is currently being viewed
+									if (showVersionHistory && activeReportTab === 'report') {
+										setVersionHistory(versions);
+									}
+								},
+								(error) => {
+									// If orderBy or reportType filter fails (missing index), try without reportType filter
+									if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+										const versionsQueryNoOrder = query(
+											collection(db, 'reportVersions'),
+											where('patientId', '==', initialPatientData.patientId)
+										);
+										
+										onSnapshot(
+											versionsQueryNoOrder,
+											(snapshot) => {
+												// Filter by reportType in memory for backward compatibility
+												const versions = snapshot.docs
+													.map(doc => {
+														const data = doc.data();
+														const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+														return {
+															id: doc.id,
+															version: data.version as number,
+															createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+															createdBy: (data.createdBy as string) || 'Unknown',
+															data: (data.reportData as Partial<PatientRecordFull>) || {},
+															isStrengthConditioning: false,
+															isPsychology: false,
+															reportType: data.reportType || 'physiotherapy',
+														};
+													})
+													.filter(v => v.reportType === 'physiotherapy' || !v.reportType); // Include old records without reportType
+												versions.sort((a, b) => b.version - a.version);
+												
+												if (showVersionHistory && activeReportTab === 'report') {
+													setVersionHistory(versions);
+												}
+											},
+											(err) => console.error('Error loading report versions:', err)
+										);
+									} else {
+										console.error('Error loading report versions:', error);
+									}
+								}
+							);
+							
+							reportVersionsUnsubscribeRef.current = unsubscribeVersions;
+						}
 						
 						// Load header config (one-time load)
 						const patientType = initialPatientData.patientType || 'nonDYES';
@@ -929,6 +1004,20 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 					// Load strength and conditioning report (using documentId from first query)
 					if (documentId) {
+						// Check for existing strength & conditioning report versions
+						if (initialPatientData.patientId) {
+							const scVersionsQuery = query(
+								collection(db, 'strengthConditioningReportVersions'),
+								where('patientId', '==', initialPatientData.patientId)
+							);
+							getDocs(scVersionsQuery).then((snapshot) => {
+								setHasStrengthConditioningVersions(snapshot.docs.length > 0);
+							}).catch((err) => {
+								console.error('Error checking strength & conditioning report versions:', err);
+								setHasStrengthConditioningVersions(false);
+							});
+						}
+						
 						const reportRef = doc(db, 'strengthConditioningReports', documentId);
 						const unsubscribe = onSnapshot(reportRef, (docSnap) => {
 							if (docSnap.exists()) {
@@ -990,6 +1079,20 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					// Load psychology data (always load, not just when tab is active)
 					if (documentId) {
 						try {
+							// Check for existing psychology report versions
+							if (initialPatientData.patientId) {
+								const versionsQuery = query(
+									collection(db, 'psychologyReportVersions'),
+									where('patientId', '==', initialPatientData.patientId)
+								);
+								getDocs(versionsQuery).then((snapshot) => {
+									setHasPsychologyVersions(snapshot.docs.length > 0);
+								}).catch((err) => {
+									console.error('Error checking psychology report versions:', err);
+									setHasPsychologyVersions(false);
+								});
+							}
+							
 							const psychologyRef = doc(db, 'psychologyReports', documentId);
 							const unsubscribe = onSnapshot(psychologyRef, (docSnap) => {
 								try {
@@ -1874,6 +1977,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						createdAt: serverTimestamp(),
 					});
 					await addDoc(collection(db, 'strengthConditioningReportVersions'), versionData);
+					// Update hasStrengthConditioningVersions since we just saved a version
+					setHasStrengthConditioningVersions(true);
 				} catch (versionError: any) {
 					// If orderBy fails (missing index), try without it
 					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
@@ -1899,6 +2004,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								createdAt: serverTimestamp(),
 							});
 							await addDoc(collection(db, 'strengthConditioningReportVersions'), versionDataRetry);
+							// Update hasStrengthConditioningVersions since we just saved a version
+							setHasStrengthConditioningVersions(true);
 						} catch (retryError) {
 							console.warn('Failed to save strength conditioning version history', retryError);
 							// Continue without version history
@@ -2016,6 +2123,64 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			}
 			const docRef = doc(db, 'psychologyReports', documentIdToUse);
 			await setDoc(docRef, dataToSave, { merge: true });
+			
+			// Save psychology report version
+			try {
+				// First, renumber versions sequentially if needed
+				await renumberVersionsSequentially('psychologyReportVersions', reportPatientData.patientId);
+				
+				// Get the next version number
+				let versionsQuery = query(
+					collection(db, 'psychologyReportVersions'),
+					where('patientId', '==', reportPatientData.patientId),
+					orderBy('version', 'desc')
+				);
+				let versionsSnapshot: QuerySnapshot;
+				try {
+					versionsSnapshot = await getDocs(versionsQuery);
+				} catch (queryError: any) {
+					// If orderBy fails, try without it
+					if (queryError.code === 'failed-precondition' || queryError.message?.includes('index')) {
+						const fallbackQuery = query(
+							collection(db, 'psychologyReportVersions'),
+							where('patientId', '==', reportPatientData.patientId)
+						);
+						const fallbackSnapshot = await getDocs(fallbackQuery);
+						const versions = fallbackSnapshot.docs.map(doc => ({
+							version: (doc.data().version as number) || 0,
+							doc: doc,
+						}));
+						versions.sort((a, b) => b.version - a.version);
+						// Use the sorted docs
+						versionsSnapshot = {
+							...fallbackSnapshot,
+							docs: versions.map(v => v.doc)
+						} as QuerySnapshot;
+					} else {
+						throw queryError;
+					}
+				}
+				const nextVersion = versionsSnapshot.docs.length > 0 
+					? (versionsSnapshot.docs[0].data().version as number) + 1 
+					: 1;
+
+				await addDoc(collection(db, 'psychologyReportVersions'), {
+					patientId: reportPatientData.patientId,
+					patientName: reportPatientData.name,
+					version: nextVersion,
+					reportType: 'psychology',
+					reportData: removeUndefined(dataToSave),
+					createdBy: user?.displayName || user?.email || 'Unknown',
+					createdById: user?.uid || '',
+					createdAt: serverTimestamp(),
+				});
+				// Update hasPsychologyVersions since we just saved a version
+				setHasPsychologyVersions(true);
+			} catch (versionError: any) {
+				console.error('Failed to save psychology report version:', versionError);
+				// Don't block the main save operation if version saving fails
+			}
+			
 			setSavedPsychologyMessage(true);
 			setTimeout(() => setSavedPsychologyMessage(false), 3000);
 		} catch (error) {
@@ -2352,12 +2517,37 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						sessionNum = 1;
 					}
 					
-					const versionsQuery = query(
+					// Query only physiotherapy versions to get the next version number
+					let versionsQuery = query(
 						collection(db, 'reportVersions'),
 						where('patientId', '==', reportPatientData.patientId),
+						where('reportType', '==', 'physiotherapy'),
 						orderBy('version', 'desc')
 					);
-					const versionsSnapshot = await getDocs(versionsQuery);
+					let versionsSnapshot;
+					try {
+						versionsSnapshot = await getDocs(versionsQuery);
+					} catch (queryError: any) {
+						// If reportType filter fails, try without it and filter in memory
+						if (queryError.code === 'failed-precondition' || queryError.message?.includes('index')) {
+							const fallbackQuery = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', reportPatientData.patientId),
+								orderBy('version', 'desc')
+							);
+							versionsSnapshot = await getDocs(fallbackQuery);
+							// Filter by reportType in memory
+							versionsSnapshot = {
+								...versionsSnapshot,
+								docs: versionsSnapshot.docs.filter(doc => {
+									const data = doc.data();
+									return data.reportType === 'physiotherapy' || !data.reportType;
+								})
+							} as any;
+						} else {
+							throw queryError;
+						}
+					}
 					const nextVersion = versionsSnapshot.docs.length > 0 
 						? (versionsSnapshot.docs[0].data().version as number) + 1 
 						: 1;
@@ -2367,29 +2557,44 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						patientName: reportPatientData.name,
 						version: nextVersion,
 						sessionNumber: sessionNum, // Add session number
+						reportType: 'physiotherapy', // Add report type to distinguish from psychology
 						reportData: removeUndefined(currentReportData),
 						createdBy: user?.displayName || user?.email || 'Unknown',
 						createdById: user?.uid || '',
 						createdAt: serverTimestamp(),
 					});
+					// Update hasPhysiotherapyVersions since we just saved a version
+					setHasPhysiotherapyVersions(true);
 				} catch (versionError: any) {
 					// If orderBy fails (missing index), try without it
 					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
 						console.warn('Report version index not found, retrying without orderBy', versionError);
 						try {
-							// Retry query without orderBy
-							const versionsQueryWithoutOrder = query(
+							// Retry query without orderBy, but still filter by reportType
+							let versionsQueryWithoutOrder = query(
 								collection(db, 'reportVersions'),
 								where('patientId', '==', reportPatientData.patientId)
 							);
+							
+							// Try to add reportType filter
+							try {
+								versionsQueryWithoutOrder = query(versionsQueryWithoutOrder, where('reportType', '==', 'physiotherapy'));
+							} catch {
+								// If reportType filter fails, filter in memory
+							}
+							
 							const versionsSnapshot = await getDocs(versionsQueryWithoutOrder);
 							
-							// Manually sort by version number
-							const versions = versionsSnapshot.docs.map(doc => ({
+							// Manually sort by version number and filter by reportType if needed
+							let versions = versionsSnapshot.docs.map(doc => ({
 								id: doc.id,
 								version: (doc.data().version as number) || 0,
 								data: doc.data(),
+								reportType: doc.data().reportType as string | undefined,
 							}));
+							
+							// Filter by reportType in memory if not already filtered
+							versions = versions.filter(v => v.reportType === 'physiotherapy' || (!v.reportType && v.reportType === undefined));
 							versions.sort((a, b) => b.version - a.version);
 							
 							const nextVersion = versions.length > 0 
@@ -2412,11 +2617,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								patientName: reportPatientData.name,
 								version: nextVersion,
 								sessionNumber: sessionNum, // Add session number
+								reportType: 'physiotherapy', // Add report type to distinguish from psychology
 								reportData: removeUndefined(currentReportData),
 								createdBy: user?.displayName || user?.email || 'Unknown',
 								createdById: user?.uid || '',
 								createdAt: serverTimestamp(),
 							});
+							// Update hasPhysiotherapyVersions since we just saved a version
+							setHasPhysiotherapyVersions(true);
 						} catch (retryError: any) {
 							console.error('Failed to save report version even with fallback:', retryError);
 							// Still continue - don't block the main save operation
@@ -2527,7 +2735,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	};
 
 	// Helper function to renumber versions sequentially
-	const renumberVersionsSequentially = async (collectionName: string, patientId: string): Promise<void> => {
+	const renumberVersionsSequentially = async (collectionName: string, patientId: string, reportType?: string): Promise<void> => {
 		try {
 			// Try with orderBy first
 			try {
@@ -2688,35 +2896,145 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						setVersionHistory([]);
 					}
 				}
-			} else {
-				// Regular report version history
+			} else if (activeReportTab === 'psychology') {
+				// Psychology report version history - use psychologyReportVersions collection
 				if (!reportPatientData?.patientId) {
 					setVersionHistory([]);
 					return;
 				}
-				// First, renumber versions sequentially if needed
-				await renumberVersionsSequentially('reportVersions', reportPatientData.patientId);
+				try {
+					// First, renumber versions sequentially if needed
+					await renumberVersionsSequentially('psychologyReportVersions', reportPatientData.patientId);
+					
+					// Then load the renumbered versions
+					const versionsQuery = query(
+						collection(db, 'psychologyReportVersions'),
+						where('patientId', '==', reportPatientData.patientId),
+						orderBy('version', 'desc')
+					);
+					const versionsSnapshot = await getDocs(versionsQuery);
+					const versions = versionsSnapshot.docs.map(doc => {
+						const data = doc.data();
+						const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+						return {
+							id: doc.id,
+							version: data.version as number,
+							createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+							createdBy: (data.createdBy as string) || 'Unknown',
+							data: (data.reportData as any) || {},
+							isPsychology: true,
+						};
+					});
+					setVersionHistory(versions);
+				} catch (psychError: any) {
+					// If orderBy fails (missing index), try without it
+					if (psychError.code === 'failed-precondition' || psychError.message?.includes('index')) {
+						try {
+							await renumberVersionsSequentially('psychologyReportVersions', reportPatientData.patientId);
+							const versionsQuery = query(
+								collection(db, 'psychologyReportVersions'),
+								where('patientId', '==', reportPatientData.patientId)
+							);
+							const versionsSnapshot = await getDocs(versionsQuery);
+							const versions = versionsSnapshot.docs.map(doc => {
+								const data = doc.data();
+								const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+								return {
+									id: doc.id,
+									version: data.version as number,
+									createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+									createdBy: (data.createdBy as string) || 'Unknown',
+									data: (data.reportData as any) || {},
+									isPsychology: true,
+								};
+							});
+							versions.sort((a, b) => b.version - a.version);
+							setVersionHistory(versions);
+						} catch (retryError: any) {
+							console.error('Psychology version history error:', retryError);
+							if (retryError.code !== 'failed-precondition' && !retryError.message?.includes('index')) {
+								console.warn('Failed to load psychology version history:', retryError);
+							}
+							setVersionHistory([]);
+						}
+					} else {
+						console.error('Psychology version history error:', psychError);
+						if (psychError.code !== 'permission-denied') {
+							console.warn('Failed to load psychology version history:', psychError);
+						}
+						setVersionHistory([]);
+					}
+				}
+			} else {
+				// Physiotherapy report version history - filter by reportType
+				if (!reportPatientData?.patientId) {
+					setVersionHistory([]);
+					return;
+				}
+				// First, renumber versions sequentially if needed (only for physiotherapy)
+				await renumberVersionsSequentially('reportVersions', reportPatientData.patientId, 'physiotherapy');
 				
-				// Then load the renumbered versions
-				const versionsQuery = query(
-					collection(db, 'reportVersions'),
-					where('patientId', '==', reportPatientData.patientId),
-					orderBy('version', 'desc')
-				);
-				const versionsSnapshot = await getDocs(versionsQuery);
-				const versions = versionsSnapshot.docs.map(doc => {
-					const data = doc.data();
-					const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
-					return {
-						id: doc.id,
-						version: data.version as number,
-						createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
-						createdBy: (data.createdBy as string) || 'Unknown',
-						data: (data.reportData as Partial<PatientRecordFull>) || {},
-						isStrengthConditioning: false,
-					};
-				});
-				setVersionHistory(versions);
+				// Then load the renumbered versions - filter by reportType = 'physiotherapy'
+				try {
+					const versionsQuery = query(
+						collection(db, 'reportVersions'),
+						where('patientId', '==', reportPatientData.patientId),
+						where('reportType', '==', 'physiotherapy'),
+						orderBy('version', 'desc')
+					);
+					const versionsSnapshot = await getDocs(versionsQuery);
+					const versions = versionsSnapshot.docs.map(doc => {
+						const data = doc.data();
+						const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+						return {
+							id: doc.id,
+							version: data.version as number,
+							createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+							createdBy: (data.createdBy as string) || 'Unknown',
+							data: (data.reportData as Partial<PatientRecordFull>) || {},
+							isStrengthConditioning: false,
+							isPsychology: false,
+						};
+					});
+					setVersionHistory(versions);
+				} catch (error: any) {
+					// If orderBy fails or reportType filter fails, try without reportType filter (for backward compatibility)
+					if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+						try {
+							await renumberVersionsSequentially('reportVersions', reportPatientData.patientId, 'physiotherapy');
+							const versionsQuery = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', reportPatientData.patientId)
+							);
+							const versionsSnapshot = await getDocs(versionsQuery);
+							// Filter by reportType in memory for backward compatibility
+							const versions = versionsSnapshot.docs
+								.map(doc => {
+									const data = doc.data();
+									const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+									return {
+										id: doc.id,
+										version: data.version as number,
+										createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+										createdBy: (data.createdBy as string) || 'Unknown',
+										data: (data.reportData as Partial<PatientRecordFull>) || {},
+										isStrengthConditioning: false,
+										isPsychology: false,
+										reportType: data.reportType || 'physiotherapy', // Default to physiotherapy for old records
+									};
+								})
+								.filter(v => v.reportType === 'physiotherapy' || !v.reportType); // Include old records without reportType
+							versions.sort((a, b) => b.version - a.version);
+							setVersionHistory(versions);
+						} catch (retryError: any) {
+							console.error('Failed to load physiotherapy version history:', retryError);
+							setVersionHistory([]);
+						}
+					} else {
+						console.error('Failed to load physiotherapy version history:', error);
+						setVersionHistory([]);
+					}
+				}
 			}
 		} catch (error) {
 			console.error('Failed to load report history', error);
@@ -2749,6 +3067,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			// Determine which collection to delete from based on report type
 			const collectionName = activeReportTab === 'strength-conditioning' 
 				? 'strengthConditioningReportVersions' 
+				: activeReportTab === 'psychology'
+				? 'psychologyReportVersions'
 				: 'reportVersions';
 			
 			const versionRef = doc(db, collectionName, version.id);
@@ -2756,16 +3076,35 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			
 			// Get all remaining versions and renumber them sequentially
 			try {
-				const versionsQuery = query(
+				let versionsQuery = query(
 					collection(db, collectionName),
-					where('patientId', '==', reportPatientData?.patientId),
-					orderBy('version', 'asc')
+					where('patientId', '==', reportPatientData?.patientId)
 				);
+				
+				// Add reportType filter for physiotherapy reports
+				if (activeReportTab === 'report' && collectionName === 'reportVersions') {
+					try {
+						versionsQuery = query(versionsQuery, where('reportType', '==', 'physiotherapy'));
+					} catch {
+						// If reportType filter fails, filter in memory
+					}
+				}
+				
+				versionsQuery = query(versionsQuery, orderBy('version', 'asc'));
 				const versionsSnapshot = await getDocs(versionsQuery);
 				
-				if (versionsSnapshot.docs.length > 0) {
+				// Filter by reportType in memory if needed (for backward compatibility)
+				let versionsToRenumber = versionsSnapshot.docs;
+				if (activeReportTab === 'report' && collectionName === 'reportVersions') {
+					versionsToRenumber = versionsSnapshot.docs.filter(docSnap => {
+						const data = docSnap.data();
+						return data.reportType === 'physiotherapy' || !data.reportType;
+					});
+				}
+				
+				if (versionsToRenumber.length > 0) {
 					const batch = writeBatch(db);
-					versionsSnapshot.docs.forEach((docSnap, index) => {
+					versionsToRenumber.forEach((docSnap, index) => {
 						const newVersionNumber = index + 1;
 						const currentVersion = docSnap.data().version as number;
 						if (currentVersion !== newVersionNumber) {
@@ -2778,16 +3117,34 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				// If orderBy fails, try without it and sort manually
 				if (renumberError.code === 'failed-precondition' || renumberError.message?.includes('index')) {
 					try {
-						const versionsQuery = query(
+						let versionsQuery = query(
 							collection(db, collectionName),
 							where('patientId', '==', reportPatientData?.patientId)
 						);
+						
+						// Add reportType filter for physiotherapy reports
+						if (activeReportTab === 'report' && collectionName === 'reportVersions') {
+							try {
+								versionsQuery = query(versionsQuery, where('reportType', '==', 'physiotherapy'));
+							} catch {
+								// If reportType filter fails, filter in memory
+							}
+						}
+						
 						const versionsSnapshot = await getDocs(versionsQuery);
-						const versions = versionsSnapshot.docs.map(docSnap => ({
+						let versions = versionsSnapshot.docs.map(docSnap => ({
 							id: docSnap.id,
 							ref: docSnap.ref,
 							version: docSnap.data().version as number,
-						})).sort((a, b) => a.version - b.version);
+							reportType: docSnap.data().reportType as string | undefined,
+						}));
+						
+						// Filter by reportType in memory if needed
+						if (activeReportTab === 'report' && collectionName === 'reportVersions') {
+							versions = versions.filter(v => v.reportType === 'physiotherapy' || !v.reportType);
+						}
+						
+						versions.sort((a, b) => a.version - b.version);
 						
 						if (versions.length > 0) {
 							const batch = writeBatch(db);
@@ -2811,6 +3168,55 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			
 			// Reload version history
 			await loadVersionHistory();
+			
+			// Update version flags after deletion
+			if (reportPatientData?.patientId) {
+				if (activeReportTab === 'psychology') {
+					const versionsQuery = query(
+						collection(db, 'psychologyReportVersions'),
+						where('patientId', '==', reportPatientData.patientId)
+					);
+					getDocs(versionsQuery).then((snapshot) => {
+						setHasPsychologyVersions(snapshot.docs.length > 0);
+					}).catch((err) => {
+						console.error('Error checking psychology report versions after delete:', err);
+					});
+				} else if (activeReportTab === 'strength-conditioning') {
+					const versionsQuery = query(
+						collection(db, 'strengthConditioningReportVersions'),
+						where('patientId', '==', reportPatientData.patientId)
+					);
+					getDocs(versionsQuery).then((snapshot) => {
+						setHasStrengthConditioningVersions(snapshot.docs.length > 0);
+					}).catch((err) => {
+						console.error('Error checking strength & conditioning report versions after delete:', err);
+					});
+				} else if (activeReportTab === 'report') {
+					let physioVersionsQuery = query(
+						collection(db, 'reportVersions'),
+						where('patientId', '==', reportPatientData.patientId),
+						where('reportType', '==', 'physiotherapy')
+					);
+					getDocs(physioVersionsQuery).then((snapshot) => {
+						setHasPhysiotherapyVersions(snapshot.docs.length > 0);
+					}).catch(() => {
+						// If reportType filter fails, try without it
+						const fallbackQuery = query(
+							collection(db, 'reportVersions'),
+							where('patientId', '==', reportPatientData.patientId)
+						);
+						getDocs(fallbackQuery).then((snapshot) => {
+							const hasVersions = snapshot.docs.some(doc => {
+								const data = doc.data();
+								return data.reportType === 'physiotherapy' || !data.reportType;
+							});
+							setHasPhysiotherapyVersions(hasVersions);
+						}).catch((err) => {
+							console.error('Error checking physiotherapy report versions after delete:', err);
+						});
+					});
+				}
+			}
 		} catch (error) {
 			console.error('Failed to delete version', error);
 			alert(`Failed to delete version: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -2823,11 +3229,34 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			return;
 		}
 
+		// Determine which save function to use based on report type
+		if (version.isStrengthConditioning || activeReportTab === 'strength-conditioning') {
+			// Handle strength conditioning restore
+			if (strengthConditioningFormData && Object.keys(strengthConditioningFormData).length > 0) {
+				// Save current state first
+				await handleSaveStrengthConditioning();
+			}
+			setStrengthConditioningFormData(version.data as StrengthConditioningData);
+			alert(`Strength & Conditioning Report #${version.version} has been loaded successfully.`);
+			return;
+		}
+		
+		if (version.isPsychology || activeReportTab === 'psychology') {
+			// Handle psychology restore
+			if (psychologyFormData && Object.keys(psychologyFormData).length > 0) {
+				// Save current state first
+				await handleSavePsychology();
+			}
+			setPsychologyFormData(version.data as any);
+			alert(`Psychology Report #${version.version} has been loaded successfully.`);
+			return;
+		}
+
 		setSaving(true);
 		try {
 			const patientRef = doc(db, 'patients', reportPatientData.id);
 
-			// Create a report snapshot of current data before loading previous report
+			// Create a report snapshot of current data before loading previous report (physiotherapy only)
 			const currentReportData: Partial<PatientRecordFull> = {
 				history: reportPatientData.history || (reportPatientData.presentHistory || '') + (reportPatientData.pastHistory ? '\n' + reportPatientData.pastHistory : ''),
 				med_xray: reportPatientData.med_xray,
@@ -2912,14 +3341,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				!(typeof val === 'object' && Object.keys(val).length === 0)
 			);
 
-			// Save current state as report before loading previous report
+			// Save current state as report before loading previous report (physiotherapy only)
 			if (hasCurrentData) {
-				const versionsQuery = query(
+				// Query only physiotherapy versions to get the next version number
+				let versionsQuery = query(
 					collection(db, 'reportVersions'),
 					where('patientId', '==', reportPatientData.patientId),
+					where('reportType', '==', 'physiotherapy'),
 					orderBy('version', 'desc')
 				);
-				const versionsSnapshot = await getDocs(versionsQuery);
+				let versionsSnapshot;
+				try {
+					versionsSnapshot = await getDocs(versionsQuery);
+				} catch (queryError: any) {
+					// If reportType filter fails, try without it and filter in memory
+					if (queryError.code === 'failed-precondition' || queryError.message?.includes('index')) {
+						const fallbackQuery = query(
+							collection(db, 'reportVersions'),
+							where('patientId', '==', reportPatientData.patientId),
+							orderBy('version', 'desc')
+						);
+						versionsSnapshot = await getDocs(fallbackQuery);
+						// Filter by reportType in memory
+						versionsSnapshot = {
+							...versionsSnapshot,
+							docs: versionsSnapshot.docs.filter(doc => {
+								const data = doc.data();
+								return data.reportType === 'physiotherapy' || !data.reportType;
+							})
+						} as any;
+					} else {
+						throw queryError;
+					}
+				}
 				const nextVersion = versionsSnapshot.docs.length > 0 
 					? (versionsSnapshot.docs[0].data().version as number) + 1 
 					: 1;
@@ -2928,6 +3382,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					patientId: reportPatientData.patientId,
 					patientName: reportPatientData.name,
 					version: nextVersion,
+					reportType: 'physiotherapy',
 					reportData: removeUndefined(currentReportData),
 					createdBy: user?.displayName || user?.email || 'Unknown',
 					createdById: user?.uid || '',
@@ -2936,11 +3391,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				});
 			}
 
-			// Load the version data into the form
-			// Only load if it's a physiotherapy report (not strength conditioning)
-			if (!version.isStrengthConditioning) {
-				setFormData(version.data as Partial<PatientRecordFull>);
-			}
+			// Load the version data into the form (physiotherapy only)
+			setFormData(version.data as Partial<PatientRecordFull>);
 			
 			// Update the patient document with restored data
 			const reportData: Record<string, any> = {
@@ -5899,6 +6351,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										formData={psychologyFormData}
 										onChange={setPsychologyFormData}
 										editable={editable}
+										hasExistingVersions={hasPsychologyVersions}
 									/>
 								</>
 							)}
@@ -5951,7 +6404,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								) : (
 									<>
 										<i className="fas fa-save mr-2" aria-hidden="true" />
-										Save Changes
+										{activeReportTab === 'psychology' ? 'Save Report' : 'Save Changes'}
 									</>
 								)}
 							</button>
@@ -6173,7 +6626,12 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																type="button"
 																onClick={() => {
 																	setViewingVersionIsStrengthConditioning(version.isStrengthConditioning || false);
-																	setViewingVersionData(versionData);
+																	// Note: Psychology versions are handled separately, not through viewingVersionData
+																	setViewingVersionData(version.isPsychology ? null : versionData);
+																	if (version.isPsychology) {
+																		setPsychologyFormData(version.data as any);
+																		setActiveReportTab('psychology');
+																	}
 																}}
 																className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
 															>
