@@ -23,9 +23,10 @@ import LeaveRequestNotification from '@/components/admin/LeaveRequestNotificatio
 import RatingApprovals from '@/components/admin/RatingApprovals';
 import PerformanceRating from '@/components/clinical-team/PerformanceRating';
 import SOPViewer from '@/components/SOPViewer';
+import Internship from '@/components/admin/Internship';
 import { useAuth } from '@/contexts/AuthContext';
 
-type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'rating-approvals' | 'performance-rating' | 'sop';
+type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'internship' | 'profile' | 'rating-approvals' | 'performance-rating' | 'sop';
 
 const baseAdminLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-columns' },
@@ -37,6 +38,7 @@ const baseAdminLinks: SidebarLink[] = [
 	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
 	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
 	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
+	{ href: '#internship', label: 'Internship', icon: 'fas fa-graduation-cap' },
 	{ href: '#headers', label: 'Header Management', icon: 'fas fa-heading' },
 	{ href: '#audit', label: 'Audit Logs', icon: 'fas fa-clipboard-list' },
 	{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
@@ -50,6 +52,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 	const { user, loading } = useAuth();
 	const [activePage, setActivePage] = useState<AdminPage>('dashboard');
 	const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+	const [pendingRatingCount, setPendingRatingCount] = useState(0);
 
 	// Subscribe to pending leave requests assigned to this admin (unique per user)
 	useEffect(() => {
@@ -68,8 +71,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 		return () => unsubscribe();
 	}, [user?.email]);
 
-	// Rating approvals: only Super Admin can approve; Admin users see 0 (unique per user)
-	const pendingRatingCount = 0;
+	// Pending rating count: only dharanjaydubey@css.com (designated approver) sees the badge
+	useEffect(() => {
+		const approverEmail = 'dharanjaydubey@css.com';
+		if (!user?.email || user.email.toLowerCase() !== approverEmail.toLowerCase()) {
+			setPendingRatingCount(0);
+			return;
+		}
+		const q = query(collection(db, 'staffRatings'), where('status', '==', 'Pending'));
+		const unsubscribe = onSnapshot(q, snapshot => setPendingRatingCount(snapshot.size), err => {
+			console.error('Admin layout: failed to subscribe to rating approvals', err);
+		});
+		return () => unsubscribe();
+	}, [user?.email]);
 
 	// Check if user is an authorized rater
 	const AUTHORIZED_RATERS = ['dharanjaydubey@css.com', 'shajisp@css.com'];
@@ -138,6 +152,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 			return <InventoryManagement />;
 		case 'leave':
 			return <AdminLeaveManagement />;
+		case 'internship':
+			return <Internship />;
 		case 'profile':
 			return <Profile />;
 		case 'rating-approvals':

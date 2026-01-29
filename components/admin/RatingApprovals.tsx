@@ -27,7 +27,8 @@ interface StaffRating {
 	rejectionReason?: string;
 }
 
-const SUPER_ADMIN_EMAIL = 'antonychacko@css.com';
+// Star rating approval requests go only to this user; only they can approve/reject
+const RATING_APPROVER_EMAIL = 'dharanjaydubey@css.com';
 
 export default function RatingApprovals() {
 	const { user } = useAuth();
@@ -37,12 +38,12 @@ export default function RatingApprovals() {
 	const [rejectionReason, setRejectionReason] = useState<{ [key: string]: string }>({});
 	const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
 
-	// Check if user is Super Admin
-	const isSuperAdmin = user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+	// Only dharanjaydubey@css.com can view and approve rating requests
+	const isApprover = user?.email?.toLowerCase() === RATING_APPROVER_EMAIL.toLowerCase();
 
-	// Load pending ratings
+	// Load pending ratings (only for the designated approver)
 	useEffect(() => {
-		if (!isSuperAdmin) {
+		if (!isApprover) {
 			setLoading(false);
 			return;
 		}
@@ -68,7 +69,7 @@ export default function RatingApprovals() {
 		);
 
 		return () => unsubscribe();
-	}, [isSuperAdmin]);
+	}, [isApprover]);
 
 	const handleApprove = async (ratingId: string) => {
 		if (!user?.email || !user?.displayName) return;
@@ -138,7 +139,7 @@ export default function RatingApprovals() {
 		);
 	}
 
-	if (!isSuperAdmin) {
+	if (!isApprover) {
 		return (
 			<div className="min-h-svh bg-purple-50 px-6 py-10">
 				<div className="mx-auto max-w-6xl">
@@ -147,7 +148,7 @@ export default function RatingApprovals() {
 						<i className="fas fa-lock mb-4 text-4xl text-red-600"></i>
 						<h3 className="mb-2 text-lg font-semibold text-red-900">Access Denied</h3>
 						<p className="text-sm text-red-700">
-							Only the Super Admin can access this page. You do not have permission to view rating approvals.
+							Only the designated approver can access this page. Star rating approval requests are sent to {RATING_APPROVER_EMAIL}.
 						</p>
 					</div>
 				</div>
