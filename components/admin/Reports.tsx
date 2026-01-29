@@ -271,17 +271,40 @@ export default function Reports() {
 		return () => unsubscribe();
 	}, []);
 
+	// Physician list: staff (clinical roles, active) as primary; then appointment doctors not in staff.
+	// Exclude non-physician placeholders (e.g. "c1"). Merge same-person variants (e.g. "Sangameshwar" and "Mr. K Sangameshwar").
 	const doctorOptions = useMemo(() => {
-		const set = new Set<string>();
+		const EXCLUDED_NAMES = new Set(['c1']);
+		const byKey = new Map<string, string>(); // key = lowercase, value = display name (first seen = staff preferred)
+		const add = (name: string) => {
+			const key = name.toLowerCase();
+			if (EXCLUDED_NAMES.has(key)) return;
+			byKey.set(key, name);
+		};
+		// Primary: staff with clinical roles, active, non-empty name
 		staff.forEach(member => {
-			if (member.role === 'ClinicalTeam' && member.status !== 'Inactive' && member.userName) {
-				set.add(member.userName);
+			const role = member.role || '';
+			const isClinical = role === 'ClinicalTeam' || role === 'Physiotherapist' || role === 'StrengthAndConditioning';
+			if (isClinical && member.status !== 'Inactive' && member.userName?.trim()) {
+				add(member.userName.trim());
 			}
 		});
+		// Add appointment doctors not already present (case-insensitive); staff names take precedence
 		appointments.forEach(appointment => {
-			if (appointment.doctor) set.add(appointment.doctor);
+			const doctor = appointment.doctor?.trim();
+			if (doctor) {
+				const key = doctor.toLowerCase();
+				if (!EXCLUDED_NAMES.has(key) && !byKey.has(key)) byKey.set(key, doctor);
+			}
 		});
-		return Array.from(set).sort((a, b) => a.localeCompare(b));
+		let options = Array.from(byKey.values());
+		// Merge same-person variants: when one name is a substring of another, keep only the longer one
+		options = options.filter(
+			name => !options.some(
+				other => other !== name && other.length > name.length && other.toLowerCase().includes(name.toLowerCase())
+			)
+		);
+		return options.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 	}, [staff, appointments]);
 
 	// Clinician Performance Analytics
@@ -297,10 +320,14 @@ export default function Reports() {
 			};
 		}
 
-		// Get all appointments for selected physician
-		const physicianAppointments = appointments.filter(
-			apt => apt.doctor?.toLowerCase() === selectedPhysician.toLowerCase()
-		);
+		// Get all appointments for selected physician (match exact or name variants, e.g. "Sangameshwar" and "Mr. K Sangameshwar")
+		const sel = selectedPhysician.toLowerCase();
+		const physicianAppointments = appointments.filter(apt => {
+			const d = apt.doctor?.toLowerCase();
+			if (!d) return false;
+			if (d === sel) return true;
+			return d.includes(sel) || sel.includes(d);
+		});
 
 		// Get unique patient IDs for this physician
 		const uniquePatientIds = new Set(physicianAppointments.map(apt => apt.patientId).filter(Boolean));
@@ -350,6 +377,50 @@ export default function Reports() {
 			totalPatients: uniquePatientIds.size,
 			totalRevenue,
 			totalHours,
+		};
+	}, [selectedPhysician, appointments, patients]);
+
+	// Revenue by patient type for selected physician (for pie chart)
+	const clinicianRevenueByTypeData = useMemo(() => {
+		if (!selectedPhysician) {
+			return { labels: [] as string[], datasets: [{ label: 'Revenue', data: [] as number[], backgroundColor: [] as string[], borderColor: '#ffffff', borderWidth: 2 }] };
+		}
+		const sel = selectedPhysician.toLowerCase();
+		const physicianAppointments = appointments.filter(apt => {
+			const d = apt.doctor?.toLowerCase();
+			if (!d) return false;
+			if (d === sel) return true;
+			return d.includes(sel) || sel.includes(d);
+		});
+		let vipRevenue = 0;
+		let dyesRevenue = 0;
+		let othersRevenue = 0;
+		physicianAppointments.forEach(apt => {
+			const patient = patients.find(p => p.patientId === apt.patientId);
+			const patientType = (patient?.patientType || '').toUpperCase();
+			const amount = apt.billing?.amount ? Number(apt.billing.amount) : 0;
+			if (!Number.isFinite(amount)) return;
+			if (patientType === 'VIP' || patientType === 'REFERRAL') return; // excluded from revenue like totalRevenue
+			if (patientType === 'DYES') {
+				dyesRevenue += amount;
+			} else {
+				othersRevenue += amount;
+			}
+		});
+		const labels = ['VIP Patients', 'DYES Patients', 'Other Patients'];
+		const data = [vipRevenue, dyesRevenue, othersRevenue];
+		const backgroundColor = ['rgb(147, 51, 234)', 'rgb(59, 130, 246)', 'rgb(100, 116, 139)']; // purple, blue, slate
+		return {
+			labels,
+			datasets: [
+				{
+					label: 'Revenue (₹)',
+					data,
+					backgroundColor,
+					borderColor: '#ffffff',
+					borderWidth: 2,
+				},
+			],
 		};
 	}, [selectedPhysician, appointments, patients]);
 
@@ -1665,7 +1736,7 @@ export default function Reports() {
 				</div>
 						</div>
 
-						{/* Activities and Appointments Distribution Pie Chart */}
+						{/* Activities and Appointments Distribution + Revenue by Patient Type */}
 						<div className="mt-8 grid gap-6 lg:grid-cols-2">
 							<div className="group rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all duration-300 hover:shadow-[0_25px_50px_rgba(15,23,42,0.15)] hover:scale-[1.01]">
 								<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Activities & Appointments Distribution</h3>
@@ -1678,7 +1749,18 @@ export default function Reports() {
 									/>
 								</div>
 							</div>
-				</div>
+							<div className="group rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all duration-300 hover:shadow-[0_25px_50px_rgba(15,23,42,0.15)] hover:scale-[1.01]">
+								<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Revenue by Patient Type</h3>
+								<p className="mb-4 text-sm text-slate-500">Revenue generated by the selected physician by type of patient</p>
+								<div className="h-[350px]">
+									<StatsChart 
+										type="doughnut" 
+										data={clinicianRevenueByTypeData} 
+										height={350}
+									/>
+								</div>
+							</div>
+						</div>
 					</>
 				)}
 
