@@ -69,7 +69,7 @@ interface PsychologyReportData {
 	neurofeedbackHeadset?: {
 		neuralActivity?: number;
 		controls?: number;
-		"Oxygenation (%)"?: number;
+		"Oxygenation (P)"?: number;
 	};
 	brainSensing?: {
 		attention?: number;
@@ -110,7 +110,7 @@ interface PsychologyReportData {
 		neurofeedbackHeadset?: {
 			neuralActivity?: number;
 			controls?: number;
-			"Oxygenation (%)"?: number;
+			"Oxygenation (P)"?: number;
 		};
 		brainSensing?: {
 			attention?: number;
@@ -830,18 +830,18 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							</div>
 						</div>
 						<div className="flex items-center justify-between">
-							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (%)</label>
+							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (P)</label>
 							{editable ? (
 								<input
 									type="number"
-									value={localData.neurofeedbackHeadset?.["Oxygenation (%)"] || ''}
-									onChange={(e) => updateNestedField('neurofeedbackHeadset', 'Oxygenation (%)', e.target.value ? parseFloat(e.target.value) : undefined)}
+									value={localData.neurofeedbackHeadset?.["Oxygenation (P)"] || ''}
+									onChange={(e) => updateNestedField('neurofeedbackHeadset', 'Oxygenation (P)', e.target.value ? parseFloat(e.target.value) : undefined)}
 									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
 									placeholder="Value"
 								/>
 							) : (
 								<span className="text-sm text-slate-900 w-20 text-right">
-									{localData.neurofeedbackHeadset?.["Oxygenation (%)"] || '—'}
+									{localData.neurofeedbackHeadset?.["Oxygenation (P)"] || '—'}
 								</span>
 							)}
 						</div>
@@ -1232,16 +1232,16 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							</div>
 						</div>
 						<div className="flex items-center justify-between">
-							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (%)</label>
+							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (P)</label>
 							{editable ? (
 								<input
 									type="number"
-									value={localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (%)"] || ''}
+									value={localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (P)"] || ''}
 									onChange={(e) => {
 										const parent = localData.followUpAssessment?.neurofeedbackHeadset || {};
 										updateFollowUpNestedField('neurofeedbackHeadset', {
 											...parent,
-											"Oxygenation (%)": e.target.value ? parseFloat(e.target.value) : undefined
+											"Oxygenation (P)": e.target.value ? parseFloat(e.target.value) : undefined
 										});
 									}}
 									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
@@ -1249,7 +1249,7 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 								/>
 							) : (
 								<span className="text-sm text-slate-900 w-20 text-right">
-									{localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (%)"] || '—'}
+									{localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (P)"] || '—'}
 								</span>
 							)}
 						</div>

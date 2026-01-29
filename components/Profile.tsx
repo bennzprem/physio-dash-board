@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, query, where, getDocs, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc, query, where, getDocs, collection, serverTimestamp } from 'firebase/firestore';
 import { reauthenticateWithCredential, updatePassword, EmailAuthProvider } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -61,16 +61,49 @@ export default function Profile() {
 	const [passwordError, setPasswordError] = useState<string | null>(null);
 	const [passwordSuccess, setPasswordSuccess] = useState(false);
 
-	// Load user profile from staff collection
+	// Load user profile from staff collection (use uid-first so same identity as Auth/assignments)
 	useEffect(() => {
 		const loadProfile = async () => {
-			if (!user?.email) {
+			if (!user?.uid) {
 				setLoading(false);
 				return;
 			}
 
 			try {
-				// Find the staff document by email
+				// Prefer staff document keyed by current user's uid (canonical identity)
+				const staffByUidRef = doc(db, 'staff', user.uid);
+				const staffByUidSnap = await getDoc(staffByUidRef);
+
+				if (staffByUidSnap.exists()) {
+					const data = staffByUidSnap.data();
+					setProfileData({
+						userName: data.userName || '',
+						userEmail: data.userEmail || user.email || '',
+						phone: data.phone || '',
+						address: data.address || '',
+						dateOfBirth: data.dateOfBirth || '',
+						dateOfJoining: data.dateOfJoining || '',
+						gender: data.gender || '',
+						bloodGroup: data.bloodGroup || '',
+						emergencyContact: data.emergencyContact || '',
+						emergencyPhone: data.emergencyPhone || '',
+						qualifications: data.qualifications || '',
+						specialization: data.specialization || '',
+						experience: data.experience || '',
+						professionalAim: data.professionalAim || data.notes || '',
+						profileImage: data.profileImage || '',
+					});
+					setImagePreview(data.profileImage || '');
+					setLoading(false);
+					return;
+				}
+
+				// Fallback: find staff by email (e.g. legacy records)
+				if (!user?.email) {
+					setProfileData(prev => ({ ...prev, userName: user.displayName || '', userEmail: user.email || '' }));
+					setLoading(false);
+					return;
+				}
 				const staffQuery = query(collection(db, 'staff'), where('userEmail', '==', user.email));
 				const querySnapshot = await getDocs(staffQuery);
 
@@ -82,21 +115,20 @@ export default function Profile() {
 						userEmail: data.userEmail || user.email || '',
 						phone: data.phone || '',
 						address: data.address || '',
-					dateOfBirth: data.dateOfBirth || '',
-					dateOfJoining: data.dateOfJoining || '',
-					gender: data.gender || '',
-					bloodGroup: data.bloodGroup || '',
-					emergencyContact: data.emergencyContact || '',
+						dateOfBirth: data.dateOfBirth || '',
+						dateOfJoining: data.dateOfJoining || '',
+						gender: data.gender || '',
+						bloodGroup: data.bloodGroup || '',
+						emergencyContact: data.emergencyContact || '',
 						emergencyPhone: data.emergencyPhone || '',
-					qualifications: data.qualifications || '',
-					specialization: data.specialization || '',
-					experience: data.experience || '',
-					professionalAim: data.professionalAim || data.notes || '', // Support both old and new field names
-					profileImage: data.profileImage || '',
+						qualifications: data.qualifications || '',
+						specialization: data.specialization || '',
+						experience: data.experience || '',
+						professionalAim: data.professionalAim || data.notes || '',
+						profileImage: data.profileImage || '',
 					});
 					setImagePreview(data.profileImage || '');
 				} else {
-					// If no staff document found, use auth user data
 					setProfileData(prev => ({
 						...prev,
 						userName: user.displayName || '',
@@ -159,7 +191,7 @@ export default function Profile() {
 	};
 
 	const handleSave = async () => {
-		if (!user?.email) {
+		if (!user?.uid) {
 			alert('User not authenticated');
 			return;
 		}
@@ -168,64 +200,89 @@ export default function Profile() {
 		setSavedMessage(false);
 
 		try {
-			// Find the staff document by email
+			// Build update object (profile fields only; do not overwrite role/status/admin fields)
+			const updateData: Record<string, any> = {
+				updatedAt: serverTimestamp(),
+			};
+
+			if (profileData.userName.trim()) {
+				updateData.userName = profileData.userName.trim();
+			}
+			if (profileData.phone?.trim()) {
+				updateData.phone = profileData.phone.trim();
+			}
+			if (profileData.address?.trim()) {
+				updateData.address = profileData.address.trim();
+			}
+			if (profileData.dateOfBirth?.trim()) {
+				updateData.dateOfBirth = profileData.dateOfBirth.trim();
+			}
+			if (profileData.dateOfJoining?.trim()) {
+				updateData.dateOfJoining = profileData.dateOfJoining.trim();
+			}
+			if (profileData.gender?.trim()) {
+				updateData.gender = profileData.gender.trim();
+			}
+			if (profileData.bloodGroup?.trim()) {
+				updateData.bloodGroup = profileData.bloodGroup.trim();
+			}
+			if (profileData.emergencyContact?.trim()) {
+				updateData.emergencyContact = profileData.emergencyContact.trim();
+			}
+			if (profileData.emergencyPhone?.trim()) {
+				updateData.emergencyPhone = profileData.emergencyPhone.trim();
+			}
+			if (profileData.qualifications?.trim()) {
+				updateData.qualifications = profileData.qualifications.trim();
+			}
+			if (profileData.specialization?.trim()) {
+				updateData.specialization = profileData.specialization.trim();
+			}
+			if (profileData.experience?.trim()) {
+				updateData.experience = profileData.experience.trim();
+			}
+			if (profileData.professionalAim?.trim()) {
+				updateData.professionalAim = profileData.professionalAim.trim();
+			}
+			if (profileData.profileImage?.trim()) {
+				updateData.profileImage = profileData.profileImage.trim();
+			}
+
+			// Always write to staff/{uid} so the same user identity is preserved (assignments, auth, etc.)
+			const staffByUidRef = doc(db, 'staff', user.uid);
+			const staffByUidSnap = await getDoc(staffByUidRef);
+
+			if (staffByUidSnap.exists()) {
+				// Update existing canonical record (same user, not a new user)
+				await updateDoc(staffByUidRef, updateData);
+				setSavedMessage(true);
+				setTimeout(() => setSavedMessage(false), 3000);
+				return;
+			}
+
+			// Legacy: no staff/uid yet; find by email and update that doc, then ensure staff/uid exists (merge)
+			if (!user?.email) {
+				alert('Staff record not found. Please contact administrator.');
+				setSaving(false);
+				return;
+			}
 			const staffQuery = query(collection(db, 'staff'), where('userEmail', '==', user.email));
 			const querySnapshot = await getDocs(staffQuery);
 
 			if (!querySnapshot.empty) {
 				const staffDoc = querySnapshot.docs[0];
-				const docRef = doc(db, 'staff', staffDoc.id);
-
-				// Build update object, only including fields that have values
-				const updateData: Record<string, any> = {
-					updatedAt: serverTimestamp(),
-				};
-
-				if (profileData.userName.trim()) {
-					updateData.userName = profileData.userName.trim();
-				}
-				if (profileData.phone?.trim()) {
-					updateData.phone = profileData.phone.trim();
-				}
-				if (profileData.address?.trim()) {
-					updateData.address = profileData.address.trim();
-				}
-				if (profileData.dateOfBirth?.trim()) {
-					updateData.dateOfBirth = profileData.dateOfBirth.trim();
-				}
-				if (profileData.dateOfJoining?.trim()) {
-					updateData.dateOfJoining = profileData.dateOfJoining.trim();
-				}
-				if (profileData.gender?.trim()) {
-					updateData.gender = profileData.gender.trim();
-				}
-				if (profileData.bloodGroup?.trim()) {
-					updateData.bloodGroup = profileData.bloodGroup.trim();
-				}
-				if (profileData.emergencyContact?.trim()) {
-					updateData.emergencyContact = profileData.emergencyContact.trim();
-				}
-				if (profileData.emergencyPhone?.trim()) {
-					updateData.emergencyPhone = profileData.emergencyPhone.trim();
-				}
-				if (profileData.qualifications?.trim()) {
-					updateData.qualifications = profileData.qualifications.trim();
-				}
-				if (profileData.specialization?.trim()) {
-					updateData.specialization = profileData.specialization.trim();
-				}
-				if (profileData.experience?.trim()) {
-					updateData.experience = profileData.experience.trim();
-				}
-				if (profileData.professionalAim?.trim()) {
-					updateData.professionalAim = profileData.professionalAim.trim();
-				}
-				if (profileData.profileImage?.trim()) {
-					updateData.profileImage = profileData.profileImage.trim();
-				}
-
-				await updateDoc(docRef, updateData);
-
+				const existingData = staffDoc.data();
+				// Update the existing doc (e.g. legacy by-email doc)
+				await updateDoc(doc(db, 'staff', staffDoc.id), updateData);
+				// Ensure canonical staff/uid exists so Auth and assignments use same identity (merge, preserve role/status)
+				await setDoc(staffByUidRef, {
+					authUid: user.uid,
+					userEmail: user.email,
+					userName: existingData.userName || profileData.userName.trim(),
+					role: existingData.role,
+					status: existingData.status,
+					...updateData,
+				}, { merge: true });
 				setSavedMessage(true);
 				setTimeout(() => setSavedMessage(false), 3000);
 			} else {
