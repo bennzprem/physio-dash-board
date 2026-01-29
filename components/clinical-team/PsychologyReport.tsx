@@ -1165,24 +1165,6 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</p>
 				</div>
 
-				{/* Completion of one session - Follow-up Assessment */}
-				{onSessionCompletedChange && (
-					<div className="mb-6">
-						<label className="flex items-center gap-2 cursor-pointer">
-							<input
-								type="checkbox"
-								checked={sessionCompleted}
-								onChange={e => onSessionCompletedChange(e.target.checked)}
-								disabled={!editable}
-								className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
-							/>
-							<span className="text-sm font-medium text-slate-700">
-								Completion of one session
-							</span>
-						</label>
-					</div>
-				)}
-				
 				{/* Neurofeedback Headset Assessment */}
 				<div className="mb-6">
 					<h3 className="mb-3 text-sm font-semibold text-slate-800">1. Neurofeedback Headset Assessment</h3>
