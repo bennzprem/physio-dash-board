@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import Sidebar, { type SidebarLink } from '@/components/Sidebar';
 import Dashboard from '@/components/admin/Dashboard';
 import Users from '@/components/admin/Users';
@@ -60,6 +62,34 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 	const router = useRouter();
 	const { user, loading } = useAuth();
 	const [activePage, setActivePage] = useState<SuperAdminPage>('dashboard');
+	const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+	const [pendingRatingCount, setPendingRatingCount] = useState(0);
+
+	// Subscribe to pending leave requests assigned to this user (unique per user)
+	useEffect(() => {
+		if (!user?.email) return;
+		const adminEmail = user.email.toLowerCase();
+		const q = query(collection(db, 'leaveRequests'), where('status', '==', 'pending'));
+		const unsubscribe = onSnapshot(q, snapshot => {
+			const count = snapshot.docs.filter(docSnap => {
+				const requestEmail = (docSnap.get('approvalRequestedToEmail') || '').toLowerCase();
+				return requestEmail === adminEmail && requestEmail !== '';
+			}).length;
+			setPendingLeaveCount(count);
+		}, err => {
+			console.error('Super Admin layout: failed to subscribe to leave requests', err);
+		});
+		return () => unsubscribe();
+	}, [user?.email]);
+
+	// Subscribe to pending rating approvals (only Super Admin can approve, so unique to this user)
+	useEffect(() => {
+		const q = query(collection(db, 'staffRatings'), where('status', '==', 'Pending'));
+		const unsubscribe = onSnapshot(q, snapshot => setPendingRatingCount(snapshot.size), err => {
+			console.error('Super Admin layout: failed to subscribe to rating approvals', err);
+		});
+		return () => unsubscribe();
+	}, []);
 
 	// Check if user is the exclusive Super Admin
 	const isExclusiveSuperAdmin = user?.email?.toLowerCase() === 'antonychacko@css.com';
@@ -172,9 +202,17 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 		);
 	}
 
-	// Get links and filter based on permissions
-	const allLinks = getSuperAdminLinks(isExclusiveSuperAdmin);
-	const filteredLinks = allLinks.filter(link => {
+	// Add badges for pending leave and rating approvals, then filter by permissions
+	const linksWithBadges: SidebarLink[] = useMemo(() => {
+		const baseLinks = getSuperAdminLinks(isExclusiveSuperAdmin);
+		return baseLinks.map(link => {
+			if (link.href === '#leave') return { ...link, badge: pendingLeaveCount > 0 ? pendingLeaveCount : undefined };
+			if (link.href === '#rating-approvals') return { ...link, badge: pendingRatingCount > 0 ? pendingRatingCount : undefined };
+			return link;
+		});
+	}, [isExclusiveSuperAdmin, pendingLeaveCount, pendingRatingCount]);
+
+	const filteredLinks = linksWithBadges.filter(link => {
 		// Only show Performance Rating to authorized raters
 		if (link.href === '#performance-rating' && !isAuthorizedRater) {
 			return false;

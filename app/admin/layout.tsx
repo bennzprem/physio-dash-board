@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import Sidebar, { type SidebarLink } from '@/components/Sidebar';
 import Dashboard from '@/components/admin/Dashboard';
 import Users from '@/components/admin/Users';
@@ -25,7 +27,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'rating-approvals' | 'performance-rating' | 'sop';
 
-const adminLinks: SidebarLink[] = [
+const baseAdminLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-columns' },
 	{ href: '#users', label: 'Employee Management', icon: 'fas fa-users-cog' },
 	{ href: '#patients', label: 'Patient Management', icon: 'fas fa-user-injured' },
@@ -47,6 +49,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 	const router = useRouter();
 	const { user, loading } = useAuth();
 	const [activePage, setActivePage] = useState<AdminPage>('dashboard');
+	const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+
+	// Subscribe to pending leave requests assigned to this admin (unique per user)
+	useEffect(() => {
+		if (!user?.email) return;
+		const adminEmail = user.email.toLowerCase();
+		const q = query(collection(db, 'leaveRequests'), where('status', '==', 'pending'));
+		const unsubscribe = onSnapshot(q, snapshot => {
+			const count = snapshot.docs.filter(docSnap => {
+				const requestEmail = (docSnap.get('approvalRequestedToEmail') || '').toLowerCase();
+				return requestEmail === adminEmail && requestEmail !== '';
+			}).length;
+			setPendingLeaveCount(count);
+		}, err => {
+			console.error('Admin layout: failed to subscribe to leave requests', err);
+		});
+		return () => unsubscribe();
+	}, [user?.email]);
+
+	// Rating approvals: only Super Admin can approve; Admin users see 0 (unique per user)
+	const pendingRatingCount = 0;
 
 	// Check if user is an authorized rater
 	const AUTHORIZED_RATERS = ['dharanjaydubey@css.com', 'shajisp@css.com'];
@@ -137,8 +160,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 		);
 	}
 
-	// Filter links based on user permissions
-	const filteredAdminLinks = adminLinks.filter(link => {
+	// Add badges for pending leave and rating approvals, then filter by permissions
+	const adminLinksWithBadges: SidebarLink[] = useMemo(() => {
+		return baseAdminLinks.map(link => {
+			if (link.href === '#leave') return { ...link, badge: pendingLeaveCount > 0 ? pendingLeaveCount : undefined };
+			if (link.href === '#rating-approvals') return { ...link, badge: pendingRatingCount > 0 ? pendingRatingCount : undefined };
+			return link;
+		});
+	}, [pendingLeaveCount, pendingRatingCount]);
+
+	const filteredAdminLinks = adminLinksWithBadges.filter(link => {
 		// Only show Performance Rating to authorized raters
 		if (link.href === '#performance-rating' && !isAuthorizedRater) {
 			return false;
