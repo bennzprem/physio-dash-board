@@ -94,7 +94,9 @@ service cloud.firestore {
     // APPOINTMENTS
     match /appointments/{id} {
       allow read: if isLoggedIn();
-      allow create: if isFrontdesk() || isAdmin() || isClinic();
+      // Staff can create any appointment; mobile app (authenticated) can create appointment *requests* only
+      allow create: if isFrontdesk() || isAdmin() || isClinic() ||
+        (isLoggedIn() && request.resource.data.status == 'requested' && request.resource.data.keys().hasAll(['patient', 'status']));
       allow update: if isFrontdesk() || isAdmin() || isClinic();
       allow delete: if isAdmin() || isFrontdesk() || isClinic();
     }
@@ -265,6 +267,14 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || isSpecificApprover();
     }
     
+    // PATIENT REQUESTS (from mobile app)
+    match /patientRequests/{requestId} {
+      allow read: if isLoggedIn() && (isFrontdesk() || isAdmin() || isClinic());
+      allow create: if isLoggedIn() && request.resource.data.patientName != null && request.resource.data.type != null && request.resource.data.message != null;
+      allow update: if isLoggedIn() && (isFrontdesk() || isAdmin() || isClinic());
+      allow delete: if isAdmin();
+    }
+
     // RATING REQUESTS
     match /ratingRequests/{requestId} {
        function isAuthorizedRater() {
