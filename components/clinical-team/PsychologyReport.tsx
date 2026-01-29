@@ -775,9 +775,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</div>
 				</div>
 
-				{/* Neurofeedback Headset Assessment */}
+				{/* Neurofeedback Headset Training */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Neurofeedback Headset Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Neurofeedback Headset Training</h3>
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
 							<label className="text-sm font-medium text-slate-700 flex-1">a) Neural activity (%)</label>
@@ -848,9 +848,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</div>
 				</div>
 
-				{/* Brain Sensing Cognitive Trainer Assessment */}
+				{/* Brain Sensing Cognitive Trainer */}
 				<div>
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. Brain Sensing Cognitive Trainer Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. Brain Sensing Cognitive Trainer</h3>
 					<div className="space-y-3">
 						{[
 							{ key: 'attention', label: 'Attention' },
@@ -891,9 +891,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 			</div>
 
 			<div className="border-b border-slate-200 pb-6">
-				{/* 3D - Multiple Object Tracking Assessment */}
+				{/* 3D - Multiple Object Tracking */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. 3D - Multiple Object Tracking Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. 3D - Multiple Object Tracking</h3>
 					<div className="flex items-center justify-between">
 						<label className="text-sm font-medium text-slate-700 flex-1">Tracking Speed</label>
 						<div className="flex items-center gap-3">
@@ -1165,9 +1165,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</p>
 				</div>
 
-				{/* Neurofeedback Headset Assessment */}
+				{/* Neurofeedback Headset Training */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">1. Neurofeedback Headset Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">1. Neurofeedback Headset Training</h3>
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
 							<label className="text-sm font-medium text-slate-700 flex-1">a) Neural activity (%)</label>
@@ -1256,9 +1256,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</div>
 				</div>
 
-				{/* Brain Sensing Cognitive Trainer Assessment */}
+				{/* Brain Sensing Cognitive Trainer */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Brain Sensing Cognitive Trainer Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Brain Sensing Cognitive Trainer</h3>
 					<div className="space-y-3">
 						{[
 							{ key: 'attention', label: 'Attention' },
@@ -1303,9 +1303,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</div>
 				</div>
 
-				{/* 3D - Multiple Object Tracking Assessment */}
+				{/* 3D - Multiple Object Tracking */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. 3D - Multiple Object Tracking Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. 3D - Multiple Object Tracking</h3>
 					<div className="flex items-center justify-between">
 						<label className="text-sm font-medium text-slate-700 flex-1">Tracking Speed</label>
 						<div className="flex items-center gap-3">
