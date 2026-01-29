@@ -114,19 +114,11 @@ const VAS_EMOJIS = ['😀','😁','🙂','😊','😌','😟','😣','😢','�
 const HYDRATION_EMOJIS = ['😄','😃','🙂','😐','😕','😟','😢','😭'];
 
 const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
-	Neck: [
-		{ motion: 'Flexion' }, 
-		{ motion: 'Extension' }, 
-		{ motion: 'Lateral Flexion Left' }, 
-		{ motion: 'Lateral Flexion Right' }
-	],
-	Hip: [
+	'Cervical Spine': [
 		{ motion: 'Flexion' },
 		{ motion: 'Extension' },
-		{ motion: 'Abduction' },
-		{ motion: 'Adduction' },
-		{ motion: 'Internal Rotation' },
-		{ motion: 'External Rotation' },
+		{ motion: 'Lateral Flexion Left' },
+		{ motion: 'Lateral Flexion Right' },
 	],
 	Shoulder: [
 		{ motion: 'Flexion' },
@@ -144,6 +136,22 @@ const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
 		{ motion: 'Radial Deviation' },
 		{ motion: 'Ulnar Deviation' },
 	],
+	'Hand and thumb': [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	Fingers: [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	'Trunk and thoracic': [
+		{ motion: 'Flexion' },
+		{ motion: 'Extension' },
+		{ motion: 'Lateral Flexion Left' },
+		{ motion: 'Lateral Flexion Right' },
+	],
+	Hip: [
+		{ motion: 'Flexion' },
+		{ motion: 'Extension' },
+		{ motion: 'Abduction' },
+		{ motion: 'Adduction' },
+		{ motion: 'Internal Rotation' },
+		{ motion: 'External Rotation' },
+	],
 	Knee: [{ motion: 'Flexion' }, { motion: 'Extension' }],
 	Ankle: [
 		{ motion: 'Dorsiflexion' },
@@ -151,20 +159,20 @@ const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
 		{ motion: 'Inversion' },
 		{ motion: 'Eversion' },
 	],
-	'Tarsal Joint': [{ motion: 'Flexion' }, { motion: 'Extension' }],
-	Finger: [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	Tarsal: [{ motion: 'Flexion' }, { motion: 'Extension' }],
 };
 
 const ROM_HAS_SIDE: Record<string, boolean> = {
-	Hip: true,
 	Shoulder: true,
 	Elbow: true,
 	Forearm: true,
 	Wrist: true,
+	'Hand and thumb': true,
+	Fingers: true,
+	Hip: true,
 	Knee: true,
 	Ankle: true,
-	'Tarsal Joint': true,
-	Finger: true,
+	Tarsal: true,
 };
 
 const ROM_JOINTS = Object.keys(ROM_MOTIONS);
@@ -2775,7 +2783,7 @@ export default function EditReport() {
 	};
 
 	const renderRomTable = (joint: string, data: any) => {
-		if (!ROM_HAS_SIDE[joint] && joint !== 'Neck') {
+		if (!ROM_HAS_SIDE[joint] && joint !== 'Cervical Spine') {
 			return (
 				<div key={joint} className="relative mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
 					<button
@@ -2817,14 +2825,14 @@ export default function EditReport() {
 		}
 
 		// Special handling for Neck with Lateral Flexion Left/Right
-		if (joint === 'Neck') {
+		if (joint === 'Cervical Spine') {
 			return (
 				<div key={joint} className="relative mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
 					<button
 						type="button"
 						onClick={() => handleRemoveRomJoint(joint)}
 						className="absolute right-3 top-3 text-slate-400 transition hover:text-rose-500"
-						aria-label="Remove Neck"
+						aria-label="Remove Cervical Spine"
 					>
 						<i className="fas fa-times" />
 					</button>

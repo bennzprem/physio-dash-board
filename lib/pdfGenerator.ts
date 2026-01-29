@@ -1575,7 +1575,7 @@ export interface PsychologyReportPDFData {
 		neurofeedbackHeadset?: {
 			neuralActivity?: number;
 			controls?: number;
-			"Oxygenation (%)"?: number;
+			"Oxygenation (P)"?: number;
 		};
 		brainSensing?: {
 			attention?: number;
@@ -1615,7 +1615,7 @@ export interface PsychologyReportPDFData {
 			neurofeedbackHeadset?: {
 				neuralActivity?: number;
 				controls?: number;
-				"Oxygenation (%)"?: number;
+				"Oxygenation (P)"?: number;
 			};
 			brainSensing?: {
 				attention?: number;
@@ -1908,7 +1908,7 @@ export async function generatePsychologyPDF(
 				const nh = data.formData.neurofeedbackHeadset;
 				if (nh.neuralActivity !== undefined) brainRows.push(['Neural Activity (%)', String(nh.neuralActivity)]);
 				if (nh.controls !== undefined) brainRows.push(['Controls', String(nh.controls)]);
-				if (nh["Oxygenation (%)"] !== undefined) brainRows.push(['Oxygenation (%)', String(nh["Oxygenation (%)"])]);
+				if (nh["Oxygenation (P)"] !== undefined) brainRows.push(['Oxygenation (P)', String(nh["Oxygenation (P)"])]);
 			}
 
 			// Brain Sensing
@@ -2094,7 +2094,7 @@ export async function generatePsychologyPDF(
 					const nh = fu.neurofeedbackHeadset;
 					if (nh.neuralActivity !== undefined) followUpRows.push(['Neurofeedback - Neural Activity (%)', String(nh.neuralActivity)]);
 					if (nh.controls !== undefined) followUpRows.push(['Neurofeedback - Controls', String(nh.controls)]);
-					if (nh["Oxygenation (%)"] !== undefined) followUpRows.push(['Neurofeedback - Oxygenation (%)', String(nh["Oxygenation (%)"])]);
+					if (nh["Oxygenation (P)"] !== undefined) followUpRows.push(['Neurofeedback - Oxygenation (P)', String(nh["Oxygenation (P)"])]);
 				}
 
 				// Brain Sensing

@@ -69,7 +69,7 @@ interface PsychologyReportData {
 	neurofeedbackHeadset?: {
 		neuralActivity?: number;
 		controls?: number;
-		"Oxygenation (%)"?: number;
+		"Oxygenation (P)"?: number;
 	};
 	brainSensing?: {
 		attention?: number;
@@ -110,7 +110,7 @@ interface PsychologyReportData {
 		neurofeedbackHeadset?: {
 			neuralActivity?: number;
 			controls?: number;
-			"Oxygenation (%)"?: number;
+			"Oxygenation (P)"?: number;
 		};
 		brainSensing?: {
 			attention?: number;
@@ -775,9 +775,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</div>
 				</div>
 
-				{/* Neurofeedback Headset Assessment */}
+				{/* Neurofeedback Headset Training */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Neurofeedback Headset Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Neurofeedback Headset Training</h3>
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
 							<label className="text-sm font-medium text-slate-700 flex-1">a) Neural activity (%)</label>
@@ -830,27 +830,27 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							</div>
 						</div>
 						<div className="flex items-center justify-between">
-							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (%)</label>
+							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (P)</label>
 							{editable ? (
 								<input
 									type="number"
-									value={localData.neurofeedbackHeadset?.["Oxygenation (%)"] || ''}
-									onChange={(e) => updateNestedField('neurofeedbackHeadset', 'Oxygenation (%)', e.target.value ? parseFloat(e.target.value) : undefined)}
+									value={localData.neurofeedbackHeadset?.["Oxygenation (P)"] || ''}
+									onChange={(e) => updateNestedField('neurofeedbackHeadset', 'Oxygenation (P)', e.target.value ? parseFloat(e.target.value) : undefined)}
 									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
 									placeholder="Value"
 								/>
 							) : (
 								<span className="text-sm text-slate-900 w-20 text-right">
-									{localData.neurofeedbackHeadset?.["Oxygenation (%)"] || '—'}
+									{localData.neurofeedbackHeadset?.["Oxygenation (P)"] || '—'}
 								</span>
 							)}
 						</div>
 					</div>
 				</div>
 
-				{/* Brain Sensing Cognitive Trainer Assessment */}
+				{/* Brain Sensing Cognitive Trainer */}
 				<div>
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. Brain Sensing Cognitive Trainer Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. Brain Sensing Cognitive Trainer</h3>
 					<div className="space-y-3">
 						{[
 							{ key: 'attention', label: 'Attention' },
@@ -891,9 +891,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 			</div>
 
 			<div className="border-b border-slate-200 pb-6">
-				{/* 3D - Multiple Object Tracking Assessment */}
+				{/* 3D - Multiple Object Tracking */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. 3D - Multiple Object Tracking Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. 3D - Multiple Object Tracking</h3>
 					<div className="flex items-center justify-between">
 						<label className="text-sm font-medium text-slate-700 flex-1">Tracking Speed</label>
 						<div className="flex items-center gap-3">
@@ -1165,27 +1165,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</p>
 				</div>
 
-				{/* Completion of one session - Follow-up Assessment */}
-				{onSessionCompletedChange && (
-					<div className="mb-6">
-						<label className="flex items-center gap-2 cursor-pointer">
-							<input
-								type="checkbox"
-								checked={sessionCompleted}
-								onChange={e => onSessionCompletedChange(e.target.checked)}
-								disabled={!editable}
-								className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
-							/>
-							<span className="text-sm font-medium text-slate-700">
-								Completion of one session
-							</span>
-						</label>
-					</div>
-				)}
-				
-				{/* Neurofeedback Headset Assessment */}
+				{/* Neurofeedback Headset Training */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">1. Neurofeedback Headset Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">1. Neurofeedback Headset Training</h3>
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
 							<label className="text-sm font-medium text-slate-700 flex-1">a) Neural activity (%)</label>
@@ -1250,16 +1232,16 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							</div>
 						</div>
 						<div className="flex items-center justify-between">
-							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (%)</label>
+							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (P)</label>
 							{editable ? (
 								<input
 									type="number"
-									value={localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (%)"] || ''}
+									value={localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (P)"] || ''}
 									onChange={(e) => {
 										const parent = localData.followUpAssessment?.neurofeedbackHeadset || {};
 										updateFollowUpNestedField('neurofeedbackHeadset', {
 											...parent,
-											"Oxygenation (%)": e.target.value ? parseFloat(e.target.value) : undefined
+											"Oxygenation (P)": e.target.value ? parseFloat(e.target.value) : undefined
 										});
 									}}
 									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
@@ -1267,16 +1249,16 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 								/>
 							) : (
 								<span className="text-sm text-slate-900 w-20 text-right">
-									{localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (%)"] || '—'}
+									{localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (P)"] || '—'}
 								</span>
 							)}
 						</div>
 					</div>
 				</div>
 
-				{/* Brain Sensing Cognitive Trainer Assessment */}
+				{/* Brain Sensing Cognitive Trainer */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Brain Sensing Cognitive Trainer Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Brain Sensing Cognitive Trainer</h3>
 					<div className="space-y-3">
 						{[
 							{ key: 'attention', label: 'Attention' },
@@ -1321,9 +1303,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</div>
 				</div>
 
-				{/* 3D - Multiple Object Tracking Assessment */}
+				{/* 3D - Multiple Object Tracking */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. 3D - Multiple Object Tracking Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. 3D - Multiple Object Tracking</h3>
 					<div className="flex items-center justify-between">
 						<label className="text-sm font-medium text-slate-700 flex-1">Tracking Speed</label>
 						<div className="flex items-center gap-3">

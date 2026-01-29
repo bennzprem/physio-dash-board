@@ -47,10 +47,11 @@
     "@types/node": "^20",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "baseline-browser-mapping": "^2.9.19",
     "cross-env": "^10.1.0",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.0.8",
-    "firebase-tools": "^14.26.0",
+    "firebase-tools": "^15.4.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
