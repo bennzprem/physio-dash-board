@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import Sidebar, { type SidebarLink } from '@/components/Sidebar';
 import Dashboard from '@/components/frontdesk/Dashboard';
 import Patients from '@/components/frontdesk/Patients';
@@ -18,7 +20,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 type FrontdeskPage = 'dashboard' | 'patients' | 'billing' | 'calendar' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'sop' | 'internships' | 'requests';
 
-const frontdeskLinks: SidebarLink[] = [
+const baseFrontdeskLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-home' },
 	{ href: '#patients', label: 'Patient Management', icon: 'fas fa-users' },
 	{ href: '#requests', label: 'Requests', icon: 'fas fa-inbox' },
@@ -35,6 +37,29 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 	const router = useRouter();
 	const { user, loading } = useAuth();
 	const [activePage, setActivePage] = useState<FrontdeskPage>('dashboard');
+	const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+
+	// Subscribe to appointment requests (status === 'requested') for sidebar badge
+	useEffect(() => {
+		const q = query(
+			collection(db, 'appointments'),
+			where('status', '==', 'requested')
+		);
+		const unsubscribe = onSnapshot(q, snapshot => {
+			setPendingRequestsCount(snapshot.size);
+		}, err => {
+			console.error('Frontdesk layout: failed to subscribe to appointment requests', err);
+		});
+		return () => unsubscribe();
+	}, []);
+
+	const frontdeskLinks: SidebarLink[] = useMemo(() => {
+		return baseFrontdeskLinks.map(link =>
+			link.href === '#requests'
+				? { ...link, badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined }
+				: link
+		);
+	}, [pendingRequestsCount]);
 
 	// Role guard: only FrontDesk can access /frontdesk
 	useEffect(() => {

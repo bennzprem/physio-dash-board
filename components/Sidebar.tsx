@@ -9,7 +9,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 
-export type SidebarLink = { href: string; label: string; icon: string };
+export type SidebarLink = { href: string; label: string; icon: string; badge?: number };
 
 interface SidebarProps {
 	title: string;
@@ -177,6 +177,11 @@ export default function Sidebar({ title, links, onLinkClick, activeHref, onProfi
 								>
 									<i className={`${link.icon} mr-4 text-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-125 group-active:scale-110`} aria-hidden="true" />
 									<span className="flex-1 min-w-0 transition-transform duration-300 group-hover:scale-110 group-active:scale-105 font-bold">{link.label}</span>
+									{typeof link.badge === 'number' && link.badge > 0 && (
+										<span className="flex-shrink-0 min-w-[1.25rem] inline-flex items-center justify-center rounded-full bg-amber-400 text-blue-900 text-xs font-bold px-1.5 py-0.5" aria-label={`${link.badge} pending`}>
+											{link.badge > 99 ? '99+' : link.badge}
+										</span>
+									)}
 								</button>
 							</li>
 						);
@@ -197,6 +202,11 @@ export default function Sidebar({ title, links, onLinkClick, activeHref, onProfi
 							>
 								<i className={`${link.icon} mr-4 text-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-125 group-active:scale-110`} aria-hidden="true" />
 								<span className="flex-1 min-w-0 transition-transform duration-300 group-hover:scale-110 group-active:scale-105 font-bold">{link.label}</span>
+								{typeof link.badge === 'number' && link.badge > 0 && (
+									<span className="flex-shrink-0 min-w-[1.25rem] inline-flex items-center justify-center rounded-full bg-amber-400 text-blue-900 text-xs font-bold px-1.5 py-0.5" aria-label={`${link.badge} pending`}>
+										{link.badge > 99 ? '99+' : link.badge}
+									</span>
+								)}
 							</Link>
 						</li>
 					);
