@@ -187,34 +187,6 @@ export default function Requests() {
 					}
 				/>
 
-				{/* How to get appointment requests (for mobile app) */}
-				<section className="rounded-xl border border-blue-200 bg-blue-50/80 p-4 text-sm text-blue-900">
-					<p className="font-semibold text-blue-800">
-						<i className="fas fa-info-circle mr-2" aria-hidden="true" />
-						How to get appointment requests reflected here
-					</p>
-					<p className="mt-2 text-blue-800">
-						From the patient mobile app, create a document in the <strong>appointments</strong> Firestore
-						collection with:
-					</p>
-					<ul className="mt-1 list-inside list-disc space-y-0.5 text-blue-700">
-						<li>
-							<code className="rounded bg-blue-100 px-1">status: &apos;requested&apos;</code>
-						</li>
-						<li>
-							<code className="rounded bg-blue-100 px-1">patient: &apos;Patient full name&apos;</code>
-						</li>
-						<li>
-							Optional: <code className="rounded bg-blue-100 px-1">patientId</code>,{' '}
-							<code className="rounded bg-blue-100 px-1">preferredDate</code> (YYYY-MM-DD),{' '}
-							<code className="rounded bg-blue-100 px-1">preferredTime</code>,{' '}
-							<code className="rounded bg-blue-100 px-1">notes</code>,{' '}
-							<code className="rounded bg-blue-100 px-1">source: &apos;mobile_app&apos;</code>,{' '}
-							<code className="rounded bg-blue-100 px-1">createdAt: serverTimestamp()</code>
-						</li>
-					</ul>
-				</section>
-
 				<section className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200">
 					<h2 className="text-lg font-semibold text-slate-900 mb-6">All appointment requests</h2>
 

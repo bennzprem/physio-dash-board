@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import Sidebar, { type SidebarLink } from '@/components/Sidebar';
 import Dashboard from '@/components/admin/Dashboard';
 import Users from '@/components/admin/Users';
@@ -22,9 +24,10 @@ import ClinicalTeamActivities from '@/components/admin/ClinicalTeamActivities';
 import RatingApprovals from '@/components/admin/RatingApprovals';
 import PerformanceRating from '@/components/clinical-team/PerformanceRating';
 import SOPViewer from '@/components/SOPViewer';
+import Internship from '@/components/admin/Internship';
 import { useAuth } from '@/contexts/AuthContext';
 
-type SuperAdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'clinical-activities' | 'rating-approvals' | 'performance-rating' | 'sop';
+type SuperAdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'internship' | 'profile' | 'clinical-activities' | 'rating-approvals' | 'performance-rating' | 'sop';
 
 // Get sidebar links based on user permissions
 const getSuperAdminLinks = (isExclusiveSuperAdmin: boolean): SidebarLink[] => {
@@ -38,6 +41,7 @@ const getSuperAdminLinks = (isExclusiveSuperAdmin: boolean): SidebarLink[] => {
 		{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
 		{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
 		{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
+		{ href: '#internship', label: 'Internship', icon: 'fas fa-graduation-cap' },
 		{ href: '#headers', label: 'Header Management', icon: 'fas fa-heading' },
 		{ href: '#audit', label: 'Audit Logs', icon: 'fas fa-clipboard-list' },
 		{ href: '#seed', label: 'Seed Data', icon: 'fas fa-database' },
@@ -60,6 +64,39 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 	const router = useRouter();
 	const { user, loading } = useAuth();
 	const [activePage, setActivePage] = useState<SuperAdminPage>('dashboard');
+	const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+	const [pendingRatingCount, setPendingRatingCount] = useState(0);
+
+	// Subscribe to pending leave requests assigned to this user (unique per user)
+	useEffect(() => {
+		if (!user?.email) return;
+		const adminEmail = user.email.toLowerCase();
+		const q = query(collection(db, 'leaveRequests'), where('status', '==', 'pending'));
+		const unsubscribe = onSnapshot(q, snapshot => {
+			const count = snapshot.docs.filter(docSnap => {
+				const requestEmail = (docSnap.get('approvalRequestedToEmail') || '').toLowerCase();
+				return requestEmail === adminEmail && requestEmail !== '';
+			}).length;
+			setPendingLeaveCount(count);
+		}, err => {
+			console.error('Super Admin layout: failed to subscribe to leave requests', err);
+		});
+		return () => unsubscribe();
+	}, [user?.email]);
+
+	// Pending rating count: only dharanjaydubey@css.com (designated approver) sees the badge
+	useEffect(() => {
+		const approverEmail = 'dharanjaydubey@css.com';
+		if (!user?.email || user.email.toLowerCase() !== approverEmail.toLowerCase()) {
+			setPendingRatingCount(0);
+			return;
+		}
+		const q = query(collection(db, 'staffRatings'), where('status', '==', 'Pending'));
+		const unsubscribe = onSnapshot(q, snapshot => setPendingRatingCount(snapshot.size), err => {
+			console.error('Super Admin layout: failed to subscribe to rating approvals', err);
+		});
+		return () => unsubscribe();
+	}, [user?.email]);
 
 	// Check if user is the exclusive Super Admin
 	const isExclusiveSuperAdmin = user?.email?.toLowerCase() === 'antonychacko@css.com';
@@ -148,6 +185,8 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 			return <InventoryManagement />;
 		case 'leave':
 			return <AdminLeaveManagement />;
+		case 'internship':
+			return <Internship />;
 		case 'profile':
 			return <Profile />;
 		case 'clinical-activities':
@@ -172,9 +211,17 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 		);
 	}
 
-	// Get links and filter based on permissions
-	const allLinks = getSuperAdminLinks(isExclusiveSuperAdmin);
-	const filteredLinks = allLinks.filter(link => {
+	// Add badges for pending leave and rating approvals, then filter by permissions
+	const linksWithBadges: SidebarLink[] = useMemo(() => {
+		const baseLinks = getSuperAdminLinks(isExclusiveSuperAdmin);
+		return baseLinks.map(link => {
+			if (link.href === '#leave') return { ...link, badge: pendingLeaveCount > 0 ? pendingLeaveCount : undefined };
+			if (link.href === '#rating-approvals') return { ...link, badge: pendingRatingCount > 0 ? pendingRatingCount : undefined };
+			return link;
+		});
+	}, [isExclusiveSuperAdmin, pendingLeaveCount, pendingRatingCount]);
+
+	const filteredLinks = linksWithBadges.filter(link => {
 		// Only show Performance Rating to authorized raters
 		if (link.href === '#performance-rating' && !isAuthorizedRater) {
 			return false;
