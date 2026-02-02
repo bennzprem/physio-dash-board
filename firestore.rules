@@ -275,6 +275,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // INTERNS & WORKSHOP ENROLMENTS (frontdesk internship management)
+    match /interns/{id} {
+      allow read, write: if isLoggedIn() && (isFrontdesk() || isAdmin() || isSuperAdmin());
+    }
+    match /workshopEnrolments/{id} {
+      allow read, write: if isLoggedIn() && (isFrontdesk() || isAdmin() || isSuperAdmin());
+    }
+
     // RATING REQUESTS
     match /ratingRequests/{requestId} {
        function isAuthorizedRater() {
