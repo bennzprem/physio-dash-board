@@ -34,46 +34,16 @@ const DEGREE_AMOUNTS: Record<DegreeType, number> = {
 	"Clinical": 2500,
 };
 
-const WORKSHOP_AMOUNT = 2500;
-
-interface WorkshopEnrolment {
-	id?: string;
-	serialNumber: number;
-	name: string;
-	college: string;
-	degree: "Bachelor's Degree (BPT)" | "Master's Degree (MPT)" | "Clinical";
-	workshopStartDate: string;
-	workshopEndDate: string;
-	amount: number;
-	isPaid: boolean;
-	paymentDate?: string;
-	receiptNumber?: string;
-	paymentMode?: 'Cash' | 'Card/UPI';
-	utrNumber?: string;
-	createdAt: any;
-	updatedAt: any;
-}
-
-type SectionTab = 'interns' | 'workshops';
-
 export default function InternshipManagement() {
 	const { user } = useAuth();
-	const [activeSection, setActiveSection] = useState<SectionTab>('interns');
 	const [interns, setInterns] = useState<Intern[]>([]);
-	const [workshopEnrolments, setWorkshopEnrolments] = useState<WorkshopEnrolment[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [loadingWorkshops, setLoadingWorkshops] = useState(true);
 	const [showAddModal, setShowAddModal] = useState(false);
 	const [showEditModal, setShowEditModal] = useState(false);
 	const [editingIntern, setEditingIntern] = useState<Intern | null>(null);
 	const [processingPayment, setProcessingPayment] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
-	const [showAddWorkshopModal, setShowAddWorkshopModal] = useState(false);
-	const [showEditWorkshopModal, setShowEditWorkshopModal] = useState(false);
-	const [editingWorkshop, setEditingWorkshop] = useState<WorkshopEnrolment | null>(null);
-	const [processingWorkshopPayment, setProcessingWorkshopPayment] = useState<string | null>(null);
-	const [workshopSearchTerm, setWorkshopSearchTerm] = useState('');
-	
+
 	// Form state
 	const [formData, setFormData] = useState({
 		name: '',
@@ -87,19 +57,6 @@ export default function InternshipManagement() {
 		utrNumber: '',
 	});
 	const [submitting, setSubmitting] = useState(false);
-
-	const [workshopFormData, setWorkshopFormData] = useState({
-		name: '',
-		college: '',
-		degree: "Bachelor's Degree (BPT)" as DegreeType,
-		workshopStartDate: '',
-		workshopEndDate: '',
-		amount: WORKSHOP_AMOUNT,
-		receiptNumber: '',
-		paymentMode: 'Cash' as 'Cash' | 'Card/UPI',
-		utrNumber: '',
-	});
-	const [submittingWorkshop, setSubmittingWorkshop] = useState(false);
 
 	// Load interns from Firestore
 	useEffect(() => {
@@ -139,44 +96,6 @@ export default function InternshipManagement() {
 			}
 		);
 
-		return () => unsubscribe();
-	}, []);
-
-	// Load workshop enrolments from Firestore
-	useEffect(() => {
-		const unsubscribe = onSnapshot(
-			query(collection(db, 'workshopEnrolments'), orderBy('createdAt', 'asc')),
-			(snapshot: QuerySnapshot) => {
-				const loaded = snapshot.docs.map(docSnap => {
-					const data = docSnap.data();
-					const isPaid = data.isPaid === true || data.isPaid === 'true' || data.isPaid === 1;
-					const amount = typeof data.amount === 'number' ? data.amount : (typeof data.amount === 'string' ? parseFloat(data.amount) || 0 : 0);
-					return {
-						id: docSnap.id,
-						serialNumber: data.serialNumber || 0,
-						name: data.name || '',
-						college: data.college || '',
-						degree: data.degree || "Bachelor's Degree (BPT)",
-						workshopStartDate: data.workshopStartDate || '',
-						workshopEndDate: data.workshopEndDate || '',
-						amount,
-						isPaid,
-						paymentDate: data.paymentDate || undefined,
-						receiptNumber: data.receiptNumber || undefined,
-						paymentMode: data.paymentMode || 'Cash',
-						utrNumber: data.utrNumber || undefined,
-						createdAt: data.createdAt,
-						updatedAt: data.updatedAt,
-					} as WorkshopEnrolment;
-				});
-				setWorkshopEnrolments(loaded);
-				setLoadingWorkshops(false);
-			},
-			error => {
-				console.error('Failed to load workshop enrolments:', error);
-				setLoadingWorkshops(false);
-			}
-		);
 		return () => unsubscribe();
 	}, []);
 
@@ -434,164 +353,6 @@ export default function InternshipManagement() {
 		}
 	};
 
-	// ——— Workshop enrolment handlers ———
-	const handleAddWorkshopEnrolment = async () => {
-		if (!workshopFormData.name.trim() || !workshopFormData.college.trim() || !workshopFormData.workshopStartDate || !workshopFormData.workshopEndDate) {
-			alert('Please fill in all required fields.');
-			return;
-		}
-		if (workshopFormData.paymentMode === 'Card/UPI' && !workshopFormData.utrNumber.trim()) {
-			alert('UTR Number is required when Payment Mode is Card/UPI.');
-			return;
-		}
-		const start = new Date(workshopFormData.workshopStartDate);
-		const end = new Date(workshopFormData.workshopEndDate);
-		if (end < start) {
-			alert('Workshop end date must be after start date.');
-			return;
-		}
-		setSubmittingWorkshop(true);
-		try {
-			const nextSerial = workshopEnrolments.length > 0
-				? Math.max(...workshopEnrolments.map(w => w.serialNumber)) + 1
-				: 1;
-			const amountValue = Math.round(typeof workshopFormData.amount === 'number' ? workshopFormData.amount : parseFloat(String(workshopFormData.amount)) || 0);
-			const docData: Record<string, unknown> = {
-				serialNumber: nextSerial,
-				name: workshopFormData.name.trim(),
-				college: workshopFormData.college.trim(),
-				degree: workshopFormData.degree,
-				workshopStartDate: workshopFormData.workshopStartDate,
-				workshopEndDate: workshopFormData.workshopEndDate,
-				amount: amountValue,
-				isPaid: false,
-				paymentMode: workshopFormData.paymentMode,
-				createdAt: serverTimestamp(),
-				updatedAt: serverTimestamp(),
-			};
-			if (workshopFormData.receiptNumber.trim()) docData.receiptNumber = workshopFormData.receiptNumber.trim();
-			if (workshopFormData.paymentMode === 'Card/UPI' && workshopFormData.utrNumber.trim()) docData.utrNumber = workshopFormData.utrNumber.trim();
-			await addDoc(collection(db, 'workshopEnrolments'), docData);
-			setWorkshopFormData({
-				name: '', college: '', degree: "Bachelor's Degree (BPT)",
-				workshopStartDate: '', workshopEndDate: '', amount: WORKSHOP_AMOUNT,
-				receiptNumber: '', paymentMode: 'Cash', utrNumber: '',
-			});
-			setShowAddWorkshopModal(false);
-			alert('Workshop enrolment added successfully!');
-		} catch (error) {
-			console.error('Failed to add workshop enrolment:', error);
-			alert(`Failed to add: ${error instanceof Error ? error.message : 'Unknown error'}`);
-		} finally {
-			setSubmittingWorkshop(false);
-		}
-	};
-
-	const handlePayWorkshop = async (enrolment: WorkshopEnrolment) => {
-		const receiptNumber = window.prompt('Enter receipt number (optional):');
-		if (receiptNumber === null) return;
-		setProcessingWorkshopPayment(enrolment.id ?? '');
-		try {
-			const updateData: Record<string, unknown> = {
-				isPaid: true,
-				paymentDate: new Date().toISOString().split('T')[0],
-				updatedAt: serverTimestamp(),
-			};
-			if (receiptNumber.trim()) updateData.receiptNumber = receiptNumber.trim();
-			await updateDoc(doc(db, 'workshopEnrolments', enrolment.id!), updateData);
-		} catch (error) {
-			console.error('Failed to process workshop payment:', error);
-			alert(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-		} finally {
-			setProcessingWorkshopPayment(null);
-		}
-	};
-
-	const handleEditWorkshop = (enrolment: WorkshopEnrolment) => {
-		setEditingWorkshop(enrolment);
-		setWorkshopFormData({
-			name: enrolment.name,
-			college: enrolment.college,
-			degree: enrolment.degree,
-			workshopStartDate: enrolment.workshopStartDate,
-			workshopEndDate: enrolment.workshopEndDate,
-			amount: enrolment.amount,
-			receiptNumber: enrolment.receiptNumber || '',
-			paymentMode: enrolment.paymentMode || 'Cash',
-			utrNumber: enrolment.utrNumber || '',
-		});
-		setShowEditWorkshopModal(true);
-	};
-
-	const handleUpdateWorkshopEnrolment = async () => {
-		if (!editingWorkshop?.id) return;
-		if (!workshopFormData.name.trim() || !workshopFormData.college.trim() || !workshopFormData.workshopStartDate || !workshopFormData.workshopEndDate) {
-			alert('Please fill in all required fields.');
-			return;
-		}
-		if (workshopFormData.paymentMode === 'Card/UPI' && !workshopFormData.utrNumber.trim()) {
-			alert('UTR Number is required when Payment Mode is Card/UPI.');
-			return;
-		}
-		setSubmittingWorkshop(true);
-		try {
-			const amountValue = Math.round(typeof workshopFormData.amount === 'number' ? workshopFormData.amount : parseFloat(String(workshopFormData.amount)) || 0);
-			const updateData: Record<string, unknown> = {
-				name: workshopFormData.name.trim(),
-				college: workshopFormData.college.trim(),
-				degree: workshopFormData.degree,
-				workshopStartDate: workshopFormData.workshopStartDate,
-				workshopEndDate: workshopFormData.workshopEndDate,
-				amount: amountValue,
-				paymentMode: workshopFormData.paymentMode,
-				updatedAt: serverTimestamp(),
-			};
-			if (workshopFormData.receiptNumber.trim()) updateData.receiptNumber = workshopFormData.receiptNumber.trim();
-			if (workshopFormData.paymentMode === 'Card/UPI' && workshopFormData.utrNumber.trim()) updateData.utrNumber = workshopFormData.utrNumber.trim();
-			await updateDoc(doc(db, 'workshopEnrolments', editingWorkshop.id), updateData);
-			setEditingWorkshop(null);
-			setShowEditWorkshopModal(false);
-			setWorkshopFormData({ name: '', college: '', degree: "Bachelor's Degree (BPT)", workshopStartDate: '', workshopEndDate: '', amount: WORKSHOP_AMOUNT, receiptNumber: '', paymentMode: 'Cash', utrNumber: '' });
-			alert('Workshop enrolment updated successfully!');
-		} catch (error) {
-			console.error('Failed to update workshop enrolment:', error);
-			alert(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-		} finally {
-			setSubmittingWorkshop(false);
-		}
-	};
-
-	const handleExportWorkshops = (format: 'csv' | 'excel' = 'excel') => {
-		if (filteredWorkshopEnrolments.length === 0) {
-			alert('No workshop enrolments to export.');
-			return;
-		}
-		const rows = [
-			['Sl No', 'Name', 'College', 'Degree', 'Workshop Start', 'Workshop End', 'Amount (₹)', 'Payment Mode', 'UTR', 'Receipt No.', 'Status', 'Payment Date'],
-			...filteredWorkshopEnrolments.map(w => [
-				w.serialNumber, w.name, w.college, formatDegree(w.degree),
-				formatDate(w.workshopStartDate), formatDate(w.workshopEndDate),
-				w.amount, w.paymentMode || 'Cash', w.utrNumber || '', w.receiptNumber || '',
-				w.isPaid ? 'Paid' : 'Pending', w.paymentDate ? formatDate(w.paymentDate) : '',
-			]),
-		];
-		if (format === 'csv') {
-			const csv = rows.map(line => line.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-			const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-			const url = URL.createObjectURL(blob);
-			const link = document.createElement('a');
-			link.href = url;
-			link.download = `workshop-enrolments-${new Date().toISOString().slice(0, 10)}.csv`;
-			link.click();
-			URL.revokeObjectURL(url);
-		} else {
-			const ws = XLSX.utils.aoa_to_sheet(rows);
-			const wb = XLSX.utils.book_new();
-			XLSX.utils.book_append_sheet(wb, ws, '3 Day Workshops');
-			XLSX.writeFile(wb, `workshop-enrolments-${new Date().toISOString().slice(0, 10)}.xlsx`);
-		}
-	};
-
 	const isExpired = (dateOfLeaving: string): boolean => {
 		if (!dateOfLeaving) return false;
 		const today = new Date();
@@ -684,22 +445,6 @@ export default function InternshipManagement() {
 		);
 	}, [interns, searchTerm]);
 
-	const totalWorkshops = useMemo(() => workshopEnrolments.length, [workshopEnrolments]);
-	const totalWorkshopAmountPaid = useMemo(() => {
-		return workshopEnrolments.filter(w => w.isPaid).reduce((sum, w) => sum + (typeof w.amount === 'number' ? w.amount : 0), 0);
-	}, [workshopEnrolments]);
-	const filteredWorkshopEnrolments = useMemo(() => {
-		if (!workshopSearchTerm.trim()) return workshopEnrolments;
-		const term = workshopSearchTerm.toLowerCase().trim();
-		return workshopEnrolments.filter(w =>
-			w.name.toLowerCase().includes(term) ||
-			w.college.toLowerCase().includes(term) ||
-			formatDegree(w.degree).toLowerCase().includes(term) ||
-			(w.utrNumber && w.utrNumber.toLowerCase().includes(term)) ||
-			(w.receiptNumber && w.receiptNumber.toLowerCase().includes(term))
-		);
-	}, [workshopEnrolments, workshopSearchTerm]);
-
 	// Export function for Excel/CSV
 	const handleExport = (format: 'csv' | 'excel' = 'excel') => {
 		if (filteredInterns.length === 0) {
@@ -778,36 +523,6 @@ export default function InternshipManagement() {
 		<div className="min-h-screen p-8">
 			<PageHeader title="Internship Management" />
 
-			{/* Tabs: Interns | 3 Day Workshops */}
-			<div className="mt-6 flex gap-2 border-b border-slate-200">
-				<button
-					type="button"
-					onClick={() => setActiveSection('interns')}
-					className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
-						activeSection === 'interns'
-							? 'bg-blue-600 text-white shadow'
-							: 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-					}`}
-				>
-					<i className="fas fa-users mr-2" aria-hidden="true" />
-					Interns
-				</button>
-				<button
-					type="button"
-					onClick={() => setActiveSection('workshops')}
-					className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
-						activeSection === 'workshops'
-							? 'bg-blue-600 text-white shadow'
-							: 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-					}`}
-				>
-					<i className="fas fa-calendar-alt mr-2" aria-hidden="true" />
-					3 Day Workshops
-				</button>
-			</div>
-			
-			{activeSection === 'interns' && (
-				<>
 			{/* Summary Cards */}
 			<div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 				<div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
@@ -980,146 +695,6 @@ export default function InternshipManagement() {
 					</div>
 				)}
 			</div>
-				</>
-			)}
-
-			{/* 3 Day Workshops section */}
-			{activeSection === 'workshops' && (
-				<>
-					<div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-						<div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-indigo-500">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Total Workshop Enrolments</p>
-									<p className="mt-2 text-3xl font-bold text-slate-900">{totalWorkshops}</p>
-								</div>
-								<div className="bg-indigo-100 rounded-full p-4">
-									<i className="fas fa-calendar-check text-2xl text-indigo-600" aria-hidden="true" />
-								</div>
-							</div>
-						</div>
-						<div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Total Amount Paid</p>
-									<p className="mt-2 text-3xl font-bold text-slate-900">₹{totalWorkshopAmountPaid.toLocaleString('en-IN')}</p>
-								</div>
-								<div className="bg-green-100 rounded-full p-4">
-									<i className="fas fa-rupee-sign text-2xl text-green-600" aria-hidden="true" />
-								</div>
-							</div>
-						</div>
-					</div>
-					<div className="mt-6">
-						<div className="mb-4 flex justify-between items-center">
-							<h2 className="text-xl font-semibold text-slate-800">Workshop Enrolments List</h2>
-							<div className="flex items-center gap-3">
-								<button
-									onClick={() => handleExportWorkshops('excel')}
-									className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-									title="Export to Excel"
-								>
-									<i className="fas fa-file-excel" aria-hidden="true" />
-									Export Excel/CSV
-								</button>
-								<button
-									onClick={() => { setWorkshopFormData({ name: '', college: '', degree: "Bachelor's Degree (BPT)", workshopStartDate: '', workshopEndDate: '', amount: WORKSHOP_AMOUNT, receiptNumber: '', paymentMode: 'Cash', utrNumber: '' }); setShowAddWorkshopModal(true); }}
-									className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
-								>
-									<i className="fas fa-plus" aria-hidden="true" />
-									Add New Workshop Enrolment
-								</button>
-							</div>
-						</div>
-						<div className="mb-4">
-							<div className="relative">
-								<i className="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" aria-hidden="true" />
-								<input
-									type="text"
-									placeholder="Search by name, college, degree, UTR, or receipt number..."
-									value={workshopSearchTerm}
-									onChange={(e) => setWorkshopSearchTerm(e.target.value)}
-									className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-								/>
-								{workshopSearchTerm && (
-									<button type="button" onClick={() => setWorkshopSearchTerm('')} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search">
-										<i className="fas fa-times" aria-hidden="true" />
-									</button>
-								)}
-							</div>
-						</div>
-						{loadingWorkshops ? (
-							<div className="bg-white rounded-lg shadow p-8 text-center text-slate-500">Loading workshop enrolments...</div>
-						) : workshopEnrolments.length === 0 ? (
-							<div className="bg-white rounded-lg shadow p-8 text-center text-slate-500">
-								<p>No workshop enrolments yet. Click &quot;Add New Workshop Enrolment&quot; to get started.</p>
-							</div>
-						) : filteredWorkshopEnrolments.length === 0 ? (
-							<div className="bg-white rounded-lg shadow p-8 text-center text-slate-500">No enrolments match your search.</div>
-						) : (
-							<div className="bg-white rounded-lg shadow overflow-hidden">
-								<div className="max-h-[calc(100vh-400px)] overflow-y-auto overflow-x-hidden">
-									<table className="w-full divide-y divide-slate-200" style={{ tableLayout: 'fixed' }}>
-										<thead className="bg-slate-50 sticky top-0 z-10">
-											<tr>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '5%' }}>Sl. No</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '12%' }}>Name</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '15%' }}>College</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '12%' }}>Degree</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '10%' }}>Workshop Start</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '10%' }}>Workshop End</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '8%' }}>Amount (₹)</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '8%' }}>Payment Mode</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '8%' }}>UTR</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '8%' }}>Receipt No.</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '6%' }}>Status</th>
-												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '8%' }}>Actions</th>
-											</tr>
-										</thead>
-										<tbody className="bg-white divide-y divide-slate-200">
-											{filteredWorkshopEnrolments.map((w) => (
-												<tr key={w.id} className="hover:bg-slate-50">
-													<td className="px-2 py-3 text-sm text-slate-900">{w.serialNumber}</td>
-													<td className="px-2 py-3 text-sm font-medium text-slate-900 truncate" title={w.name}>{w.name}</td>
-													<td className="px-2 py-3 text-sm text-slate-700 truncate" title={w.college}>{w.college}</td>
-													<td className="px-2 py-3 text-sm text-slate-700 truncate" title={formatDegree(w.degree)}>{formatDegree(w.degree)}</td>
-													<td className="px-2 py-3 text-sm text-slate-700 whitespace-nowrap">{formatDate(w.workshopStartDate)}</td>
-													<td className="px-2 py-3 text-sm text-slate-700 whitespace-nowrap">{formatDate(w.workshopEndDate)}</td>
-													<td className="px-2 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">₹{w.amount.toLocaleString('en-IN')}</td>
-													<td className="px-2 py-3 text-sm text-slate-700 whitespace-nowrap">{w.paymentMode || 'Cash'}</td>
-													<td className="px-2 py-3 text-sm text-slate-700 truncate" title={w.utrNumber || ''}>{w.utrNumber || '—'}</td>
-													<td className="px-2 py-3 text-sm text-slate-700 truncate" title={w.receiptNumber || ''}>{w.receiptNumber || '—'}</td>
-													<td className="px-2 py-3">
-														{w.isPaid ? (
-															<span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 whitespace-nowrap">Paid</span>
-														) : (
-															<span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 whitespace-nowrap">Pending</span>
-														)}
-													</td>
-													<td className="px-2 py-3 text-sm">
-														<div className="flex items-center gap-1">
-															<button onClick={() => handleEditWorkshop(w)} className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs" title="Edit">
-																<i className="fas fa-edit" aria-hidden="true" />
-															</button>
-															{!w.isPaid ? (
-																<button onClick={() => handlePayWorkshop(w)} disabled={processingWorkshopPayment === w.id} className="px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 text-xs whitespace-nowrap">
-																	{processingWorkshopPayment === w.id ? '...' : 'Pay'}
-																</button>
-															) : (
-																<span className="text-xs text-slate-500">Paid</span>
-															)}
-														</div>
-													</td>
-												</tr>
-											))}
-										</tbody>
-									</table>
-								</div>
-							</div>
-						)}
-					</div>
-				</>
-			)}
 
 			{/* Add Intern Modal */}
 			{showAddModal && (
@@ -1505,131 +1080,6 @@ export default function InternshipManagement() {
 							>
 								{submitting ? 'Updating...' : 'Update Intern'}
 							</button>
-						</div>
-					</div>
-				</div>
-			)}
-
-			{/* Add Workshop Enrolment Modal */}
-			{showAddWorkshopModal && (
-				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-					<div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-						<div className="p-6 border-b border-slate-200">
-							<h3 className="text-xl font-semibold text-slate-800">Add New Workshop Enrolment (3 Day Workshop)</h3>
-						</div>
-						<div className="p-6 space-y-4">
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Name <span className="text-red-500">*</span></label>
-								<input type="text" value={workshopFormData.name} onChange={(e) => setWorkshopFormData({ ...workshopFormData, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" placeholder="Enter student name" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">College/University <span className="text-red-500">*</span></label>
-								<input type="text" value={workshopFormData.college} onChange={(e) => setWorkshopFormData({ ...workshopFormData, college: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" placeholder="Enter college or university name" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Degree</label>
-								<select value={workshopFormData.degree} onChange={(e) => setWorkshopFormData({ ...workshopFormData, degree: e.target.value as DegreeType })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white">
-									<option value="Bachelor's Degree (BPT)">Bachelor&apos;s Degree (BPT)</option>
-									<option value="Master's Degree (MPT)">Master&apos;s Degree (MPT)</option>
-									<option value="Clinical">Clinical</option>
-								</select>
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Workshop Start Date <span className="text-red-500">*</span></label>
-								<input type="date" value={workshopFormData.workshopStartDate} onChange={(e) => setWorkshopFormData({ ...workshopFormData, workshopStartDate: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Workshop End Date <span className="text-red-500">*</span></label>
-								<input type="date" value={workshopFormData.workshopEndDate} onChange={(e) => setWorkshopFormData({ ...workshopFormData, workshopEndDate: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Amount (₹) <span className="text-red-500">*</span></label>
-								<input type="number" value={workshopFormData.amount ?? 0} onChange={(e) => setWorkshopFormData({ ...workshopFormData, amount: Math.round(parseFloat(e.target.value) || 0) })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" min="0" step="1" />
-								<p className="mt-1 text-xs text-slate-500">Default: ₹{WORKSHOP_AMOUNT.toLocaleString('en-IN')} for 3-day workshop. You can edit.</p>
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Payment Mode <span className="text-red-500">*</span></label>
-								<select value={workshopFormData.paymentMode} onChange={(e) => setWorkshopFormData({ ...workshopFormData, paymentMode: e.target.value as 'Cash' | 'Card/UPI', utrNumber: e.target.value === 'Cash' ? '' : workshopFormData.utrNumber })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white">
-									<option value="Cash">Cash</option>
-									<option value="Card/UPI">Card/UPI</option>
-								</select>
-							</div>
-							{workshopFormData.paymentMode === 'Card/UPI' && (
-								<div>
-									<label className="block text-sm font-medium text-slate-700 mb-1">UTR Number <span className="text-red-500">*</span></label>
-									<input type="text" value={workshopFormData.utrNumber} onChange={(e) => setWorkshopFormData({ ...workshopFormData, utrNumber: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" placeholder="Enter UTR number" />
-								</div>
-							)}
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Receipt Number</label>
-								<input type="text" value={workshopFormData.receiptNumber} onChange={(e) => setWorkshopFormData({ ...workshopFormData, receiptNumber: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" placeholder="Optional" />
-							</div>
-						</div>
-						<div className="p-6 border-t border-slate-200 flex justify-end gap-3">
-							<button onClick={() => { setShowAddWorkshopModal(false); setWorkshopFormData({ name: '', college: '', degree: "Bachelor's Degree (BPT)", workshopStartDate: '', workshopEndDate: '', amount: WORKSHOP_AMOUNT, receiptNumber: '', paymentMode: 'Cash', utrNumber: '' }); }} className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors" disabled={submittingWorkshop}>Cancel</button>
-							<button onClick={handleAddWorkshopEnrolment} disabled={submittingWorkshop} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">{submittingWorkshop ? 'Adding...' : 'Add Enrolment'}</button>
-						</div>
-					</div>
-				</div>
-			)}
-
-			{/* Edit Workshop Enrolment Modal */}
-			{showEditWorkshopModal && editingWorkshop && (
-				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-					<div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-						<div className="p-6 border-b border-slate-200">
-							<h3 className="text-xl font-semibold text-slate-800">Edit Workshop Enrolment</h3>
-						</div>
-						<div className="p-6 space-y-4">
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Name <span className="text-red-500">*</span></label>
-								<input type="text" value={workshopFormData.name} onChange={(e) => setWorkshopFormData({ ...workshopFormData, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">College/University <span className="text-red-500">*</span></label>
-								<input type="text" value={workshopFormData.college} onChange={(e) => setWorkshopFormData({ ...workshopFormData, college: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Degree</label>
-								<select value={workshopFormData.degree} onChange={(e) => setWorkshopFormData({ ...workshopFormData, degree: e.target.value as DegreeType })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white">
-									<option value="Bachelor's Degree (BPT)">Bachelor&apos;s Degree (BPT)</option>
-									<option value="Master's Degree (MPT)">Master&apos;s Degree (MPT)</option>
-									<option value="Clinical">Clinical</option>
-								</select>
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Workshop Start Date <span className="text-red-500">*</span></label>
-								<input type="date" value={workshopFormData.workshopStartDate} onChange={(e) => setWorkshopFormData({ ...workshopFormData, workshopStartDate: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Workshop End Date <span className="text-red-500">*</span></label>
-								<input type="date" value={workshopFormData.workshopEndDate} onChange={(e) => setWorkshopFormData({ ...workshopFormData, workshopEndDate: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Amount (₹) <span className="text-red-500">*</span></label>
-								<input type="number" value={workshopFormData.amount ?? 0} onChange={(e) => setWorkshopFormData({ ...workshopFormData, amount: Math.round(parseFloat(e.target.value) || 0) })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" min="0" step="1" />
-							</div>
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Payment Mode <span className="text-red-500">*</span></label>
-								<select value={workshopFormData.paymentMode} onChange={(e) => setWorkshopFormData({ ...workshopFormData, paymentMode: e.target.value as 'Cash' | 'Card/UPI', utrNumber: e.target.value === 'Cash' ? '' : workshopFormData.utrNumber })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white">
-									<option value="Cash">Cash</option>
-									<option value="Card/UPI">Card/UPI</option>
-								</select>
-							</div>
-							{workshopFormData.paymentMode === 'Card/UPI' && (
-								<div>
-									<label className="block text-sm font-medium text-slate-700 mb-1">UTR Number <span className="text-red-500">*</span></label>
-									<input type="text" value={workshopFormData.utrNumber} onChange={(e) => setWorkshopFormData({ ...workshopFormData, utrNumber: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" />
-								</div>
-							)}
-							<div>
-								<label className="block text-sm font-medium text-slate-700 mb-1">Receipt Number</label>
-								<input type="text" value={workshopFormData.receiptNumber} onChange={(e) => setWorkshopFormData({ ...workshopFormData, receiptNumber: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 bg-white" />
-							</div>
-						</div>
-						<div className="p-6 border-t border-slate-200 flex justify-end gap-3">
-							<button onClick={() => { setShowEditWorkshopModal(false); setEditingWorkshop(null); setWorkshopFormData({ name: '', college: '', degree: "Bachelor's Degree (BPT)", workshopStartDate: '', workshopEndDate: '', amount: WORKSHOP_AMOUNT, receiptNumber: '', paymentMode: 'Cash', utrNumber: '' }); }} className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors" disabled={submittingWorkshop}>Cancel</button>
-							<button onClick={handleUpdateWorkshopEnrolment} disabled={submittingWorkshop} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">{submittingWorkshop ? 'Updating...' : 'Update Enrolment'}</button>
 						</div>
 					</div>
 				</div>
