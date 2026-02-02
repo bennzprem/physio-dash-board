@@ -129,6 +129,25 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 		}
 	}, [user, loading, router]);
 
+	// Add badges for pending leave and rating approvals, then filter by permissions
+	// Must be called unconditionally (before any early return) to satisfy Rules of Hooks
+	const linksWithBadges: SidebarLink[] = useMemo(() => {
+		const baseLinks = getSuperAdminLinks(isExclusiveSuperAdmin);
+		return baseLinks.map(link => {
+			if (link.href === '#leave') return { ...link, badge: pendingLeaveCount > 0 ? pendingLeaveCount : undefined };
+			if (link.href === '#rating-approvals') return { ...link, badge: pendingRatingCount > 0 ? pendingRatingCount : undefined };
+			return link;
+		});
+	}, [isExclusiveSuperAdmin, pendingLeaveCount, pendingRatingCount]);
+
+	const filteredLinks = linksWithBadges.filter(link => {
+		// Only show Performance Rating to authorized raters
+		if (link.href === '#performance-rating' && !isAuthorizedRater) {
+			return false;
+		}
+		return true;
+	});
+
 	const handleLinkClick = (href: string) => {
 		const page = href.replace('#', '') as SuperAdminPage;
 		setActivePage(page);
@@ -210,24 +229,6 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 			</div>
 		);
 	}
-
-	// Add badges for pending leave and rating approvals, then filter by permissions
-	const linksWithBadges: SidebarLink[] = useMemo(() => {
-		const baseLinks = getSuperAdminLinks(isExclusiveSuperAdmin);
-		return baseLinks.map(link => {
-			if (link.href === '#leave') return { ...link, badge: pendingLeaveCount > 0 ? pendingLeaveCount : undefined };
-			if (link.href === '#rating-approvals') return { ...link, badge: pendingRatingCount > 0 ? pendingRatingCount : undefined };
-			return link;
-		});
-	}, [isExclusiveSuperAdmin, pendingLeaveCount, pendingRatingCount]);
-
-	const filteredLinks = linksWithBadges.filter(link => {
-		// Only show Performance Rating to authorized raters
-		if (link.href === '#performance-rating' && !isAuthorizedRater) {
-			return false;
-		}
-		return true;
-	});
 
 	return (
 		<div className="min-h-svh bg-purple-50">
