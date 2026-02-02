@@ -258,21 +258,21 @@ export default function AdminInternship() {
 						<p className="text-sm font-medium text-slate-700">Filters</p>
 						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 							<div>
-								<label className="block text-xs font-medium text-slate-500 mb-1">Search</label>
+								<label className="block text-xs font-medium text-slate-700 mb-1">Search</label>
 								<input
 									type="text"
 									placeholder="Name, college, degree, UTR, receipt..."
 									value={searchTerm}
 									onChange={e => setSearchTerm(e.target.value)}
-									className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+									className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
 								/>
 							</div>
 							<div>
-								<label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
+								<label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
 								<select
 									value={filterStatus}
 									onChange={e => setFilterStatus(e.target.value as 'all' | 'paid' | 'pending')}
-									className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+									className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
 								>
 									<option value="all">All</option>
 									<option value="paid">Paid</option>
@@ -280,11 +280,11 @@ export default function AdminInternship() {
 								</select>
 							</div>
 							<div>
-								<label className="block text-xs font-medium text-slate-500 mb-1">Degree</label>
+								<label className="block text-xs font-medium text-slate-700 mb-1">Degree</label>
 								<select
 									value={filterDegree}
 									onChange={e => setFilterDegree(e.target.value)}
-									className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+									className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
 								>
 									<option value="all">All</option>
 									<option value="Bachelor's Degree (BPT)">BPT</option>
@@ -293,11 +293,11 @@ export default function AdminInternship() {
 								</select>
 							</div>
 							<div>
-								<label className="block text-xs font-medium text-slate-500 mb-1">College</label>
+								<label className="block text-xs font-medium text-slate-700 mb-1">College</label>
 								<select
 									value={filterCollege}
 									onChange={e => setFilterCollege(e.target.value)}
-									className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+									className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
 								>
 									<option value="all">All</option>
 									{uniqueColleges.map(c => (
@@ -308,39 +308,39 @@ export default function AdminInternship() {
 						</div>
 						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 							<div>
-								<label className="block text-xs font-medium text-slate-500 mb-1">Joining from</label>
+								<label className="block text-xs font-medium text-slate-700 mb-1">Joining from</label>
 								<input
 									type="date"
 									value={joiningFrom}
 									onChange={e => setJoiningFrom(e.target.value)}
-									className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+									className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
 								/>
 							</div>
 							<div>
-								<label className="block text-xs font-medium text-slate-500 mb-1">Joining to</label>
+								<label className="block text-xs font-medium text-slate-700 mb-1">Joining to</label>
 								<input
 									type="date"
 									value={joiningTo}
 									onChange={e => setJoiningTo(e.target.value)}
-									className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+									className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
 								/>
 							</div>
 							<div>
-								<label className="block text-xs font-medium text-slate-500 mb-1">Leaving from</label>
+								<label className="block text-xs font-medium text-slate-700 mb-1">Leaving from</label>
 								<input
 									type="date"
 									value={leavingFrom}
 									onChange={e => setLeavingFrom(e.target.value)}
-									className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+									className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
 								/>
 							</div>
 							<div>
-								<label className="block text-xs font-medium text-slate-500 mb-1">Leaving to</label>
+								<label className="block text-xs font-medium text-slate-700 mb-1">Leaving to</label>
 								<input
 									type="date"
 									value={leavingTo}
 									onChange={e => setLeavingTo(e.target.value)}
-									className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+									className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
 								/>
 							</div>
 						</div>
