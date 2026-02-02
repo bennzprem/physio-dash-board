@@ -68,6 +68,7 @@ export default function InternshipManagement() {
 	const [editingIntern, setEditingIntern] = useState<Intern | null>(null);
 	const [processingPayment, setProcessingPayment] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
+	const [filterMonth, setFilterMonth] = useState<string>(''); // YYYY-MM for "date of joining" filter, '' = all time
 	const [showAddWorkshopModal, setShowAddWorkshopModal] = useState(false);
 	const [showEditWorkshopModal, setShowEditWorkshopModal] = useState(false);
 	const [editingWorkshop, setEditingWorkshop] = useState<WorkshopEnrolment | null>(null);
@@ -658,31 +659,43 @@ export default function InternshipManagement() {
 		return 0;
 	};
 
-	// Calculate statistics
-	const totalInterns = useMemo(() => interns.length, [interns]);
+	// Interns filtered by date of joining month (for revenue / list filter)
+	const monthFilteredInterns = useMemo(() => {
+		if (!filterMonth.trim()) return interns;
+		return interns.filter(intern => {
+			const d = intern.dateOfJoining;
+			if (!d) return false;
+			// dateOfJoining is typically YYYY-MM-DD; support that and ISO strings
+			const ym = d.slice(0, 7);
+			return ym === filterMonth;
+		});
+	}, [interns, filterMonth]);
+
+	// Calculate statistics from month-filtered interns (revenue = amount paid in selected month)
+	const totalInterns = useMemo(() => monthFilteredInterns.length, [monthFilteredInterns]);
 	const totalAmountPaid = useMemo(() => {
-		return interns
+		return monthFilteredInterns
 			.filter(intern => intern.isPaid === true)
 			.reduce((sum, intern) => {
 				const amount = typeof intern.amount === 'number' ? intern.amount : 0;
 				return sum + amount;
 			}, 0);
-	}, [interns]);
+	}, [monthFilteredInterns]);
 
-	// Filter interns based on search term
+	// Filter interns based on search term (applied on top of month filter)
 	const filteredInterns = useMemo(() => {
 		if (!searchTerm.trim()) {
-			return interns;
+			return monthFilteredInterns;
 		}
 		const term = searchTerm.toLowerCase().trim();
-		return interns.filter(intern => 
+		return monthFilteredInterns.filter(intern => 
 			intern.name.toLowerCase().includes(term) ||
 			intern.college.toLowerCase().includes(term) ||
 			formatDegree(intern.degree).toLowerCase().includes(term) ||
 			(intern.utrNumber && intern.utrNumber.toLowerCase().includes(term)) ||
 			(intern.receiptNumber && intern.receiptNumber.toLowerCase().includes(term))
 		);
-	}, [interns, searchTerm]);
+	}, [monthFilteredInterns, searchTerm]);
 
 	const totalWorkshops = useMemo(() => workshopEnrolments.length, [workshopEnrolments]);
 	const totalWorkshopAmountPaid = useMemo(() => {
@@ -857,6 +870,34 @@ export default function InternshipManagement() {
 					</div>
 				</div>
 
+				{/* Date of joining month filter — revenue and list filtered by selected month */}
+				<div className="mb-4 flex flex-wrap items-center gap-3">
+					<label htmlFor="filter-month" className="text-sm font-medium text-slate-700 whitespace-nowrap">
+						Date of joining:
+					</label>
+					<input
+						id="filter-month"
+						type="month"
+						value={filterMonth}
+						onChange={(e) => setFilterMonth(e.target.value)}
+						className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+					/>
+					{filterMonth && (
+						<button
+							type="button"
+							onClick={() => setFilterMonth('')}
+							className="text-sm text-slate-600 hover:text-slate-900 underline"
+						>
+							Show all time
+						</button>
+					)}
+					{filterMonth && (
+						<span className="text-sm text-slate-500">
+							Revenue and counts above are for {filterMonth.replace('-', ' ')} only.
+						</span>
+					)}
+				</div>
+
 				{/* Search Bar */}
 				<div className="mb-4">
 					<div className="relative">
@@ -887,7 +928,7 @@ export default function InternshipManagement() {
 					</div>
 				) : filteredInterns.length === 0 ? (
 					<div className="bg-white rounded-lg shadow p-8 text-center text-slate-500">
-						<p>No interns match your search. Try a different search term.</p>
+						<p>{filterMonth ? 'No interns joined in the selected month.' : 'No interns match your search.'} Try a different {filterMonth ? 'month or search term' : 'search term'}.</p>
 					</div>
 				) : (
 					<div className="bg-white rounded-lg shadow overflow-hidden">
