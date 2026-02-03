@@ -321,13 +321,34 @@ export default function Reports() {
 		}
 
 		// Get all appointments for selected physician (match exact or name variants, e.g. "Sangameshwar" and "Mr. K Sangameshwar")
-		const sel = selectedPhysician.toLowerCase();
+		const sel = selectedPhysician.toLowerCase().trim();
 		const physicianAppointments = appointments.filter(apt => {
 			const d = apt.doctor?.toLowerCase();
 			if (!d) return false;
 			if (d === sel) return true;
 			return d.includes(sel) || sel.includes(d);
 		});
+
+		// Optionally filter appointments by date range (for totalHours consistency)
+		let filteredPhysicianAppointments = physicianAppointments;
+		if (analyticsFromDate || analyticsToDate) {
+			filteredPhysicianAppointments = physicianAppointments.filter(apt => {
+				if (!apt.date) return false;
+				const aptDate = new Date(apt.date);
+				aptDate.setHours(0, 0, 0, 0);
+				if (analyticsFromDate) {
+					const from = new Date(analyticsFromDate);
+					from.setHours(0, 0, 0, 0);
+					if (aptDate < from) return false;
+				}
+				if (analyticsToDate) {
+					const to = new Date(analyticsToDate);
+					to.setHours(23, 59, 59, 999);
+					if (aptDate > to) return false;
+				}
+				return true;
+			});
+		}
 
 		// Get unique patient IDs for this physician
 		const uniquePatientIds = new Set(physicianAppointments.map(apt => apt.patientId).filter(Boolean));
@@ -351,24 +372,47 @@ export default function Reports() {
 			}
 		});
 
-		// Calculate total revenue from appointments with billing
-		// Exclude VIP and Referral patients from revenue
-		const totalRevenue = physicianAppointments.reduce((sum, apt) => {
-			// Check if patient is VIP or Referral
-			const patient = patients.find(p => p.patientId === apt.patientId);
+		// Calculate total revenue from billing collection (same source as My Performance)
+		// Match physician by doctor name; include Completed and Auto-Paid; optionally filter by date range; exclude VIP/Referral
+		const physicianBilling = billing.filter(bill => {
+			const d = bill.doctor?.toLowerCase().trim();
+			if (!d) return false;
+			if (d === sel) return true;
+			if (d.includes(sel) || sel.includes(d)) return true;
+			return false;
+		}).filter(bill => bill.status === 'Completed' || bill.status === 'Auto-Paid');
+
+		let filteredBillingByDate = physicianBilling;
+		if (analyticsFromDate || analyticsToDate) {
+			filteredBillingByDate = physicianBilling.filter(bill => {
+				if (!bill.date) return false;
+				const billDate = new Date(bill.date);
+				billDate.setHours(0, 0, 0, 0);
+				if (analyticsFromDate) {
+					const from = new Date(analyticsFromDate);
+					from.setHours(0, 0, 0, 0);
+					if (billDate < from) return false;
+				}
+				if (analyticsToDate) {
+					const to = new Date(analyticsToDate);
+					to.setHours(23, 59, 59, 999);
+					if (billDate > to) return false;
+				}
+				return true;
+			});
+		}
+
+		const totalRevenue = filteredBillingByDate.reduce((sum, bill) => {
+			const patient = patients.find(p => p.patientId === bill.patientId);
 			const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
 			const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
 			if (isVIP || isReferral) return sum;
-			
-			if (apt.billing?.amount) {
-				const amount = Number(apt.billing.amount);
-				return sum + (Number.isFinite(amount) ? amount : 0);
-			}
-			return sum;
+			const amount = Number.isFinite(bill.amount) ? bill.amount : 0;
+			return sum + (amount > 0 ? amount : 0);
 		}, 0);
 
-		// Calculate total hours (assuming 1 hour per appointment, or calculate from time if available)
-		const totalHours = physicianAppointments.length; // Assuming 1 hour per appointment
+		// Total hours from filtered appointments (1 per appointment or use duration if available)
+		const totalHours = filteredPhysicianAppointments.length;
 
 		return {
 			vipCount,
@@ -378,29 +422,49 @@ export default function Reports() {
 			totalRevenue,
 			totalHours,
 		};
-	}, [selectedPhysician, appointments, patients]);
+	}, [selectedPhysician, appointments, patients, billing, analyticsFromDate, analyticsToDate]);
 
-	// Revenue by patient type for selected physician (for pie chart)
+	// Revenue by patient type for selected physician (for pie chart) — use billing collection
 	const clinicianRevenueByTypeData = useMemo(() => {
 		if (!selectedPhysician) {
 			return { labels: [] as string[], datasets: [{ label: 'Revenue', data: [] as number[], backgroundColor: [] as string[], borderColor: '#ffffff', borderWidth: 2 }] };
 		}
-		const sel = selectedPhysician.toLowerCase();
-		const physicianAppointments = appointments.filter(apt => {
-			const d = apt.doctor?.toLowerCase();
+		const sel = selectedPhysician.toLowerCase().trim();
+		const physicianBilling = billing.filter(bill => {
+			const d = bill.doctor?.toLowerCase().trim();
 			if (!d) return false;
 			if (d === sel) return true;
 			return d.includes(sel) || sel.includes(d);
-		});
+		}).filter(bill => bill.status === 'Completed' || bill.status === 'Auto-Paid');
+
+		let filteredByDate = physicianBilling;
+		if (analyticsFromDate || analyticsToDate) {
+			filteredByDate = physicianBilling.filter(bill => {
+				if (!bill.date) return false;
+				const billDate = new Date(bill.date);
+				billDate.setHours(0, 0, 0, 0);
+				if (analyticsFromDate) {
+					const from = new Date(analyticsFromDate);
+					from.setHours(0, 0, 0, 0);
+					if (billDate < from) return false;
+				}
+				if (analyticsToDate) {
+					const to = new Date(analyticsToDate);
+					to.setHours(23, 59, 59, 999);
+					if (billDate > to) return false;
+				}
+				return true;
+			});
+		}
+
 		let vipRevenue = 0;
 		let dyesRevenue = 0;
 		let othersRevenue = 0;
-		physicianAppointments.forEach(apt => {
-			const patient = patients.find(p => p.patientId === apt.patientId);
+		filteredByDate.forEach(bill => {
+			const patient = patients.find(p => p.patientId === bill.patientId);
 			const patientType = (patient?.patientType || '').toUpperCase();
-			const amount = apt.billing?.amount ? Number(apt.billing.amount) : 0;
-			if (!Number.isFinite(amount)) return;
-			if (patientType === 'VIP' || patientType === 'REFERRAL') return; // excluded from revenue like totalRevenue
+			const amount = Number.isFinite(bill.amount) ? bill.amount : 0;
+			if (patientType === 'VIP' || patientType === 'REFERRAL') return;
 			if (patientType === 'DYES') {
 				dyesRevenue += amount;
 			} else {
@@ -422,7 +486,7 @@ export default function Reports() {
 				},
 			],
 		};
-	}, [selectedPhysician, appointments, patients]);
+	}, [selectedPhysician, billing, patients, analyticsFromDate, analyticsToDate]);
 
 	// Activities and Appointments Distribution by Clinical Team (Pie Chart Data)
 	const activitiesDistributionData = useMemo(() => {
@@ -1247,10 +1311,14 @@ export default function Reports() {
 
 		// Calculate analytics for each physician
 		doctorOptions.forEach(physician => {
-			// Get all appointments for this physician
-			const physicianAppointments = appointments.filter(
-				apt => apt.doctor?.toLowerCase() === physician.toLowerCase()
-			);
+			const sel = physician.toLowerCase().trim();
+			// Get all appointments for this physician (match exact or name variants)
+			const physicianAppointments = appointments.filter(apt => {
+				const d = apt.doctor?.toLowerCase();
+				if (!d) return false;
+				if (d === sel) return true;
+				return d.includes(sel) || sel.includes(d);
+			});
 
 			// Get unique patient IDs for this physician
 			const uniquePatientIds = new Set(physicianAppointments.map(apt => apt.patientId).filter(Boolean));
@@ -1274,13 +1342,40 @@ export default function Reports() {
 				}
 			});
 
-			// Calculate total revenue from appointments with billing
-			const totalRevenue = physicianAppointments.reduce((sum, apt) => {
-				if (apt.billing?.amount) {
-					const amount = Number(apt.billing.amount);
-					return sum + (Number.isFinite(amount) ? amount : 0);
-				}
-				return sum;
+			// Calculate total revenue from billing collection (same as Clinician Performance Analytics)
+			let physicianBilling = billing.filter(bill => {
+				const d = bill.doctor?.toLowerCase().trim();
+				if (!d) return false;
+				if (d === sel) return true;
+				return d.includes(sel) || sel.includes(d);
+			}).filter(bill => bill.status === 'Completed' || bill.status === 'Auto-Paid');
+
+			if (analyticsFromDate || analyticsToDate) {
+				physicianBilling = physicianBilling.filter(bill => {
+					if (!bill.date) return false;
+					const billDate = new Date(bill.date);
+					billDate.setHours(0, 0, 0, 0);
+					if (analyticsFromDate) {
+						const from = new Date(analyticsFromDate);
+						from.setHours(0, 0, 0, 0);
+						if (billDate < from) return false;
+					}
+					if (analyticsToDate) {
+						const to = new Date(analyticsToDate);
+						to.setHours(23, 59, 59, 999);
+						if (billDate > to) return false;
+					}
+					return true;
+				});
+			}
+
+			const totalRevenue = physicianBilling.reduce((sum, bill) => {
+				const patient = patients.find(p => p.patientId === bill.patientId);
+				const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+				const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+				if (isVIP || isReferral) return sum;
+				const amount = Number.isFinite(bill.amount) ? bill.amount : 0;
+				return sum + (amount > 0 ? amount : 0);
 			}, 0);
 
 			// Add row for this physician

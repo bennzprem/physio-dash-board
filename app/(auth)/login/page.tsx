@@ -284,7 +284,7 @@ export default function LoginPage() {
 
 			{/* Copyright Notice - Bottom Left */}
 			<div className="absolute bottom-4 left-4 lg:left-8 text-white text-sm">
-				<p>© 2026 Centre for Sports Science. All rights reserved.</p>
+				<p>© {new Date().getFullYear()} Centre for Sports Science. All rights reserved.</p>
 			</div>
 		</div>
 	);

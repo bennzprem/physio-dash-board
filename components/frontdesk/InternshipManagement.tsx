@@ -34,6 +34,12 @@ const DEGREE_AMOUNTS: Record<DegreeType, number> = {
 	"Clinical": 2500,
 };
 
+/** Current month in YYYY-MM from system date (for default date-of-joining filter). */
+function getCurrentMonthYYYYMM(): string {
+	const now = new Date();
+	return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export default function InternshipManagement() {
 	const { user } = useAuth();
 	const [interns, setInterns] = useState<Intern[]>([]);
@@ -43,7 +49,8 @@ export default function InternshipManagement() {
 	const [editingIntern, setEditingIntern] = useState<Intern | null>(null);
 	const [processingPayment, setProcessingPayment] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
-	const [filterMonth, setFilterMonth] = useState<string>(''); // YYYY-MM for "date of joining" filter, '' = all time
+	// Default to current month so Total Amount Paid and list show current month's revenue/counts
+	const [filterMonth, setFilterMonth] = useState<string>(getCurrentMonthYYYYMM);
 
 	// Form state
 	const [formData, setFormData] = useState({
