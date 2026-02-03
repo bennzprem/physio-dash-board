@@ -281,7 +281,7 @@ export interface Appointment {
 	doctor: string;
 	date: string;
 	time: string;
-	status: 'pending' | 'ongoing' | 'completed' | 'cancelled';
+	status: 'pending' | 'confirmed' | 'ongoing' | 'completed' | 'cancelled';
 	notes?: string;
 	createdAt: string;
 	isConsultation?: boolean; // True for the first appointment, only created from front desk

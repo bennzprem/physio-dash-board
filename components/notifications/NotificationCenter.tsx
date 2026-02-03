@@ -457,7 +457,7 @@ export default function NotificationCenter({
 				const appointmentsQuery = query(
 					collection(db, 'appointments'),
 					where('patientId', '==', patientId),
-					where('status', 'in', ['pending', 'ongoing'])
+					where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 				);
 				const appointmentSnapshot = await getDocs(appointmentsQuery);
 				const appointmentUpdates = appointmentSnapshot.docs.map(docSnap =>

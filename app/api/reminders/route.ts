@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 		const q = query(
 			appointmentsRef,
 			where('date', '==', targetDateStr),
-			where('status', 'in', ['pending', 'ongoing'])
+			where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 		);
 
 		const appointmentsSnapshot = await getDocs(q);

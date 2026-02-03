@@ -5,6 +5,7 @@ import {
 	collection,
 	onSnapshot,
 	updateDoc,
+	setDoc,
 	doc,
 	query,
 	where,
@@ -146,18 +147,27 @@ export default function Requests() {
 		setConfirmSaving(true);
 		try {
 			const staffMember = staff.find(s => s.userName === confirmForm.doctor);
-			await updateDoc(doc(db, 'appointments', confirmingId), {
-				doctor: confirmForm.doctor,
-				staffId: staffMember?.id ?? null,
-				date: confirmForm.date,
-				time: confirmForm.time,
-				status: 'pending',
-				updatedAt: serverTimestamp(),
-			});
+			const appointmentRef = doc(db, 'appointments', confirmingId);
+			// Use setDoc with merge so status and schedule fields are written reliably (updateDoc can fail if doc shape differs)
+			await setDoc(
+				appointmentRef,
+				{
+					doctor: confirmForm.doctor,
+					staffId: staffMember?.id ?? null,
+					date: confirmForm.date,
+					time: confirmForm.time,
+					status: 'confirmed',
+					updatedAt: serverTimestamp(),
+				},
+				{ merge: true }
+			);
 			setConfirmingId(null);
 			setConfirmForm({ doctor: '', date: '', time: '' });
 		} catch (error) {
 			console.error('Failed to confirm appointment', error);
+			alert(
+				`Failed to confirm appointment: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`
+			);
 		} finally {
 			setConfirmSaving(false);
 		}

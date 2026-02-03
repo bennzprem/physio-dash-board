@@ -347,7 +347,7 @@ async function markAppointmentCompletedForReport(
 			const appointmentQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', patient.patientId),
-				where('status', 'in', ['pending', 'ongoing']),
+				where('status', 'in', ['pending', 'confirmed', 'ongoing']),
 				where('date', '==', reportDate),
 				limit(1)
 			);
@@ -361,7 +361,7 @@ async function markAppointmentCompletedForReport(
 			const appointmentQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', patient.patientId),
-				where('status', 'in', ['pending', 'ongoing'])
+				where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 			);
 			const snapshot = await getDocs(appointmentQuery);
 			if (!snapshot.empty) {
@@ -1944,7 +1944,7 @@ export default function EditReport() {
 			const appointmentsQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', patient.patientId),
-				where('status', 'in', ['pending', 'ongoing'])
+				where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 			);
 			const appointmentsSnapshot = await getDocs(appointmentsQuery);
 			const appointments = appointmentsSnapshot.docs.map(docSnap => {

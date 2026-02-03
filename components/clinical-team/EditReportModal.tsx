@@ -204,7 +204,7 @@ async function markAppointmentCompletedForReport(
 	try {
 		const constraints: any[] = [
 			where('patientId', '==', patient.patientId),
-			where('status', 'in', ['pending', 'ongoing']),
+			where('status', 'in', ['pending', 'confirmed', 'ongoing']),
 		];
 
 		if (reportDate) {

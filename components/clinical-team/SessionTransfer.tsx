@@ -744,7 +744,7 @@ export default function SessionTransfer() {
 											<td className="px-4 py-3 text-slate-700">{formatDate(appointment.date)}</td>
 											<td className="px-4 py-3 text-slate-700">{appointment.time}</td>
 											<td className="px-4 py-3">
-												<span className={`status-badge ${appointment.status === 'pending' ? 'status-badge-pending' : appointment.status === 'ongoing' ? 'status-badge-ongoing' : appointment.status === 'completed' ? 'status-badge-completed' : 'status-badge-cancelled'}`}>
+												<span className={`status-badge ${appointment.status === 'pending' ? 'status-badge-pending' : appointment.status === 'confirmed' ? 'status-badge-confirmed' : appointment.status === 'ongoing' ? 'status-badge-ongoing' : appointment.status === 'completed' ? 'status-badge-completed' : 'status-badge-cancelled'}`}>
 													{appointment.status}
 												</span>
 											</td>

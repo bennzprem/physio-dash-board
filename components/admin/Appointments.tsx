@@ -33,6 +33,7 @@ import { createDYESBilling } from '@/lib/dyesBilling';
 
 const statusLabels: Record<AdminAppointmentStatus, string> = {
 	pending: 'Pending',
+	confirmed: 'Confirmed',
 	ongoing: 'Ongoing',
 	completed: 'Completed',
 	cancelled: 'Cancelled',
@@ -40,6 +41,7 @@ const statusLabels: Record<AdminAppointmentStatus, string> = {
 
 const statusChipClasses: Record<AdminAppointmentStatus, string> = {
 	pending: 'status-badge-pending',
+	confirmed: 'status-badge-confirmed',
 	ongoing: 'status-badge-ongoing',
 	completed: 'status-badge-completed',
 	cancelled: 'status-badge-cancelled',
@@ -987,6 +989,7 @@ export default function Appointments() {
 										const nextAppointment = group.appointments[0]; // Most recent/upcoming
 										const statusCounts = {
 											pending: group.appointments.filter(a => a.status === 'pending').length,
+											confirmed: group.appointments.filter(a => a.status === 'confirmed').length,
 											ongoing: group.appointments.filter(a => a.status === 'ongoing').length,
 											completed: group.appointments.filter(a => a.status === 'completed').length,
 											cancelled: group.appointments.filter(a => a.status === 'cancelled').length,
@@ -1032,6 +1035,11 @@ export default function Appointments() {
 														{statusCounts.pending > 0 && (
 															<span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusChipClasses.pending}`}>
 																{statusCounts.pending} Pending
+															</span>
+														)}
+														{statusCounts.confirmed > 0 && (
+															<span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusChipClasses.confirmed}`}>
+																{statusCounts.confirmed} Confirmed
 															</span>
 														)}
 														{statusCounts.ongoing > 0 && (

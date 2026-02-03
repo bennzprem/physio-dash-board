@@ -39,6 +39,7 @@ interface StaffMember {
 
 const statusColors: Record<string, string> = {
 	pending: 'bg-amber-400',
+	confirmed: 'bg-teal-500',
 	ongoing: 'bg-sky-500',
 	completed: 'bg-emerald-500',
 	cancelled: 'bg-rose-500',
@@ -47,6 +48,7 @@ const statusColors: Record<string, string> = {
 const statusOptions: Array<{ value: 'all' | string; label: string }> = [
 	{ value: 'all', label: 'All Status' },
 	{ value: 'pending', label: 'Pending' },
+	{ value: 'confirmed', label: 'Confirmed' },
 	{ value: 'ongoing', label: 'Ongoing' },
 	{ value: 'completed', label: 'Completed' },
 	{ value: 'cancelled', label: 'Cancelled' },

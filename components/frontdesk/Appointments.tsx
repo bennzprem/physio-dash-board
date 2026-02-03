@@ -35,6 +35,7 @@ interface FrontdeskAppointment {
 
 const STATUS_BADGES: Record<AdminAppointmentStatus, string> = {
 	pending: 'status-badge-pending',
+	confirmed: 'status-badge-confirmed',
 	ongoing: 'status-badge-ongoing',
 	completed: 'status-badge-completed',
 	cancelled: 'status-badge-cancelled',
@@ -1155,6 +1156,7 @@ export default function Appointments() {
 										const nextAppointment = group.appointments[0]; // Most recent/upcoming
 										const statusCounts = {
 											pending: group.appointments.filter(a => a.status === 'pending').length,
+											confirmed: group.appointments.filter(a => a.status === 'confirmed').length,
 											ongoing: group.appointments.filter(a => a.status === 'ongoing').length,
 											completed: group.appointments.filter(a => a.status === 'completed').length,
 											cancelled: group.appointments.filter(a => a.status === 'cancelled').length,
@@ -1198,6 +1200,11 @@ export default function Appointments() {
 														{statusCounts.pending > 0 && (
 															<span className="badge-base status-badge-pending px-2 py-0.5 text-xs">
 																{statusCounts.pending} Pending
+															</span>
+														)}
+														{statusCounts.confirmed > 0 && (
+															<span className="badge-base status-badge-confirmed px-2 py-0.5 text-xs">
+																{statusCounts.confirmed} Confirmed
 															</span>
 														)}
 														{statusCounts.ongoing > 0 && (
