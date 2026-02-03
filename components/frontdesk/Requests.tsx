@@ -293,7 +293,7 @@ export default function Requests() {
 									id="confirm-doctor"
 									value={confirmForm.doctor}
 									onChange={e => setConfirmForm(f => ({ ...f, doctor: e.target.value }))}
-									className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+									className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
 									required
 								>
 									<option value="">Select doctor</option>
@@ -313,7 +313,7 @@ export default function Requests() {
 									type="date"
 									value={confirmForm.date}
 									onChange={e => setConfirmForm(f => ({ ...f, date: e.target.value }))}
-									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+									className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
 									required
 								/>
 							</div>
@@ -326,7 +326,7 @@ export default function Requests() {
 									type="time"
 									value={confirmForm.time}
 									onChange={e => setConfirmForm(f => ({ ...f, time: e.target.value }))}
-									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+									className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
 									required
 								/>
 							</div>
