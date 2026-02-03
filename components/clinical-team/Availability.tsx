@@ -213,9 +213,9 @@ export default function Availability() {
 		return dayNames[d.getDay()];
 	};
 
-	// Default availability: 9 AM to 6 PM for all days except Sunday
+	// Default availability: 9 AM to 7 PM for all days except Sunday
 	const DEFAULT_START_TIME = '09:00';
-	const DEFAULT_END_TIME = '18:00';
+	const DEFAULT_END_TIME = '19:00';
 	const DEFAULT_SLOTS: TimeSlot[] = [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }];
 
 	const normalizeDateKey = (dateString: string): string => {
@@ -245,7 +245,7 @@ export default function Availability() {
 			return dateSchedule;
 		}
 		
-		// Default: available from 9 AM to 6 PM for all days except Sunday
+		// Default: available from 9 AM to 7 PM for all days except Sunday
 		return { enabled: true, slots: DEFAULT_SLOTS };
 	};
 
@@ -520,21 +520,21 @@ const loadAppointmentsForDate = async (
 		}
 	};
 
-	// Time slots are fixed at 9 AM - 6 PM, so we don't need these handlers anymore
+	// Time slots are fixed at 9 AM - 7 PM, so we don't need these handlers anymore
 	// But keeping them for backward compatibility in case they're referenced elsewhere
 	const handleDateSlotChange = (slotIndex: number, field: 'start' | 'end', value: string) => {
 		// Slots are fixed, so this is disabled
-		alert('Time slots are fixed from 9 AM to 6 PM. You can only mark days as unavailable.');
+		alert('Time slots are fixed from 9 AM to 7 PM. You can only mark days as unavailable.');
 	};
 
 	const handleDateAddSlot = () => {
 		// Slots are fixed, so this is disabled
-		alert('Time slots are fixed from 9 AM to 6 PM. You can only mark days as unavailable.');
+		alert('Time slots are fixed from 9 AM to 7 PM. You can only mark days as unavailable.');
 	};
 
 	const handleDateRemoveSlot = (slotIndex: number) => {
 		// Slots are fixed, so this is disabled
-		alert('Time slots are fixed from 9 AM to 6 PM. You can only mark days as unavailable.');
+		alert('Time slots are fixed from 9 AM to 7 PM. You can only mark days as unavailable.');
 	};
 
 	const copyScheduleToDates = async (sourceDate: string, targetDates: string[]) => {
@@ -745,7 +745,7 @@ const loadAppointmentsForDate = async (
 					<p className="text-sm font-semibold uppercase tracking-wide text-sky-600">Clinical Team</p>
 					<h1 className="mt-1 text-3xl font-semibold text-slate-900">My Availability</h1>
 					<p className="mt-2 text-sm text-slate-600">
-						Your default availability is 9 AM to 6 PM for all days except Sunday. Click on any date to mark it as unavailable.
+						Your default availability is 9 AM to 7 PM for all days except Sunday. Click on any date to mark it as unavailable.
 					</p>
 				</header>
 
@@ -1074,7 +1074,7 @@ const loadAppointmentsForDate = async (
 									<p className="mt-1 text-xs text-slate-500">
 										{editingDateSchedule.enabled 
 											? 'Uncheck to mark this date as unavailable. You will not be available for appointments on this date.'
-											: 'Check to mark this date as available. You will be available from 9 AM to 6 PM on this date.'}
+											: 'Check to mark this date as available. You will be available from 9 AM to 7 PM on this date.'}
 									</p>
 								</div>
 
@@ -1223,7 +1223,7 @@ const loadAppointmentsForDate = async (
 
 				<div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
 					<i className="fas fa-info-circle mr-2" aria-hidden="true" />
-					<strong>Note:</strong> Your default availability is 9 AM to 6 PM for all days except Sunday. Click on any date to mark it as unavailable. Use the copy button to apply unavailability to multiple days.
+					<strong>Note:</strong> Your default availability is 9 AM to 7 PM for all days except Sunday. Click on any date to mark it as unavailable. Use the copy button to apply unavailability to multiple days.
 				</div>
 			</div>
 		</div>

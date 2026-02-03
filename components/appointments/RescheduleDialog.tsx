@@ -95,9 +95,9 @@ export default function RescheduleDialog({
 	const [saving, setSaving] = useState(false);
 	const [allClinicianAppointments, setAllClinicianAppointments] = useState<Array<{ id?: string; doctor: string; date: string; time: string; status: string; duration?: number }>>([]);
 
-	// Default availability: 9 AM to 6 PM for all days except Sunday
+	// Default availability: 9 AM to 7 PM for all days except Sunday
 	const DEFAULT_START_TIME = '09:00';
-	const DEFAULT_END_TIME = '18:00';
+	const DEFAULT_END_TIME = '19:00';
 	const DEFAULT_DAY_AVAILABILITY: DayAvailability = {
 		enabled: true,
 		slots: [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }],
@@ -126,7 +126,7 @@ export default function RescheduleDialog({
 			return dateSpecific;
 		}
 		
-		// No date-specific schedule exists - use default availability (9 AM - 6 PM)
+		// No date-specific schedule exists - use default availability (9 AM - 7 PM)
 		return DEFAULT_DAY_AVAILABILITY;
 	};
 

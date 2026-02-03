@@ -480,9 +480,9 @@ export default function Appointments() {
 		return `${year}-${month}-${day}`;
 	};
 
-	// Default availability: 9 AM to 6 PM for all days except Sunday
+	// Default availability: 9 AM to 7 PM for all days except Sunday
 	const DEFAULT_START_TIME = '09:00';
-	const DEFAULT_END_TIME = '18:00';
+	const DEFAULT_END_TIME = '19:00';
 	const DEFAULT_DAY_AVAILABILITY: DayAvailability = {
 		enabled: true,
 		slots: [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }],
@@ -511,9 +511,9 @@ export default function Appointments() {
 			return dateSpecific;
 		}
 
-		// No date-specific schedule exists - use default availability (9 AM - 6 PM)
+		// No date-specific schedule exists - use default availability (9 AM - 7 PM)
 		if (process.env.NODE_ENV === 'development') {
-			console.log('✅ Using default availability (9 AM - 6 PM) for', dateKey);
+			console.log('✅ Using default availability (9 AM - 7 PM) for', dateKey);
 		}
 		return DEFAULT_DAY_AVAILABILITY;
 	};

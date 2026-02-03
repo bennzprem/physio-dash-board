@@ -115,7 +115,7 @@ export function checkAppointmentConflict(
 
 /**
  * Check if appointment time is within staff availability
- * Uses date-specific availability schedule, with default availability (9 AM - 6 PM) for all days except Sunday
+ * Uses date-specific availability schedule, with default availability (9 AM - 7 PM) for all days except Sunday
  */
 export function checkAvailabilityConflict(
 	dateSpecificAvailability: {
@@ -142,9 +142,9 @@ export function checkAvailabilityConflict(
 		};
 	}
 	
-	// Default availability: 9 AM to 6 PM for all days except Sunday
+	// Default availability: 9 AM to 7 PM for all days except Sunday
 	const DEFAULT_START_TIME = '09:00';
-	const DEFAULT_END_TIME = '18:00';
+	const DEFAULT_END_TIME = '19:00';
 	
 	// Check for date-specific schedule
 	const daySchedule = dateSpecificAvailability?.[dateKey];

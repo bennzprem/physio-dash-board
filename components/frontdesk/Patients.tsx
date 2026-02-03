@@ -1323,9 +1323,9 @@ export default function Patients() {
 			return [];
 		}
 
-		// Default availability: 9 AM to 6 PM for all days except Sunday
+		// Default availability: 9 AM to 7 PM for all days except Sunday
 		const DEFAULT_START_TIME = '09:00';
-		const DEFAULT_END_TIME = '18:00';
+		const DEFAULT_END_TIME = '19:00';
 		const dateObj = new Date(bookingForm.date + 'T00:00:00');
 		const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
 		const isSunday = dayName === 'Sunday';
@@ -1467,9 +1467,9 @@ export default function Patients() {
 			return [];
 		}
 
-		// Default availability: 9 AM to 6 PM for all days except Sunday
+		// Default availability: 9 AM to 7 PM for all days except Sunday
 		const DEFAULT_START_TIME = '09:00';
-		const DEFAULT_END_TIME = '18:00';
+		const DEFAULT_END_TIME = '19:00';
 		const dateObj = new Date(registerAppointmentForm.date + 'T00:00:00');
 		const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
 		const isSunday = dayName === 'Sunday';
