@@ -1527,7 +1527,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-slate-200 bg-white">
-							{ROM_MOTIONS[joint].map(({ motion }) => (
+							{(ROM_MOTIONS[joint] ?? []).map(({ motion }) => (
 								<tr key={motion}>
 									<td className="px-3 py-2 text-slate-700">{motion}</td>
 									<td className="px-3 py-2">
@@ -1568,7 +1568,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-slate-200 bg-white">
-							{ROM_MOTIONS[joint].map(({ motion }) => {
+							{(ROM_MOTIONS[joint] ?? []).map(({ motion }) => {
 								if (motion.includes('Lateral Flexion')) {
 									const side = motion.includes('Left') ? 'left' : 'right';
 									const baseMotion = 'Lateral Flexion';
@@ -1638,7 +1638,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-slate-200 bg-white">
-						{ROM_MOTIONS[joint].map(({ motion }) => (
+						{(ROM_MOTIONS[joint] ?? []).map(({ motion }) => (
 							<tr key={motion}>
 								<td className="px-3 py-2 text-slate-700">{motion}</td>
 								<td className="px-3 py-2">
@@ -5000,7 +5000,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 										>
 											<option value="">-- Select therapist --</option>
-											{clinicalTeamMembers.map(member => (
+											{(clinicalTeamMembers ?? []).map(member => (
 												<option key={member.id} value={member.userName}>
 													{member.userName}
 												</option>
@@ -6679,7 +6679,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
 									<p className="mt-4 text-sm text-slate-600">Loading report history...</p>
 								</div>
-							) : versionHistory.length === 0 ? (
+							) : (versionHistory ?? []).length === 0 ? (
 								<div className="text-center py-12">
 									<p className="text-slate-600">
 										{activeReportTab === 'strength-conditioning' 
@@ -6697,7 +6697,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</div>
 							) : (
 								<div className="space-y-4">
-									{versionHistory.map((version) => {
+									{(versionHistory ?? []).map((version) => {
 										const isExpanded = expandedVersionId === version.id;
 										const versionData = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
 										return (
@@ -6710,7 +6710,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 														<div className="flex-1">
 															<div className="flex items-center gap-2">
 																<span className="font-semibold text-slate-900">Report #{version.version}</span>
-																{version.version === versionHistory[0]?.version && (
+																{version.version === (versionHistory ?? [])[0]?.version && (
 																	<span className="px-2 py-1 text-xs font-medium bg-sky-100 text-sky-700 rounded">
 																		Latest
 																	</span>
