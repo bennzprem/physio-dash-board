@@ -474,8 +474,8 @@ export default function InternshipManagement() {
 
 		const rows = [
 			['Serial No', 'Name', 'College/University', 'Degree', 'Date of Joining', 'Date of Leaving', 'Amount (₹)', 'Payment Mode', 'UTR Number', 'Receipt Number', 'Status', 'Payment Date'],
-			...filteredInterns.map(intern => [
-				intern.serialNumber || '',
+			...filteredInterns.map((intern, index) => [
+				index + 1,
 				intern.name || '',
 				intern.college || '',
 				formatDegree(intern.degree) || '',
@@ -673,14 +673,14 @@ export default function InternshipManagement() {
 									</tr>
 								</thead>
 								<tbody className="bg-white divide-y divide-slate-200">
-									{filteredInterns.map(intern => {
+									{filteredInterns.map((intern, index) => {
 										const expired = !intern.isPaid && isExpired(intern.dateOfLeaving);
 										return (
 											<tr
 												key={intern.id}
 												className={expired ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-slate-50'}
 											>
-												<td className="px-2 py-3 text-sm text-slate-900">{intern.serialNumber}</td>
+												<td className="px-2 py-3 text-sm text-slate-900">{index + 1}</td>
 												<td className="px-2 py-3 text-sm font-medium text-slate-900 truncate" title={intern.name}>{intern.name}</td>
 												<td className="px-2 py-3 text-sm text-slate-700 truncate" title={intern.college}>{intern.college}</td>
 												<td className="px-2 py-3 text-sm text-slate-700 truncate" title={formatDegree(intern.degree)}>{formatDegree(intern.degree)}</td>
