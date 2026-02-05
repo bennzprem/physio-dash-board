@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import Sidebar, { type SidebarLink } from '@/components/Sidebar';
 import Dashboard from '@/components/frontdesk/Dashboard';
 import Patients from '@/components/frontdesk/Patients';
@@ -13,13 +15,15 @@ import InventoryManagement from '@/components/InventoryManagement';
 import LeaveManagement from '@/components/LeaveManagement';
 import SOPViewer from '@/components/SOPViewer';
 import InternshipManagement from '@/components/frontdesk/InternshipManagement';
+import Requests from '@/components/frontdesk/Requests';
 import { useAuth } from '@/contexts/AuthContext';
 
-type FrontdeskPage = 'dashboard' | 'patients' | 'billing' | 'calendar' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'sop' | 'internships';
+type FrontdeskPage = 'dashboard' | 'patients' | 'billing' | 'calendar' | 'notifications' | 'inventory' | 'leave' | 'profile' | 'sop' | 'internships' | 'requests';
 
-const frontdeskLinks: SidebarLink[] = [
+const baseFrontdeskLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-home' },
 	{ href: '#patients', label: 'Patient Management', icon: 'fas fa-users' },
+	{ href: '#requests', label: 'Requests', icon: 'fas fa-inbox' },
 	{ href: '#calendar', label: 'Calendar', icon: 'fas fa-calendar-alt' },
 	{ href: '#billing', label: 'Billing', icon: 'fas fa-file-invoice-dollar' },
 	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
@@ -33,6 +37,29 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 	const router = useRouter();
 	const { user, loading } = useAuth();
 	const [activePage, setActivePage] = useState<FrontdeskPage>('dashboard');
+	const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+
+	// Subscribe to appointment requests (status === 'requested') for sidebar badge
+	useEffect(() => {
+		const q = query(
+			collection(db, 'appointments'),
+			where('status', '==', 'requested')
+		);
+		const unsubscribe = onSnapshot(q, snapshot => {
+			setPendingRequestsCount(snapshot.size);
+		}, err => {
+			console.error('Frontdesk layout: failed to subscribe to appointment requests', err);
+		});
+		return () => unsubscribe();
+	}, []);
+
+	const frontdeskLinks: SidebarLink[] = useMemo(() => {
+		return baseFrontdeskLinks.map(link =>
+			link.href === '#requests'
+				? { ...link, badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined }
+				: link
+		);
+	}, [pendingRequestsCount]);
 
 	// Role guard: only FrontDesk can access /frontdesk
 	useEffect(() => {
@@ -67,7 +94,7 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 		useEffect(() => {
 			const handleHashChange = () => {
 				const hash = window.location.hash.replace('#', '');
-				if (hash && ['dashboard', 'patients', 'calendar', 'billing', 'notifications', 'inventory', 'leave', 'profile', 'sop', 'internships'].includes(hash)) {
+				if (hash && ['dashboard', 'patients', 'calendar', 'billing', 'notifications', 'inventory', 'leave', 'profile', 'sop', 'internships', 'requests'].includes(hash)) {
 					setActivePage(hash as FrontdeskPage);
 				}
 			};
@@ -81,7 +108,7 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 			// Listen for custom navigation events
 			const handleCustomNav = (event: CustomEvent) => {
 				const page = event.detail?.page;
-				if (page && ['dashboard', 'patients', 'calendar', 'billing', 'notifications', 'inventory', 'leave', 'profile', 'sop', 'internships'].includes(page)) {
+				if (page && ['dashboard', 'patients', 'calendar', 'billing', 'notifications', 'inventory', 'leave', 'profile', 'sop', 'internships', 'requests'].includes(page)) {
 					setActivePage(page as FrontdeskPage);
 				}
 			};
@@ -100,6 +127,8 @@ export default function FrontdeskLayout({ children }: { children: React.ReactNod
 				return <Dashboard onNavigate={handleLinkClick} />;
 			case 'patients':
 				return <Patients />;
+			case 'requests':
+				return <Requests />;
 			case 'calendar':
 				return <Calendar />;
 			case 'billing':

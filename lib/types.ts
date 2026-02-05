@@ -217,6 +217,62 @@ export interface PatientRecordFull {
 	packageDescription?: string;
 	// Timestamp fields
 	updatedAt?: any; // Firestore serverTimestamp
+	// New fields for updated report structure
+	historyOfPresentIllness?: string;
+	painLocation?: string;
+	pastMedicalHistory?: string;
+	relevantHistory?: string;
+	localObservation1?: string;
+	localObservation2?: string;
+	localObservation3?: string;
+	localObservation4?: string;
+	gait?: string;
+	tenderness1?: string;
+	tenderness2?: string;
+	temperature?: string;
+	adimaEdema?: string;
+	otherSignsOfInflammation?: string;
+	jointPlayMovement?: string;
+	accessoryJointMovement?: string;
+	examinationAdditionalNotes?: string;
+	investigationXray?: boolean;
+	investigationMRI?: boolean;
+	investigationCTScan?: boolean;
+	investigationBlood?: boolean;
+	investigationOthers?: boolean;
+	investigationImage?: string;
+	investigationImageName?: string;
+	assessmentOfInvestigation?: string;
+	patientEducationCondition?: boolean;
+	patientEducationGoals?: boolean;
+	patientEducationAdvantages?: boolean;
+	patientEducationOthers?: boolean;
+	patientEducationOthersText?: string;
+	shortTermGoalReducePain?: boolean;
+	shortTermGoalImproveROM?: boolean;
+	shortTermGoalImproveStrength?: boolean;
+	shortTermGoalOthers?: boolean;
+	shortTermGoalOthersText?: string;
+	treatmentCryotherapy?: boolean;
+	treatmentIFT?: boolean;
+	treatmentTENS?: boolean;
+	treatmentLaser?: boolean;
+	treatmentSWT?: boolean;
+	treatmentHotTherapy?: boolean;
+	treatmentManualTherapy?: boolean;
+	treatmentSoftTissueManipulation?: boolean;
+	treatmentDryNeedling?: boolean;
+	treatmentCuppingTherapy?: boolean;
+	treatmentOthers?: boolean;
+	treatmentOthersText?: string;
+	longTermGoalReducePain?: boolean;
+	longTermGoalImproveROM?: boolean;
+	longTermGoalImproveStrength?: boolean;
+	longTermGoalImproveStability?: boolean;
+	longTermGoalRTP?: boolean;
+	longTermGoalOthers?: boolean;
+	longTermGoalOthersText?: string;
+	homeAdvice?: string;
 }
 
 export interface Appointment {
@@ -225,7 +281,7 @@ export interface Appointment {
 	doctor: string;
 	date: string;
 	time: string;
-	status: 'pending' | 'ongoing' | 'completed' | 'cancelled';
+	status: 'pending' | 'confirmed' | 'ongoing' | 'completed' | 'cancelled';
 	notes?: string;
 	createdAt: string;
 	isConsultation?: boolean; // True for the first appointment, only created from front desk

@@ -268,6 +268,14 @@ export default function LoginPage() {
 					</form>
 				</div>
 			</div>
+<<<<<<< HEAD
+=======
+
+			{/* Copyright Notice - Bottom Left */}
+			<div className="absolute bottom-4 left-4 lg:left-8 text-white text-sm">
+				<p>© {new Date().getFullYear()} Centre for Sports Science. All rights reserved.</p>
+			</div>
+>>>>>>> 82e6bc314219a88a0ea482484406a3511ebaa543
 		</div>
 	</div>
 	);

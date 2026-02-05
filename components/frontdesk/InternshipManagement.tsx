@@ -34,6 +34,12 @@ const DEGREE_AMOUNTS: Record<DegreeType, number> = {
 	"Clinical": 2500,
 };
 
+/** Current month in YYYY-MM from system date (for default date-of-joining filter). */
+function getCurrentMonthYYYYMM(): string {
+	const now = new Date();
+	return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export default function InternshipManagement() {
 	const { user } = useAuth();
 	const [interns, setInterns] = useState<Intern[]>([]);
@@ -43,7 +49,9 @@ export default function InternshipManagement() {
 	const [editingIntern, setEditingIntern] = useState<Intern | null>(null);
 	const [processingPayment, setProcessingPayment] = useState<string | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
-	
+	// Default to current month so Total Amount Paid and list show current month's revenue/counts
+	const [filterMonth, setFilterMonth] = useState<string>(getCurrentMonthYYYYMM);
+
 	// Form state
 	const [formData, setFormData] = useState({
 		name: '',
@@ -419,31 +427,43 @@ export default function InternshipManagement() {
 		return 0;
 	};
 
-	// Calculate statistics
-	const totalInterns = useMemo(() => interns.length, [interns]);
+	// Interns filtered by date of joining month (for revenue / list filter)
+	const monthFilteredInterns = useMemo(() => {
+		if (!filterMonth.trim()) return interns;
+		return interns.filter(intern => {
+			const d = intern.dateOfJoining;
+			if (!d) return false;
+			// dateOfJoining is typically YYYY-MM-DD; support that and ISO strings
+			const ym = d.slice(0, 7);
+			return ym === filterMonth;
+		});
+	}, [interns, filterMonth]);
+
+	// Calculate statistics from month-filtered interns (revenue = amount paid in selected month)
+	const totalInterns = useMemo(() => monthFilteredInterns.length, [monthFilteredInterns]);
 	const totalAmountPaid = useMemo(() => {
-		return interns
+		return monthFilteredInterns
 			.filter(intern => intern.isPaid === true)
 			.reduce((sum, intern) => {
 				const amount = typeof intern.amount === 'number' ? intern.amount : 0;
 				return sum + amount;
 			}, 0);
-	}, [interns]);
+	}, [monthFilteredInterns]);
 
-	// Filter interns based on search term
+	// Filter interns based on search term (applied on top of month filter)
 	const filteredInterns = useMemo(() => {
 		if (!searchTerm.trim()) {
-			return interns;
+			return monthFilteredInterns;
 		}
 		const term = searchTerm.toLowerCase().trim();
-		return interns.filter(intern => 
+		return monthFilteredInterns.filter(intern => 
 			intern.name.toLowerCase().includes(term) ||
 			intern.college.toLowerCase().includes(term) ||
 			formatDegree(intern.degree).toLowerCase().includes(term) ||
 			(intern.utrNumber && intern.utrNumber.toLowerCase().includes(term)) ||
 			(intern.receiptNumber && intern.receiptNumber.toLowerCase().includes(term))
 		);
-	}, [interns, searchTerm]);
+	}, [monthFilteredInterns, searchTerm]);
 
 	// Export function for Excel/CSV
 	const handleExport = (format: 'csv' | 'excel' = 'excel') => {
@@ -454,8 +474,8 @@ export default function InternshipManagement() {
 
 		const rows = [
 			['Serial No', 'Name', 'College/University', 'Degree', 'Date of Joining', 'Date of Leaving', 'Amount (₹)', 'Payment Mode', 'UTR Number', 'Receipt Number', 'Status', 'Payment Date'],
-			...filteredInterns.map(intern => [
-				intern.serialNumber || '',
+			...filteredInterns.map((intern, index) => [
+				index + 1,
 				intern.name || '',
 				intern.college || '',
 				formatDegree(intern.degree) || '',
@@ -522,7 +542,7 @@ export default function InternshipManagement() {
 	return (
 		<div className="min-h-screen p-8">
 			<PageHeader title="Internship Management" />
-			
+
 			{/* Summary Cards */}
 			<div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 				<div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
@@ -572,6 +592,34 @@ export default function InternshipManagement() {
 					</div>
 				</div>
 
+				{/* Date of joining month filter — revenue and list filtered by selected month */}
+				<div className="mb-4 flex flex-wrap items-center gap-3">
+					<label htmlFor="filter-month" className="text-sm font-medium text-slate-700 whitespace-nowrap">
+						Date of joining:
+					</label>
+					<input
+						id="filter-month"
+						type="month"
+						value={filterMonth}
+						onChange={(e) => setFilterMonth(e.target.value)}
+						className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+					/>
+					{filterMonth && (
+						<button
+							type="button"
+							onClick={() => setFilterMonth('')}
+							className="text-sm text-slate-600 hover:text-slate-900 underline"
+						>
+							Show all time
+						</button>
+					)}
+					{filterMonth && (
+						<span className="text-sm text-slate-500">
+							Revenue and counts above are for {filterMonth.replace('-', ' ')} only.
+						</span>
+					)}
+				</div>
+
 				{/* Search Bar */}
 				<div className="mb-4">
 					<div className="relative">
@@ -602,7 +650,7 @@ export default function InternshipManagement() {
 					</div>
 				) : filteredInterns.length === 0 ? (
 					<div className="bg-white rounded-lg shadow p-8 text-center text-slate-500">
-						<p>No interns match your search. Try a different search term.</p>
+						<p>{filterMonth ? 'No interns joined in the selected month.' : 'No interns match your search.'} Try a different {filterMonth ? 'month or search term' : 'search term'}.</p>
 					</div>
 				) : (
 					<div className="bg-white rounded-lg shadow overflow-hidden">
@@ -625,14 +673,14 @@ export default function InternshipManagement() {
 									</tr>
 								</thead>
 								<tbody className="bg-white divide-y divide-slate-200">
-									{filteredInterns.map(intern => {
+									{filteredInterns.map((intern, index) => {
 										const expired = !intern.isPaid && isExpired(intern.dateOfLeaving);
 										return (
 											<tr
 												key={intern.id}
 												className={expired ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-slate-50'}
 											>
-												<td className="px-2 py-3 text-sm text-slate-900">{intern.serialNumber}</td>
+												<td className="px-2 py-3 text-sm text-slate-900">{index + 1}</td>
 												<td className="px-2 py-3 text-sm font-medium text-slate-900 truncate" title={intern.name}>{intern.name}</td>
 												<td className="px-2 py-3 text-sm text-slate-700 truncate" title={intern.college}>{intern.college}</td>
 												<td className="px-2 py-3 text-sm text-slate-700 truncate" title={formatDegree(intern.degree)}>{formatDegree(intern.degree)}</td>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, updateDoc, deleteDoc, addDoc, serverTimestamp, query, where, getDocs, getDoc, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
+import { collection, doc, onSnapshot, updateDoc, deleteDoc, addDoc, serverTimestamp, query, where, getDocs, getDoc, type QuerySnapshot, type Timestamp, deleteField } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,6 +40,7 @@ interface FrontdeskAppointment {
 
 const STATUS_BADGES: Record<AdminAppointmentStatus, string> = {
 	pending: 'status-badge-pending',
+	confirmed: 'status-badge-confirmed',
 	ongoing: 'status-badge-ongoing',
 	completed: 'status-badge-completed',
 	cancelled: 'status-badge-cancelled',
@@ -209,6 +210,8 @@ export default function Appointments() {
 	const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
 	const [editingSlotTime, setEditingSlotTime] = useState<string | null>(null);
 	const [editedSlotTime, setEditedSlotTime] = useState<string>('');
+
+	const [removingPackageForPatientId, setRemovingPackageForPatientId] = useState<string | null>(null);
 	const [customTimeSlots, setCustomTimeSlots] = useState<Map<string, string>>(new Map());
 	const [showPatientAppointmentsModal, setShowPatientAppointmentsModal] = useState(false);
 	const [showPackageModal, setShowPackageModal] = useState(false);
@@ -477,9 +480,9 @@ export default function Appointments() {
 		return `${year}-${month}-${day}`;
 	};
 
-	// Default availability: 9 AM to 6 PM for all days except Sunday
+	// Default availability: 9 AM to 7 PM for all days except Sunday
 	const DEFAULT_START_TIME = '09:00';
-	const DEFAULT_END_TIME = '18:00';
+	const DEFAULT_END_TIME = '19:00';
 	const DEFAULT_DAY_AVAILABILITY: DayAvailability = {
 		enabled: true,
 		slots: [{ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME }],
@@ -508,9 +511,9 @@ export default function Appointments() {
 			return dateSpecific;
 		}
 
-		// No date-specific schedule exists - use default availability (9 AM - 6 PM)
+		// No date-specific schedule exists - use default availability (9 AM - 7 PM)
 		if (process.env.NODE_ENV === 'development') {
-			console.log('✅ Using default availability (9 AM - 6 PM) for', dateKey);
+			console.log('✅ Using default availability (9 AM - 7 PM) for', dateKey);
 		}
 		return DEFAULT_DAY_AVAILABILITY;
 	};
@@ -1975,6 +1978,98 @@ export default function Appointments() {
 		}
 	};
 
+	const handleRemovePackage = async (patientId: string) => {
+		const confirmRemove = window.confirm(
+			'Are you sure you want to remove this package? This will delete all package sessions, related billing entries, and clear package information from the patient record.'
+		);
+		if (!confirmRemove) return;
+
+		const patient = patients.find(p => p.patientId === patientId);
+		if (!patient) {
+			alert('Patient not found.');
+			return;
+		}
+
+		try {
+			setRemovingPackageForPatientId(patientId);
+
+			// Delete all package appointments for this patient
+			const appointmentsQuery = query(
+				collection(db, 'appointments'),
+				where('patientId', '==', patientId)
+			);
+			const appointmentsSnapshot = await getDocs(appointmentsQuery);
+
+			const deletePromises: Promise<void>[] = [];
+
+			appointmentsSnapshot.forEach(docSnap => {
+				const data = docSnap.data();
+				const isPackageAppointment =
+					!!data.packageBillingId ||
+					data.sessionNumber != null ||
+					data.totalSessions != null;
+
+				if (isPackageAppointment) {
+					deletePromises.push(deleteDoc(doc(db, 'appointments', docSnap.id)));
+				}
+			});
+
+			// Delete all billing entries for this patient's packages
+			const billingQuery = query(
+				collection(db, 'billing'),
+				where('patientId', '==', patientId),
+				where('packageSessions', '>', 0)
+			);
+			const billingSnapshot = await getDocs(billingQuery);
+
+			billingSnapshot.forEach(docSnap => {
+				deletePromises.push(deleteDoc(doc(db, 'billing', docSnap.id)));
+			});
+
+			// Clear package-related fields from patient document
+			const patientRef = doc(db, 'patients', patient.id);
+			deletePromises.push(
+				updateDoc(patientRef, {
+					totalSessionsRequired: deleteField(),
+					remainingSessions: deleteField(),
+					packageAmount: deleteField(),
+					concessionPercent: deleteField(),
+					paymentType: deleteField(),
+					packageName: deleteField(),
+					packageDescription: deleteField(),
+					updatedAt: serverTimestamp(),
+				}) as Promise<void>
+			);
+
+			await Promise.all(deletePromises);
+
+			// Update local patient state so UI reflects removal immediately
+			setPatients(prev =>
+				prev.map(p =>
+					p.id === patient.id
+						? {
+								...p,
+								totalSessionsRequired: undefined,
+								remainingSessions: undefined,
+								packageAmount: undefined,
+								concessionPercent: undefined,
+								paymentType: undefined,
+								packageName: undefined,
+								packageDescription: undefined,
+						  }
+						: p
+				)
+			);
+
+			alert('Package removed successfully, including all package sessions and billing entries.');
+		} catch (error) {
+			console.error('Failed to remove package', error);
+			alert(`Failed to remove package: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		} finally {
+			setRemovingPackageForPatientId(null);
+		}
+	};
+
 	return (
 		<div className="min-h-svh bg-slate-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
@@ -2089,6 +2184,7 @@ export default function Appointments() {
 										
 										const statusCounts = {
 											pending: allPatientAppointments.filter(a => a.status === 'pending').length,
+											confirmed: allPatientAppointments.filter(a => a.status === 'confirmed').length,
 											ongoing: allPatientAppointments.filter(a => a.status === 'ongoing').length,
 											completed: allPatientAppointments.filter(a => a.status === 'completed').length,
 											cancelled: allPatientAppointments.filter(a => a.status === 'cancelled').length,
@@ -2135,6 +2231,17 @@ export default function Appointments() {
 																<i className="fas fa-box text-xs" aria-hidden="true" />
 																Add Package
 															</button>
+															{patientDetails?.packageName && patientDetails?.totalSessionsRequired && (
+																<button
+																	type="button"
+																	onClick={() => handleRemovePackage(group.patientId)}
+																	disabled={removingPackageForPatientId === group.patientId}
+																	className="mt-2 inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-sm hover:bg-rose-100 hover:border-rose-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+																>
+																	<i className="fas fa-trash-alt text-xs" aria-hidden="true" />
+																	{removingPackageForPatientId === group.patientId ? 'Removing package…' : 'Remove Package'}
+																</button>
+															)}
 														</div>
 													</div>
 												</td>
@@ -2271,6 +2378,11 @@ export default function Appointments() {
 														{statusCounts.pending > 0 && (
 															<span className="badge-base status-badge-pending px-2 py-0.5 text-xs">
 																{statusCounts.pending} Pending
+															</span>
+														)}
+														{statusCounts.confirmed > 0 && (
+															<span className="badge-base status-badge-confirmed px-2 py-0.5 text-xs">
+																{statusCounts.confirmed} Confirmed
 															</span>
 														)}
 														{statusCounts.ongoing > 0 && (

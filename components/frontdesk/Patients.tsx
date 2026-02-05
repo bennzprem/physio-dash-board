@@ -1323,9 +1323,9 @@ export default function Patients() {
 			return [];
 		}
 
-		// Default availability: 9 AM to 6 PM for all days except Sunday
+		// Default availability: 9 AM to 7 PM for all days except Sunday
 		const DEFAULT_START_TIME = '09:00';
-		const DEFAULT_END_TIME = '18:00';
+		const DEFAULT_END_TIME = '19:00';
 		const dateObj = new Date(bookingForm.date + 'T00:00:00');
 		const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
 		const isSunday = dayName === 'Sunday';
@@ -1383,10 +1383,7 @@ export default function Patients() {
 			}
 		});
 
-		const now = new Date();
 		const selectedDate = new Date(`${bookingForm.date}T00:00:00`);
-		const isToday = selectedDate.toDateString() === now.toDateString();
-		const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
 
 		// Get unavailable slots for this date
 		const unavailableSlots = dayAvailability.unavailableSlots || [];
@@ -1435,19 +1432,6 @@ export default function Patients() {
 					continue;
 				}
 
-				if (isToday) {
-					// Calculate slot end time (start time + 30 minutes)
-					const slotEndTime = new Date(current);
-					slotEndTime.setMinutes(slotEndTime.getMinutes() + SLOT_INTERVAL_MINUTES);
-					const slotEndMinutesFromMidnight = slotEndTime.getHours() * 60 + slotEndTime.getMinutes();
-					
-					// Only hide slots whose END time has passed
-					if (slotEndMinutesFromMidnight <= currentTimeMinutes) {
-						current.setMinutes(current.getMinutes() + SLOT_INTERVAL_MINUTES);
-						continue;
-					}
-				}
-
 				slots.push(timeString);
 				current.setMinutes(current.getMinutes() + SLOT_INTERVAL_MINUTES);
 			}
@@ -1467,9 +1451,9 @@ export default function Patients() {
 			return [];
 		}
 
-		// Default availability: 9 AM to 6 PM for all days except Sunday
+		// Default availability: 9 AM to 7 PM for all days except Sunday
 		const DEFAULT_START_TIME = '09:00';
-		const DEFAULT_END_TIME = '18:00';
+		const DEFAULT_END_TIME = '19:00';
 		const dateObj = new Date(registerAppointmentForm.date + 'T00:00:00');
 		const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
 		const isSunday = dayName === 'Sunday';
@@ -1527,10 +1511,7 @@ export default function Patients() {
 			}
 		});
 
-		const now = new Date();
 		const selectedDate = new Date(`${registerAppointmentForm.date}T00:00:00`);
-		const isToday = selectedDate.toDateString() === now.toDateString();
-		const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
 
 		// Get unavailable slots for this date
 		const unavailableSlots = dayAvailability.unavailableSlots || [];
@@ -1577,19 +1558,6 @@ export default function Patients() {
 				if (isUnavailable) {
 					current.setMinutes(current.getMinutes() + SLOT_INTERVAL_MINUTES);
 					continue;
-				}
-
-				if (isToday) {
-					// Calculate slot end time (start time + 30 minutes)
-					const slotEndTime = new Date(current);
-					slotEndTime.setMinutes(slotEndTime.getMinutes() + SLOT_INTERVAL_MINUTES);
-					const slotEndMinutesFromMidnight = slotEndTime.getHours() * 60 + slotEndTime.getMinutes();
-					
-					// Only hide slots whose END time has passed
-					if (slotEndMinutesFromMidnight <= currentTimeMinutes) {
-						current.setMinutes(current.getMinutes() + SLOT_INTERVAL_MINUTES);
-						continue;
-					}
 				}
 
 				slots.push(timeString);
@@ -3389,22 +3357,28 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 																	</div>
 																</div>
 															) : (
-																<button
-																	type="button"
+																<div
+																	role="button"
+																	tabIndex={registerSubmitting ? -1 : 0}
 																	onClick={(e) => {
-																		// Don't trigger if clicking the edit icon
-																		if ((e.target as HTMLElement).closest('.edit-slot-btn')) {
-																			return;
-																		}
+																		if (registerSubmitting || (e.target as HTMLElement).closest('.edit-slot-btn')) return;
 																		handleRegisterSlotToggle(slot);
 																	}}
-																	className={`relative rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition w-full ${
+																	onKeyDown={(e) => {
+																		if (registerSubmitting) return;
+																		if (e.key === 'Enter' || e.key === ' ') {
+																			e.preventDefault();
+																			if ((e.target as HTMLElement).closest('.edit-slot-btn')) return;
+																			handleRegisterSlotToggle(slot);
+																		}
+																	}}
+																	className={`relative rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition w-full cursor-pointer ${registerSubmitting ? 'pointer-events-none opacity-60' : ''} ${
 																		isSelected
 																			? 'border-sky-500 bg-sky-50 text-sky-800 ring-2 ring-sky-200'
 																			: 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
 																	}`}
 																	aria-pressed={isSelected}
-																	disabled={registerSubmitting}
+																	aria-disabled={registerSubmitting}
 																>
 																	<button
 																		type="button"
@@ -3431,7 +3405,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 																			/>
 																		</span>
 																	</div>
-																</button>
+																</div>
 															)}
 														</div>
 													);
@@ -3866,22 +3840,28 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 																</div>
 															</div>
 														) : (
-															<button
-																type="button"
+															<div
+																role="button"
+																tabIndex={bookingLoading ? -1 : 0}
 																onClick={(e) => {
-																	// Don't trigger if clicking the edit icon
-																	if ((e.target as HTMLElement).closest('.edit-slot-btn')) {
-																		return;
-																	}
+																	if (bookingLoading || (e.target as HTMLElement).closest('.edit-slot-btn')) return;
 																	handleSlotToggle(slot);
 																}}
-																className={`relative rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition w-full ${
+																onKeyDown={(e) => {
+																	if (bookingLoading) return;
+																	if (e.key === 'Enter' || e.key === ' ') {
+																		e.preventDefault();
+																		if ((e.target as HTMLElement).closest('.edit-slot-btn')) return;
+																		handleSlotToggle(slot);
+																	}
+																}}
+																className={`relative rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition w-full cursor-pointer ${bookingLoading ? 'pointer-events-none opacity-60' : ''} ${
 																	isSelected
 																		? 'border-sky-500 bg-sky-50 text-sky-800 ring-2 ring-sky-200'
 																		: 'border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50'
 																}`}
 																aria-pressed={isSelected}
-																disabled={bookingLoading}
+																aria-disabled={bookingLoading}
 															>
 																<button
 																	type="button"
@@ -3908,7 +3888,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 																		/>
 																	</span>
 																</div>
-															</button>
+															</div>
 														)}
 													</div>
 												);

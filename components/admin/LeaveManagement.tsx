@@ -66,6 +66,8 @@ export default function AdminLeaveManagement() {
 	const [showDisapprovalModal, setShowDisapprovalModal] = useState(false);
 	const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null);
 	const [pendingCount, setPendingCount] = useState(0);
+	const [leaveHistory, setLeaveHistory] = useState<LeaveRequest[]>([]);
+	const [historyLoading, setHistoryLoading] = useState(true);
 
 	// Load leave requests that are pending approval from this admin
 	useEffect(() => {
@@ -123,6 +125,57 @@ export default function AdminLeaveManagement() {
 
 		return () => unsubscribe();
 	}, [user]);
+
+	// Load all leave requests for History of Leave (all users)
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'leaveRequests'),
+			(snapshot: QuerySnapshot) => {
+				const requests: LeaveRequest[] = [];
+				snapshot.forEach(docSnap => {
+					const data = docSnap.data();
+					requests.push({
+						id: docSnap.id,
+						userId: data.userId || '',
+						userEmail: data.userEmail || null,
+						userName: data.userName || 'Unknown',
+						userRole: data.userRole || '',
+						leaveType: data.leaveType || '',
+						startDate: data.startDate || '',
+						endDate: data.endDate || '',
+						numberOfDays: data.numberOfDays || 0,
+						reasons: data.reasons || '',
+						handoverTo: data.handoverTo || null,
+						handoverToName: data.handoverToName || null,
+						approvalRequestedTo: data.approvalRequestedTo || '',
+						approvalRequestedToName: data.approvalRequestedToName || '',
+						approvalRequestedToEmail: data.approvalRequestedToEmail || null,
+						status: (data.status as LeaveRequest['status']) || 'pending',
+						approvedBy: data.approvedBy || null,
+						approvedByName: data.approvedByName || null,
+						approvalMessage: data.approvalMessage || null,
+						disapprovalMessage: data.disapprovalMessage || null,
+						createdAt: data.createdAt,
+						updatedAt: data.updatedAt,
+					});
+				});
+				// Sort by updatedAt or createdAt descending (most recent first)
+				requests.sort((a, b) => {
+					const aTime = a.updatedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
+					const bTime = b.updatedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0;
+					return bTime - aTime;
+				});
+				setLeaveHistory(requests);
+				setHistoryLoading(false);
+			},
+			error => {
+				console.error('Failed to load leave history', error);
+				setLeaveHistory([]);
+				setHistoryLoading(false);
+			}
+		);
+		return () => unsubscribe();
+	}, []);
 
 	const handleApprove = async () => {
 		if (!selectedRequest || !user) return;
@@ -517,6 +570,104 @@ export default function AdminLeaveManagement() {
 										</button>
 									</div>
 
+									{request.createdAt && (
+										<p className="text-xs text-slate-400 mt-2">
+											Submitted: {formatDate(request.createdAt?.toDate?.()?.toISOString() || '')}
+										</p>
+									)}
+								</div>
+							))}
+						</div>
+					)}
+				</section>
+
+				{/* History of Leave */}
+				<section className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200">
+					<div className="flex items-center justify-between mb-4">
+						<h2 className="text-lg font-semibold text-slate-900">History of Leave</h2>
+						{leaveHistory.length > 0 && (
+							<span className="text-sm text-slate-500">
+								{leaveHistory.length} {leaveHistory.length === 1 ? 'record' : 'records'}
+							</span>
+						)}
+					</div>
+					{historyLoading ? (
+						<div className="text-center py-8 text-slate-500">Loading leave history...</div>
+					) : leaveHistory.length === 0 ? (
+						<div className="text-center py-8 text-slate-500">No leave records yet</div>
+					) : (
+						<div className="space-y-4">
+							{leaveHistory.map(request => (
+								<div
+									key={request.id}
+									className={`rounded-lg border p-4 transition-all hover:shadow-md ${
+										request.status === 'approved'
+											? 'border-green-200 bg-green-50/50'
+											: request.status === 'disapproved'
+												? 'border-red-200 bg-red-50/50'
+												: 'border-slate-200 bg-slate-50/50'
+									}`}
+								>
+									<div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+										<div className="flex items-center gap-3 flex-wrap">
+											<h3 className="text-base font-semibold text-slate-900 capitalize">
+												{request.leaveType}
+											</h3>
+											<span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getStatusBadge(request.status)}`}>
+												{request.status === 'pending' ? 'Pending' : request.status === 'approved' ? 'Approved' : 'Disapproved'}
+											</span>
+										</div>
+										{request.updatedAt && (
+											<p className="text-xs text-slate-500">
+												Updated: {formatDate(request.updatedAt?.toDate?.()?.toISOString() || '')}
+											</p>
+										)}
+									</div>
+									<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-sm text-slate-600">
+										<p>
+											<span className="font-medium text-slate-700">Employee:</span> {request.userName}
+											{request.userRole && ` (${request.userRole})`}
+										</p>
+										<p>
+											<span className="font-medium text-slate-700">Period:</span> {formatDate(request.startDate)} – {formatDate(request.endDate)}
+										</p>
+										<p>
+											<span className="font-medium text-slate-700">Days:</span> {request.numberOfDays}
+										</p>
+										{request.handoverToName && (
+											<p>
+												<span className="font-medium text-slate-700">Handover to:</span> {request.handoverToName}
+											</p>
+										)}
+										{request.status !== 'pending' && request.approvedByName && (
+											<p>
+												<span className="font-medium text-slate-700">{request.status === 'approved' ? 'Approved by:' : 'Disapproved by:'}</span> {request.approvedByName}
+											</p>
+										)}
+										{request.approvalRequestedToName && (
+											<p>
+												<span className="font-medium text-slate-700">Requested to:</span> {request.approvalRequestedToName}
+											</p>
+										)}
+									</div>
+									{request.reasons && (
+										<div className="mt-2">
+											<p className="text-xs font-medium text-slate-500 mb-1">Reasons:</p>
+											<p className="text-sm text-slate-700 bg-white/80 rounded p-2 border border-slate-100">{request.reasons}</p>
+										</div>
+									)}
+									{request.status === 'approved' && request.approvalMessage && (
+										<div className="mt-2">
+											<p className="text-xs font-medium text-slate-500 mb-1">Approval message:</p>
+											<p className="text-sm text-slate-700 bg-white/80 rounded p-2 border border-green-100">{request.approvalMessage}</p>
+										</div>
+									)}
+									{request.status === 'disapproved' && request.disapprovalMessage && (
+										<div className="mt-2">
+											<p className="text-xs font-medium text-slate-500 mb-1">Disapproval reason:</p>
+											<p className="text-sm text-slate-700 bg-white/80 rounded p-2 border border-red-100">{request.disapprovalMessage}</p>
+										</div>
+									)}
 									{request.createdAt && (
 										<p className="text-xs text-slate-400 mt-2">
 											Submitted: {formatDate(request.createdAt?.toDate?.()?.toISOString() || '')}

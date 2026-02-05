@@ -6,7 +6,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import type { DateSelectArg, EventClickArg, EventChangeArg, ViewApi, ViewMountArg } from '@fullcalendar/core';
-import { collection, doc, onSnapshot, updateDoc, type QuerySnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, updateDoc, serverTimestamp, type QuerySnapshot } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
 import PageHeader from '@/components/PageHeader';
@@ -39,6 +39,7 @@ interface StaffMember {
 
 const statusColors: Record<string, string> = {
 	pending: 'bg-amber-400',
+	confirmed: 'bg-teal-500',
 	ongoing: 'bg-sky-500',
 	completed: 'bg-emerald-500',
 	cancelled: 'bg-rose-500',
@@ -47,6 +48,7 @@ const statusColors: Record<string, string> = {
 const statusOptions: Array<{ value: 'all' | string; label: string }> = [
 	{ value: 'all', label: 'All Status' },
 	{ value: 'pending', label: 'Pending' },
+	{ value: 'confirmed', label: 'Confirmed' },
 	{ value: 'ongoing', label: 'Ongoing' },
 	{ value: 'completed', label: 'Completed' },
 	{ value: 'cancelled', label: 'Cancelled' },
@@ -97,6 +99,7 @@ export default function Calendar() {
 	const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
 	const calendarRef = useRef<FullCalendar>(null);
 	const [seeding, setSeeding] = useState(false);
+	const [cancellingId, setCancellingId] = useState<string | null>(null);
 
 	useEffect(() => {
 		let appointmentsLoaded = false;
@@ -333,8 +336,31 @@ export default function Calendar() {
 		setDetailEvent(null);
 	};
 
+	const handleCancelAppointment = async (appointmentId: string) => {
+		if (!window.confirm('Cancel this appointment? It will be marked as cancelled and removed from the active calendar view.')) {
+			return;
+		}
+		setCancellingId(appointmentId);
+		try {
+			const appointmentRef = doc(db, 'appointments', appointmentId);
+			await updateDoc(appointmentRef, {
+				status: 'cancelled',
+				updatedAt: serverTimestamp(),
+			});
+			closeDetail();
+			closeDayModal();
+		} catch (error) {
+			console.error('Failed to cancel appointment', error);
+			alert('Failed to cancel appointment. Please try again.');
+		} finally {
+			setCancellingId(null);
+		}
+	};
+
 	const calendarEvents = useMemo(() => {
 		const validEvents = events.filter(event => {
+			// Don't show cancelled appointments on the calendar grid
+			if (event.appointment.status === 'cancelled') return false;
 			// Filter out events without valid dates
 			if (!event.appointment.date) {
 				console.log('Event filtered: no date', event);
@@ -853,14 +879,32 @@ export default function Calendar() {
 													>
 														{(event.appointment.status ?? 'pending').toUpperCase()}
 													</span>
-												<button
-													type="button"
-													onClick={() => openDetail(event)}
-													className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700 focus-visible:border-sky-400 focus-visible:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-												>
-													<i className="fas fa-eye text-[10px]" aria-hidden="true" />
-													View Details
-												</button>
+													<div className="flex items-center gap-2">
+														<button
+															type="button"
+															onClick={() => openDetail(event)}
+															className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700 focus-visible:border-sky-400 focus-visible:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+														>
+															<i className="fas fa-eye text-[10px]" aria-hidden="true" />
+															View Details
+														</button>
+														{(event.appointment.status !== 'cancelled' && (
+															<button
+																type="button"
+																onClick={() => handleCancelAppointment(event.id)}
+																disabled={cancellingId === event.id}
+																className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-700 shadow-sm transition hover:border-red-300 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
+																title="Cancel this appointment"
+															>
+																{cancellingId === event.id ? (
+																	<span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-red-600 border-t-transparent" aria-hidden="true" />
+																) : (
+																	<i className="fas fa-times text-[10px]" aria-hidden="true" />
+																)}
+																Cancel
+															</button>
+														))}
+													</div>
 												</div>
 											</li>
 										))}
@@ -944,7 +988,23 @@ export default function Calendar() {
 								</div>
 							)}
 						</div>
-						<footer className="flex items-center justify-end border-t border-slate-200 bg-slate-50 px-6 py-4">
+						<footer className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+							{detailEvent.appointment.status !== 'cancelled' && (
+								<button
+									type="button"
+									onClick={() => handleCancelAppointment(detailEvent.id)}
+									disabled={cancellingId === detailEvent.id}
+									className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50"
+									title="Cancel this appointment"
+								>
+									{cancellingId === detailEvent.id ? (
+										<span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent" aria-hidden="true" />
+									) : (
+										<i className="fas fa-times text-xs" aria-hidden="true" />
+									)}
+									Cancel appointment
+								</button>
+							)}
 							<button
 								type="button"
 								onClick={closeDetail}

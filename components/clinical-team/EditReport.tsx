@@ -114,19 +114,11 @@ const VAS_EMOJIS = ['😀','😁','🙂','😊','😌','😟','😣','😢','�
 const HYDRATION_EMOJIS = ['😄','😃','🙂','😐','😕','😟','😢','😭'];
 
 const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
-	Neck: [
-		{ motion: 'Flexion' }, 
-		{ motion: 'Extension' }, 
-		{ motion: 'Lateral Flexion Left' }, 
-		{ motion: 'Lateral Flexion Right' }
-	],
-	Hip: [
+	'Cervical Spine': [
 		{ motion: 'Flexion' },
 		{ motion: 'Extension' },
-		{ motion: 'Abduction' },
-		{ motion: 'Adduction' },
-		{ motion: 'Internal Rotation' },
-		{ motion: 'External Rotation' },
+		{ motion: 'Lateral Flexion Left' },
+		{ motion: 'Lateral Flexion Right' },
 	],
 	Shoulder: [
 		{ motion: 'Flexion' },
@@ -144,6 +136,22 @@ const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
 		{ motion: 'Radial Deviation' },
 		{ motion: 'Ulnar Deviation' },
 	],
+	'Hand and thumb': [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	Fingers: [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	'Trunk and thoracic': [
+		{ motion: 'Flexion' },
+		{ motion: 'Extension' },
+		{ motion: 'Lateral Flexion Left' },
+		{ motion: 'Lateral Flexion Right' },
+	],
+	Hip: [
+		{ motion: 'Flexion' },
+		{ motion: 'Extension' },
+		{ motion: 'Abduction' },
+		{ motion: 'Adduction' },
+		{ motion: 'Internal Rotation' },
+		{ motion: 'External Rotation' },
+	],
 	Knee: [{ motion: 'Flexion' }, { motion: 'Extension' }],
 	Ankle: [
 		{ motion: 'Dorsiflexion' },
@@ -151,20 +159,20 @@ const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
 		{ motion: 'Inversion' },
 		{ motion: 'Eversion' },
 	],
-	'Tarsal Joint': [{ motion: 'Flexion' }, { motion: 'Extension' }],
-	Finger: [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	Tarsal: [{ motion: 'Flexion' }, { motion: 'Extension' }],
 };
 
 const ROM_HAS_SIDE: Record<string, boolean> = {
-	Hip: true,
 	Shoulder: true,
 	Elbow: true,
 	Forearm: true,
 	Wrist: true,
+	'Hand and thumb': true,
+	Fingers: true,
+	Hip: true,
 	Knee: true,
 	Ankle: true,
-	'Tarsal Joint': true,
-	Finger: true,
+	Tarsal: true,
 };
 
 const ROM_JOINTS = Object.keys(ROM_MOTIONS);
@@ -339,7 +347,7 @@ async function markAppointmentCompletedForReport(
 			const appointmentQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', patient.patientId),
-				where('status', 'in', ['pending', 'ongoing']),
+				where('status', 'in', ['pending', 'confirmed', 'ongoing']),
 				where('date', '==', reportDate),
 				limit(1)
 			);
@@ -353,7 +361,7 @@ async function markAppointmentCompletedForReport(
 			const appointmentQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', patient.patientId),
-				where('status', 'in', ['pending', 'ongoing'])
+				where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 			);
 			const snapshot = await getDocs(appointmentQuery);
 			if (!snapshot.empty) {
@@ -1936,7 +1944,7 @@ export default function EditReport() {
 			const appointmentsQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', patient.patientId),
-				where('status', 'in', ['pending', 'ongoing'])
+				where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 			);
 			const appointmentsSnapshot = await getDocs(appointmentsQuery);
 			const appointments = appointmentsSnapshot.docs.map(docSnap => {
@@ -2775,7 +2783,7 @@ export default function EditReport() {
 	};
 
 	const renderRomTable = (joint: string, data: any) => {
-		if (!ROM_HAS_SIDE[joint] && joint !== 'Neck') {
+		if (!ROM_HAS_SIDE[joint] && joint !== 'Cervical Spine') {
 			return (
 				<div key={joint} className="relative mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
 					<button
@@ -2817,14 +2825,14 @@ export default function EditReport() {
 		}
 
 		// Special handling for Neck with Lateral Flexion Left/Right
-		if (joint === 'Neck') {
+		if (joint === 'Cervical Spine') {
 			return (
 				<div key={joint} className="relative mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
 					<button
 						type="button"
 						onClick={() => handleRemoveRomJoint(joint)}
 						className="absolute right-3 top-3 text-slate-400 transition hover:text-rose-500"
-						aria-label="Remove Neck"
+						aria-label="Remove Cervical Spine"
 					>
 						<i className="fas fa-times" />
 					</button>
@@ -3288,29 +3296,99 @@ export default function EditReport() {
 											{/* Expanded Content */}
 											{isExpanded && (
 												<div className="border-t border-slate-200 px-4 py-4 bg-slate-50">
-													{/* Appointments Section */}
+													{/* Appointments Section - display list matches session count when patient has totalSessionsRequired */}
+													{(() => {
+														const apts = patientAppointments[patient.id];
+														const totalRequired = typeof patient.totalSessionsRequired === 'number' && patient.totalSessionsRequired > 0
+															? patient.totalSessionsRequired
+															: null;
+														const hasLoaded = apts !== undefined;
+														const displayList: Array<{
+															id: string;
+															isPlaceholder?: boolean;
+															appointmentId?: string;
+															patientId?: string;
+															date: string;
+															time: string;
+															doctor: string;
+															status: string;
+															notes?: string;
+															packageBillingId?: string;
+															sessionNumber?: number;
+															totalSessions?: number;
+															isConsultation?: boolean;
+															packageCategory?: string;
+															duration?: number;
+															transferredFrom?: string;
+														}> = !hasLoaded
+															? []
+															: totalRequired != null
+																? [
+																		...(apts || []).slice(0, totalRequired),
+																		...Array.from({ length: Math.max(0, totalRequired - (apts?.length || 0)) }, (_, i) => ({
+																			id: `placeholder-${patient.id}-${i}`,
+																			isPlaceholder: true as const,
+																			date: '',
+																			time: '',
+																			doctor: '',
+																			status: 'pending',
+																		})),
+																	]
+																: (apts || []);
+														const displayCount = totalRequired != null ? totalRequired : (apts?.length || 0);
+														return (
 													<div>
 														<p className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-3">
 															Appointments
-															{patientAppointments[patient.id] !== undefined && (
+															{hasLoaded && (
 																<span className="ml-2 text-xs font-normal text-slate-500">
-																	({patientAppointments[patient.id]?.length || 0})
+																	({displayCount})
 																</span>
 															)}
 														</p>
-														{patientAppointments[patient.id] === undefined ? (
+														{!hasLoaded ? (
 															<div className="flex items-center gap-2 py-2">
 																<div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-sky-600" />
 																<p className="text-sm text-slate-500">Loading appointments...</p>
 															</div>
-														) : patientAppointments[patient.id] && patientAppointments[patient.id].length > 0 ? (
+														) : displayList.length > 0 ? (
 															<div className="space-y-2">
-																{patientAppointments[patient.id].map(appointment => {
+																{displayList.map((appointmentOrPlaceholder, index) => {
+																	const isPlaceholder = 'isPlaceholder' in appointmentOrPlaceholder && appointmentOrPlaceholder.isPlaceholder;
+																	if (isPlaceholder) {
+																		return (
+																			<div
+																				key={appointmentOrPlaceholder.id}
+																				className="rounded-lg border border-dashed border-slate-300 bg-slate-50/50 p-3"
+																			>
+																				<div className="flex items-center justify-between gap-2">
+																					<span className="text-sm text-slate-500">
+																						Session {index + 1} — Not yet booked
+																					</span>
+																					{patient.patientId && (
+																						<button
+																							type="button"
+																							onClick={(e) => {
+																								e.stopPropagation();
+																								handleOpenBookingModal(patient, undefined);
+																							}}
+																							className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-green-500 hover:bg-green-50 hover:text-green-700 focus-visible:outline-none"
+																						>
+																							<i className="fas fa-calendar-plus text-xs" aria-hidden="true" />
+																							Book Appointment
+																						</button>
+																					)}
+																				</div>
+																			</div>
+																		);
+																	}
+																	const appointment = appointmentOrPlaceholder;
 																	// Get packageCategory from appointment or find it from other appointments in the same package
+																	const patientApts = patientAppointments[patient.id] || [];
 																	let displayCategory = appointment.packageCategory;
 																	if (!displayCategory && appointment.packageBillingId) {
 																		// Find category from other appointments in the same package
-																		const packageAppointment = patientAppointments[patient.id].find(
+																		const packageAppointment = patientApts.find(
 																			apt => apt.packageBillingId === appointment.packageBillingId && apt.packageCategory
 																		);
 																		displayCategory = packageAppointment?.packageCategory;
@@ -3558,6 +3636,8 @@ export default function EditReport() {
 															<p className="text-sm text-slate-500 italic">No appointments found for this patient.</p>
 														)}
 													</div>
+														);
+													})()}
 												</div>
 											)}
 										</div>
@@ -3619,7 +3699,7 @@ export default function EditReport() {
 										<i className="fas fa-brain text-indigo-600 text-xl" />
 									</div>
 									<div>
-										<h3 className="font-semibold text-slate-900">Psychology</h3>
+										<h3 className="font-semibold text-slate-900">Brain Training / Sports Psychology</h3>
 										<p className="text-sm text-slate-600">View psychological assessment and evaluation report</p>
 									</div>
 								</button>
@@ -5402,14 +5482,14 @@ export default function EditReport() {
 									<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
 									<p className="mt-4 text-sm text-slate-600">Loading report history...</p>
 								</div>
-							) : versionHistory.length === 0 ? (
+							) : (versionHistory ?? []).length === 0 ? (
 								<div className="text-center py-12">
 									<p className="text-slate-600">No report history available for this patient.</p>
 									<p className="text-sm text-slate-500 mt-2">Previous reports will appear here when you save changes to the report.</p>
 								</div>
 							) : (
 								<div className="space-y-4">
-									{versionHistory.map((version) => (
+									{(versionHistory ?? []).map((version) => (
 										<div
 											key={version.id}
 											className="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition"
@@ -5418,7 +5498,7 @@ export default function EditReport() {
 												<div>
 													<div className="flex items-center gap-2">
 														<span className="font-semibold text-slate-900">Report #{version.version}</span>
-														{version.version === versionHistory[0]?.version && (
+														{version.version === (versionHistory ?? [])[0]?.version && (
 															<span className="px-2 py-1 text-xs font-medium bg-sky-100 text-sky-700 rounded">
 																Latest
 															</span>

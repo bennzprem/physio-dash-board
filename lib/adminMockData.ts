@@ -107,7 +107,7 @@ export const DEFAULT_ADMIN_PATIENTS: AdminPatientRecord[] = [
 	},
 ];
 
-export type AdminAppointmentStatus = 'pending' | 'ongoing' | 'completed' | 'cancelled';
+export type AdminAppointmentStatus = 'pending' | 'confirmed' | 'ongoing' | 'completed' | 'cancelled';
 
 export interface AdminAppointmentRecord {
 	appointmentId?: string;

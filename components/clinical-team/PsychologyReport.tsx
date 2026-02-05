@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import type { PatientRecordFull } from '@/lib/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface PsychologyReportData {
 	// Demographics
@@ -13,6 +14,7 @@ interface PsychologyReportData {
 	fatherName?: string;
 	motherName?: string;
 	sport?: string;
+	psychologist?: string;
 	phone?: string;
 	email?: string;
 	stateCity?: string;
@@ -67,7 +69,7 @@ interface PsychologyReportData {
 	neurofeedbackHeadset?: {
 		neuralActivity?: number;
 		controls?: number;
-		"Oxygenation (%)"?: number;
+		"Oxygenation (P)"?: number;
 	};
 	brainSensing?: {
 		attention?: number;
@@ -108,7 +110,7 @@ interface PsychologyReportData {
 		neurofeedbackHeadset?: {
 			neuralActivity?: number;
 			controls?: number;
-			"Oxygenation (%)"?: number;
+			"Oxygenation (P)"?: number;
 		};
 		brainSensing?: {
 			attention?: number;
@@ -140,6 +142,11 @@ interface PsychologyReportProps {
 	editable?: boolean;
 	sessionIndex?: number; // 0-based index (0 = first session)
 	totalSessions?: number; // Total number of sessions
+	hasExistingVersions?: boolean; // Whether there are existing report versions
+	isViewingSavedVersion?: boolean; // When true, follow-up visibility is based only on saved data content
+	isEditingLoadedVersion?: boolean; // When true, form was loaded from a version for editing - follow-up visibility from form data
+	sessionCompleted?: boolean;
+	onSessionCompletedChange?: (checked: boolean) => void;
 }
 
 // Helper functions for categorization
@@ -220,18 +227,101 @@ const getControlsCategory = (sec: number): string => {
 	]);
 };
 
-export default function PsychologyReport({ patientData, formData, onChange, editable = true, sessionIndex, totalSessions }: PsychologyReportProps) {
+// Helper function to calculate age from date of birth
+const calculateAge = (dob?: string): string => {
+	if (!dob) return '—';
+	try {
+		const birth = new Date(dob);
+		if (Number.isNaN(birth.getTime())) return '—';
+		const now = new Date();
+		let age = now.getFullYear() - birth.getFullYear();
+		const monthDiff = now.getMonth() - birth.getMonth();
+		if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birth.getDate())) {
+			age -= 1;
+		}
+		return age > 0 ? String(age) : '—';
+	} catch {
+		return '—';
+	}
+};
+
+export default function PsychologyReport({ patientData, formData, onChange, editable = true, sessionIndex, totalSessions, hasExistingVersions = false, isViewingSavedVersion = false, isEditingLoadedVersion = false, sessionCompleted = false, onSessionCompletedChange }: PsychologyReportProps) {
 	const [localData, setLocalData] = useState<PsychologyReportData>(formData);
+	const { user } = useAuth();
+
+	// Helper function to check if an object has any actual values (not just empty object)
+	const hasActualValues = (obj: any): boolean => {
+		if (!obj || typeof obj !== 'object') return false;
+		return Object.values(obj).some(val => val !== undefined && val !== null && val !== '');
+	};
 
 	// Determine if this is the first session
-	// Priority: 1) sessionIndex prop, 2) calculate from patient data, 3) default to first session
+	// When viewing OR editing a loaded version: show follow-up ONLY if that version's data contains follow-up content
+	// Otherwise: 1) hasExistingVersions, 2) sessionIndex, 3) check form data, 4) patient data, 5) default first session
 	const isFirstSession = useMemo(() => {
+		// When viewing or editing a loaded version, derive from that version's form data only
+		if ((isViewingSavedVersion || isEditingLoadedVersion) && formData) {
+			const dataToCheck = formData;
+			// Show follow-up section only if THIS version's data has follow-up assessment content
+			const hasFollowUpContent = hasActualValues(dataToCheck.followUpAssessment);
+			return !hasFollowUpContent; // First session = no follow-up data in this version
+		}
+
+		// If hasExistingVersions is explicitly false, this is the first session
+		if (hasExistingVersions === false) {
+			return true;
+		}
+		// If hasExistingVersions is true, this is NOT the first session
+		if (hasExistingVersions === true) {
+			return false;
+		}
+		
 		if (sessionIndex !== undefined) {
 			return sessionIndex === 0;
 		}
 		if (totalSessions !== undefined) {
 			return totalSessions === 1;
 		}
+		
+		// Helper to safely check string values
+		const hasStringValue = (val: any): boolean => {
+			return val && typeof val === 'string' && val.trim().length > 0;
+		};
+		
+		// Use formData if it has data, otherwise fall back to localData
+		const dataToCheck = Object.keys(formData).length > 0 ? formData : localData;
+		
+		// Check if there's existing psychology report data with initial assessment sections filled
+		// If any initial assessment data exists, this is NOT the first session (it's a follow-up)
+		// We check for actual assessment data, not just demographics
+		const hasInitialAssessmentData = 
+			hasActualValues(dataToCheck.sensoryStation) ||
+			hasActualValues(dataToCheck.neurofeedbackHeadset) ||
+			hasActualValues(dataToCheck.brainSensing) ||
+			(dataToCheck.trackingSpeed !== undefined && dataToCheck.trackingSpeed !== null) ||
+			(dataToCheck.reactionTime !== undefined && dataToCheck.reactionTime !== null) ||
+			(dataToCheck.handEyeCoordination !== undefined && dataToCheck.handEyeCoordination !== null) ||
+			hasActualValues(dataToCheck.competitiveStateAnxiety) ||
+			hasActualValues(dataToCheck.mentalToughness) ||
+			hasActualValues(dataToCheck.bigFivePersonality) ||
+			hasStringValue(dataToCheck.extraAssessments) ||
+			// Check for player history and concerns which are part of initial assessment
+			hasStringValue(dataToCheck.playingSince) ||
+			hasStringValue(dataToCheck.highestAchievement) ||
+			hasStringValue(dataToCheck.currentLevel) ||
+			(dataToCheck.currentConcerns && Array.isArray(dataToCheck.currentConcerns) && dataToCheck.currentConcerns.length > 0 && dataToCheck.currentConcerns.some((c: string) => hasStringValue(c))) ||
+			hasActualValues(dataToCheck.stressors) ||
+			hasActualValues(dataToCheck.socialEnvironment) ||
+			hasActualValues(dataToCheck.familyHistory) ||
+			hasStringValue(dataToCheck.historyOfConcerns) ||
+			// Check if follow-up assessment data exists (definitely means it's not first session)
+			hasActualValues(dataToCheck.followUpAssessment);
+		
+		// If there's initial assessment data, this is a follow-up session
+		if (hasInitialAssessmentData) {
+			return false;
+		}
+		
 		// Calculate from patient data if available
 		if (patientData) {
 			const remaining = typeof patientData.remainingSessions === 'number' ? patientData.remainingSessions : null;
@@ -247,7 +337,7 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 		}
 		// Default: assume first session if we can't determine
 		return true;
-	}, [sessionIndex, totalSessions, patientData]);
+	}, [sessionIndex, totalSessions, patientData, formData, localData, isViewingSavedVersion, isEditingLoadedVersion]);
 
 	useEffect(() => {
 		setLocalData(formData);
@@ -262,6 +352,14 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []); // Only run once on mount
+
+	// Auto-populate psychologist field with logged-in user's name if not set
+	useEffect(() => {
+		if (!localData.psychologist && user?.displayName && editable) {
+			updateField('psychologist', user.displayName);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [user?.displayName]); // Run when user becomes available
 
 	const updateField = (field: keyof PsychologyReportData, value: any) => {
 		const updated = { ...localData, [field]: value };
@@ -342,49 +440,10 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 
 				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 					<div>
-						<label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
-						{editable ? (
-							<input
-								type="text"
-								value={localData.name || ''}
-								onChange={(e) => updateField('name', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-								placeholder="Enter name"
-							/>
-						) : (
-							<p className="text-sm text-slate-900">{localData.name || patientData?.name || '—'}</p>
-						)}
-					</div>
-					<div>
 						<label className="block text-sm font-medium text-slate-700 mb-1">Age</label>
-						{editable ? (
-							<input
-								type="text"
-								value={localData.age || ''}
-								onChange={(e) => updateField('age', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-								placeholder="Enter age"
-							/>
-						) : (
-							<p className="text-sm text-slate-900">{localData.age || '—'}</p>
-						)}
-					</div>
-					<div>
-						<label className="block text-sm font-medium text-slate-700 mb-1">Gender</label>
-						{editable ? (
-							<select
-								value={localData.gender || ''}
-								onChange={(e) => updateField('gender', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-							>
-								<option value="">Select</option>
-								<option value="Male">Male</option>
-								<option value="Female">Female</option>
-								<option value="Other">Other</option>
-							</select>
-						) : (
-							<p className="text-sm text-slate-900">{localData.gender || patientData?.gender || '—'}</p>
-						)}
+						<p className="text-sm text-slate-900 bg-slate-50 border border-slate-300 rounded-md px-3 py-2">
+							{calculateAge(patientData?.dob)}
+						</p>
 					</div>
 					<div>
 						<label className="block text-sm font-medium text-slate-700 mb-1">Father's name</label>
@@ -426,34 +485,6 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							/>
 						) : (
 							<p className="text-sm text-slate-900">{localData.sport || '—'}</p>
-						)}
-					</div>
-					<div>
-						<label className="block text-sm font-medium text-slate-700 mb-1">Phone no</label>
-						{editable ? (
-							<input
-								type="text"
-								value={localData.phone || ''}
-								onChange={(e) => updateField('phone', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-								placeholder="Enter phone number"
-							/>
-						) : (
-							<p className="text-sm text-slate-900">{localData.phone || patientData?.phone || '—'}</p>
-						)}
-					</div>
-					<div>
-						<label className="block text-sm font-medium text-slate-700 mb-1">Email ID</label>
-						{editable ? (
-							<input
-								type="email"
-								value={localData.email || ''}
-								onChange={(e) => updateField('email', e.target.value)}
-								className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-								placeholder="Enter email"
-							/>
-						) : (
-							<p className="text-sm text-slate-900">{localData.email || patientData?.email || '—'}</p>
 						)}
 					</div>
 					<div>
@@ -744,9 +775,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</div>
 				</div>
 
-				{/* Neurofeedback Headset Assessment */}
+				{/* Neurofeedback Headset Training */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Neurofeedback Headset Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Neurofeedback Headset Training</h3>
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
 							<label className="text-sm font-medium text-slate-700 flex-1">a) Neural activity (%)</label>
@@ -799,27 +830,27 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							</div>
 						</div>
 						<div className="flex items-center justify-between">
-							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (%)</label>
+							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (P)</label>
 							{editable ? (
 								<input
 									type="number"
-									value={localData.neurofeedbackHeadset?.["Oxygenation (%)"] || ''}
-									onChange={(e) => updateNestedField('neurofeedbackHeadset', 'Oxygenation (%)', e.target.value ? parseFloat(e.target.value) : undefined)}
+									value={localData.neurofeedbackHeadset?.["Oxygenation (P)"] || ''}
+									onChange={(e) => updateNestedField('neurofeedbackHeadset', 'Oxygenation (P)', e.target.value ? parseFloat(e.target.value) : undefined)}
 									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
 									placeholder="Value"
 								/>
 							) : (
 								<span className="text-sm text-slate-900 w-20 text-right">
-									{localData.neurofeedbackHeadset?.["Oxygenation (%)"] || '—'}
+									{localData.neurofeedbackHeadset?.["Oxygenation (P)"] || '—'}
 								</span>
 							)}
 						</div>
 					</div>
 				</div>
 
-				{/* Brain Sensing Cognitive Trainer Assessment */}
+				{/* Brain Sensing Cognitive Trainer */}
 				<div>
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. Brain Sensing Cognitive Trainer Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. Brain Sensing Cognitive Trainer</h3>
 					<div className="space-y-3">
 						{[
 							{ key: 'attention', label: 'Attention' },
@@ -860,9 +891,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 			</div>
 
 			<div className="border-b border-slate-200 pb-6">
-				{/* 3D - Multiple Object Tracking Assessment */}
+				{/* 3D - Multiple Object Tracking */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. 3D - Multiple Object Tracking Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">4. 3D - Multiple Object Tracking</h3>
 					<div className="flex items-center justify-between">
 						<label className="text-sm font-medium text-slate-700 flex-1">Tracking Speed</label>
 						<div className="flex items-center gap-3">
@@ -1011,15 +1042,33 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 										) : (
 											<span className="text-sm text-slate-900 w-20 text-right">{score || '—'}</span>
 										)}
-										{score !== undefined && (
+									</div>
+								</div>
+							);
+						})}
+						{/* Total Score Row */}
+						{(() => {
+							const commitment = localData.mentalToughness?.commitment ?? 0;
+							const concentration = localData.mentalToughness?.concentration ?? 0;
+							const controlUnderPressure = localData.mentalToughness?.controlUnderPressure ?? 0;
+							const confidence = localData.mentalToughness?.confidence ?? 0;
+							const totalScore = commitment + concentration + controlUnderPressure + confidence;
+							const hasAnyScore = commitment !== 0 || concentration !== 0 || controlUnderPressure !== 0 || confidence !== 0;
+							
+							return (
+								<div className="flex items-center justify-between pt-2 border-t border-slate-200">
+									<label className="text-sm font-medium text-slate-700 flex-1">Total score</label>
+									<div className="flex items-center gap-3">
+										<span className="text-sm text-slate-900 w-20 text-right font-semibold">{hasAnyScore ? totalScore : '—'}</span>
+										{hasAnyScore && totalScore !== undefined && (
 											<span className="text-sm font-medium text-indigo-600 w-32">
-												({getMentalToughnessCategory(score)})
+												({getMentalToughnessCategory(totalScore)})
 											</span>
 										)}
 									</div>
 								</div>
 							);
-						})}
+						})()}
 					</div>
 				</div>
 
@@ -1083,6 +1132,24 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					<p className="text-sm text-slate-900 whitespace-pre-wrap">{localData.extraAssessments || '—'}</p>
 				)}
 			</div>
+
+			{/* Psychologist */}
+			<div className="border-b border-slate-200 pb-6">
+				<h2 className="mb-4 text-lg font-semibold text-slate-900">Psychologist</h2>
+				<div className="max-w-md">
+					{editable ? (
+						<input
+							type="text"
+							value={localData.psychologist || ''}
+							onChange={(e) => updateField('psychologist', e.target.value)}
+							className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+							placeholder="Enter psychologist name"
+						/>
+					) : (
+						<p className="text-sm text-slate-900">{localData.psychologist || '—'}</p>
+					)}
+				</div>
+			</div>
 				</>
 			)}
 
@@ -1090,10 +1157,17 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 			{!isFirstSession && (
 			<div className="pb-6">
 				<h2 className="mb-4 text-lg font-semibold text-slate-900">Follow-up Assessment Report</h2>
-				
-				{/* Neurofeedback Headset Assessment */}
+
+				<div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+					<p className="text-sm text-blue-800">
+						<i className="fas fa-info-circle mr-2" aria-hidden="true" />
+						This is a follow-up assessment. Please update the follow-up assessment, progress, and treatment details.
+					</p>
+				</div>
+
+				{/* Neurofeedback Headset Training */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">1. Neurofeedback Headset Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">1. Neurofeedback Headset Training</h3>
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
 							<label className="text-sm font-medium text-slate-700 flex-1">a) Neural activity (%)</label>
@@ -1158,16 +1232,16 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							</div>
 						</div>
 						<div className="flex items-center justify-between">
-							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (%)</label>
+							<label className="text-sm font-medium text-slate-700 flex-1">c) Oxygenation (P)</label>
 							{editable ? (
 								<input
 									type="number"
-									value={localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (%)"] || ''}
+									value={localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (P)"] || ''}
 									onChange={(e) => {
 										const parent = localData.followUpAssessment?.neurofeedbackHeadset || {};
 										updateFollowUpNestedField('neurofeedbackHeadset', {
 											...parent,
-											"Oxygenation (%)": e.target.value ? parseFloat(e.target.value) : undefined
+											"Oxygenation (P)": e.target.value ? parseFloat(e.target.value) : undefined
 										});
 									}}
 									className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-center text-slate-900 placeholder:text-slate-400"
@@ -1175,16 +1249,16 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 								/>
 							) : (
 								<span className="text-sm text-slate-900 w-20 text-right">
-									{localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (%)"] || '—'}
+									{localData.followUpAssessment?.neurofeedbackHeadset?.["Oxygenation (P)"] || '—'}
 								</span>
 							)}
 						</div>
 					</div>
 				</div>
 
-				{/* Brain Sensing Cognitive Trainer Assessment */}
+				{/* Brain Sensing Cognitive Trainer */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Brain Sensing Cognitive Trainer Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">2. Brain Sensing Cognitive Trainer</h3>
 					<div className="space-y-3">
 						{[
 							{ key: 'attention', label: 'Attention' },
@@ -1229,9 +1303,9 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 					</div>
 				</div>
 
-				{/* 3D - Multiple Object Tracking Assessment */}
+				{/* 3D - Multiple Object Tracking */}
 				<div className="mb-6">
-					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. 3D - Multiple Object Tracking Assessment</h3>
+					<h3 className="mb-3 text-sm font-semibold text-slate-800">3. 3D - Multiple Object Tracking</h3>
 					<div className="flex items-center justify-between">
 						<label className="text-sm font-medium text-slate-700 flex-1">Tracking Speed</label>
 						<div className="flex items-center gap-3">

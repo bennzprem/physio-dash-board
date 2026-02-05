@@ -462,7 +462,7 @@ export default function Transfer() {
 			const appointmentsQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', request.patientId),
-				where('status', 'in', ['pending', 'ongoing'])
+				where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 			);
 			const appointmentsSnapshot = await getDocs(appointmentsQuery);
 			const appointments = appointmentsSnapshot.docs.map(docSnap => {
@@ -543,7 +543,7 @@ export default function Transfer() {
 					where('doctor', '==', request.toTherapist),
 					where('date', '==', appointment.date),
 					where('time', '==', appointment.time),
-					where('status', 'in', ['pending', 'ongoing'])
+					where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 				);
 				const existingSnapshot = await getDocs(existingAppointmentsQuery);
 				if (!existingSnapshot.empty) {
@@ -600,7 +600,7 @@ export default function Transfer() {
 			const appointmentsQuery = query(
 				collection(db, 'appointments'),
 				where('patientId', '==', patient.patientId),
-				where('status', 'in', ['pending', 'ongoing'])
+				where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 			);
 			const appointmentsSnapshot = await getDocs(appointmentsQuery);
 			const appointments = appointmentsSnapshot.docs.map(docSnap => {
@@ -691,7 +691,7 @@ export default function Transfer() {
 					where('doctor', '==', newTherapistName),
 					where('date', '==', appointment.date),
 					where('time', '==', appointment.time),
-					where('status', 'in', ['pending', 'ongoing'])
+					where('status', 'in', ['pending', 'confirmed', 'ongoing'])
 				);
 				const existingSnapshot = await getDocs(existingAppointmentsQuery);
 				if (!existingSnapshot.empty) {

@@ -60,6 +60,7 @@ interface DateSpecificAvailability {
 
 const statusColors: Record<string, string> = {
 	pending: 'bg-amber-400',
+	confirmed: 'bg-teal-500',
 	ongoing: 'bg-sky-500',
 	completed: 'bg-emerald-500',
 	cancelled: 'bg-rose-500',

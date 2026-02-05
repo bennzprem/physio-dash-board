@@ -5,7 +5,7 @@ import { collection, doc, query, where, getDocs, onSnapshot, orderBy, updateDoc,
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
-import { generatePhysiotherapyReportPDF, generateStrengthConditioningPDF, type StrengthConditioningData, type ReportSection } from '@/lib/pdfGenerator';
+import { generatePhysiotherapyReportPDF, generateStrengthConditioningPDF, generatePsychologyPDF, type StrengthConditioningData, type PsychologyReportPDFData, type ReportSection } from '@/lib/pdfGenerator';
 import type { PatientRecordFull } from '@/lib/types';
 import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
 import { createDYESBilling } from '@/lib/dyesBilling';
@@ -20,19 +20,11 @@ const VAS_EMOJIS = ['😀','😁','🙂','😊','😌','😟','😣','😢','�
 const HYDRATION_EMOJIS = ['😄','😃','🙂','😐','😕','😟','😢','😭'];
 
 const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
-	Neck: [
-		{ motion: 'Flexion' }, 
-		{ motion: 'Extension' }, 
-		{ motion: 'Lateral Flexion Left' }, 
-		{ motion: 'Lateral Flexion Right' }
-	],
-	Hip: [
+	'Cervical Spine': [
 		{ motion: 'Flexion' },
 		{ motion: 'Extension' },
-		{ motion: 'Abduction' },
-		{ motion: 'Adduction' },
-		{ motion: 'Internal Rotation' },
-		{ motion: 'External Rotation' },
+		{ motion: 'Lateral Flexion Left' },
+		{ motion: 'Lateral Flexion Right' },
 	],
 	Shoulder: [
 		{ motion: 'Flexion' },
@@ -50,6 +42,22 @@ const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
 		{ motion: 'Radial Deviation' },
 		{ motion: 'Ulnar Deviation' },
 	],
+	'Hand and thumb': [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	Fingers: [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	'Trunk and thoracic': [
+		{ motion: 'Flexion' },
+		{ motion: 'Extension' },
+		{ motion: 'Lateral Flexion Left' },
+		{ motion: 'Lateral Flexion Right' },
+	],
+	Hip: [
+		{ motion: 'Flexion' },
+		{ motion: 'Extension' },
+		{ motion: 'Abduction' },
+		{ motion: 'Adduction' },
+		{ motion: 'Internal Rotation' },
+		{ motion: 'External Rotation' },
+	],
 	Knee: [{ motion: 'Flexion' }, { motion: 'Extension' }],
 	Ankle: [
 		{ motion: 'Dorsiflexion' },
@@ -57,20 +65,20 @@ const ROM_MOTIONS: Record<string, Array<{ motion: string }>> = {
 		{ motion: 'Inversion' },
 		{ motion: 'Eversion' },
 	],
-	'Tarsal Joint': [{ motion: 'Flexion' }, { motion: 'Extension' }],
-	Finger: [{ motion: 'Flexion' }, { motion: 'Extension' }],
+	Tarsal: [{ motion: 'Flexion' }, { motion: 'Extension' }],
 };
 
 const ROM_HAS_SIDE: Record<string, boolean> = {
-	Hip: true,
 	Shoulder: true,
 	Elbow: true,
 	Forearm: true,
 	Wrist: true,
+	'Hand and thumb': true,
+	Fingers: true,
+	Hip: true,
 	Knee: true,
 	Ankle: true,
-	'Tarsal Joint': true,
-	Finger: true,
+	Tarsal: true,
 };
 
 const ROM_JOINTS = Object.keys(ROM_MOTIONS);
@@ -196,7 +204,7 @@ async function markAppointmentCompletedForReport(
 	try {
 		const constraints: any[] = [
 			where('patientId', '==', patient.patientId),
-			where('status', 'in', ['pending', 'ongoing']),
+			where('status', 'in', ['pending', 'confirmed', 'ongoing']),
 		];
 
 		if (reportDate) {
@@ -491,10 +499,13 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const [clinicalTeamMembers, setClinicalTeamMembers] = useState<Array<{ id: string; userName: string; userEmail?: string }>>([]);
 	const [loadingReport, setLoadingReport] = useState(false);
 	const [loadingStrengthConditioning, setLoadingStrengthConditioning] = useState(false);
+	const [loadingPsychology, setLoadingPsychology] = useState(false);
 	const [savingStrengthConditioning, setSavingStrengthConditioning] = useState(false);
 	const [savedStrengthConditioningMessage, setSavedStrengthConditioningMessage] = useState(false);
 	const [savingPsychology, setSavingPsychology] = useState(false);
 	const [savedPsychologyMessage, setSavedPsychologyMessage] = useState(false);
+	const [psychologySessionCompleted, setPsychologySessionCompleted] = useState(false);
+	const psychologyUnsubscribeRef = useRef<(() => void) | null>(null);
 	const [uploadingPdf, setUploadingPdf] = useState(false);
 	const [uploadedPdfUrl, setUploadedPdfUrl] = useState<string | null>(null);
 	const strengthConditioningUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -523,13 +534,21 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		version: number;
 		createdAt: string;
 		createdBy: string;
-		data: Partial<PatientRecordFull> | StrengthConditioningData;
+		data: Partial<PatientRecordFull> | StrengthConditioningData | any;
 		isStrengthConditioning?: boolean;
+		isPsychology?: boolean;
 	}>>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | StrengthConditioningData | null>(null);
 	const [viewingVersionIsStrengthConditioning, setViewingVersionIsStrengthConditioning] = useState(false);
+	const [viewingVersionIsPsychology, setViewingVersionIsPsychology] = useState(false);
+	const [viewingPsychologyVersionData, setViewingPsychologyVersionData] = useState<any | null>(null);
+	const [psychologyFormDataKey, setPsychologyFormDataKey] = useState(0); // Key to force re-render when loading version data
+	const [isEditingLoadedPsychologyVersion, setIsEditingLoadedPsychologyVersion] = useState(false); // True when form was loaded from version via Edit
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
+	const [hasPsychologyVersions, setHasPsychologyVersions] = useState(false);
+	const [hasPhysiotherapyVersions, setHasPhysiotherapyVersions] = useState(false);
+	const [hasStrengthConditioningVersions, setHasStrengthConditioningVersions] = useState(false);
 	const [isExtraTreatment, setIsExtraTreatment] = useState(false);
 	
 	// Crisp report state
@@ -579,19 +598,43 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	// Helper function to get session number and first report date
 	const getSessionInfo = async (patientId: string): Promise<{ sessionNumber: number; firstReportDate: string | null }> => {
 		try {
-			// Try to get report versions with orderBy
+			// Try to get report versions with orderBy, filtered by reportType = 'physiotherapy'
 			let versionsQuery = query(
 				collection(db, 'reportVersions'),
-				where('patientId', '==', patientId)
+				where('patientId', '==', patientId),
+				where('reportType', '==', 'physiotherapy')
 			);
 			
+			let versionsSnapshot;
 			try {
 				versionsQuery = query(versionsQuery, orderBy('version', 'asc'));
+				versionsSnapshot = await getDocs(versionsQuery);
 			} catch {
-				// If orderBy fails, we'll sort manually
+				// If orderBy or reportType filter fails, try without reportType filter (for backward compatibility)
+				try {
+					versionsQuery = query(
+						collection(db, 'reportVersions'),
+						where('patientId', '==', patientId)
+					);
+					try {
+						versionsQuery = query(versionsQuery, orderBy('version', 'asc'));
+					} catch {
+						// If orderBy fails, we'll sort manually
+					}
+					versionsSnapshot = await getDocs(versionsQuery);
+					// Filter by reportType in memory for backward compatibility
+					versionsSnapshot = {
+						...versionsSnapshot,
+						docs: versionsSnapshot.docs.filter(doc => {
+							const data = doc.data();
+							return data.reportType === 'physiotherapy' || !data.reportType;
+						})
+					} as QuerySnapshot;
+				} catch (fallbackError) {
+					// If everything fails, return session 1
+					return { sessionNumber: 1, firstReportDate: null };
+				}
 			}
-			
-			const versionsSnapshot = await getDocs(versionsQuery);
 			
 			if (versionsSnapshot.empty) {
 				// No reports exist - this will be Session 1
@@ -686,7 +729,13 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			if (!isOpen) {
 				setReportPatientData(null);
 				setStrengthConditioningData(null);
+				setPsychologyData(null);
 				setViewingVersionData(null);
+				setViewingVersionIsPsychology(false);
+				setViewingPsychologyVersionData(null);
+				setPsychologyFormDataKey(0);
+				setIsEditingLoadedPsychologyVersion(false);
+				setPsychologySessionCompleted(false);
 				setActiveReportTab(initialTab);
 				setIsSubsequentDatePhysio(false);
 				setIsSubsequentDateStrength(false);
@@ -694,9 +743,16 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				setSessionNumber(null);
 				setFirstReportDate(null);
 				setIsEditingSession1(false);
+				setLoadingReport(false);
+				setLoadingStrengthConditioning(false);
+				setLoadingPsychology(false);
 				if (strengthConditioningUnsubscribeRef.current) {
 					strengthConditioningUnsubscribeRef.current();
 					strengthConditioningUnsubscribeRef.current = null;
+				}
+				if (psychologyUnsubscribeRef.current) {
+					psychologyUnsubscribeRef.current();
+					psychologyUnsubscribeRef.current = null;
 				}
 				if (patientUnsubscribeRef.current) {
 					patientUnsubscribeRef.current();
@@ -716,162 +772,246 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		const loadData = async () => {
 			setLoadingReport(true);
 			setLoadingStrengthConditioning(true);
+			setLoadingPsychology(true);
 			setReportPatientData(null);
 			setStrengthConditioningData(null);
+			setPsychologyData(null);
 			setFormData({});
 
-			// Load regular report data with real-time listener
+			// Get patient document ID first (single query)
+			let patientDocId: string | null = null;
+			let documentId: string | null = null;
+			
 			try {
 				const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
 				if (!patientSnap.empty) {
 					const patientDoc = patientSnap.docs[0];
-					const patientDocId = patientDoc.id;
+					patientDocId = patientDoc.id;
+					documentId = patientDocId || patientId;
 					setPatientDocId(patientDocId);
 					
 					// Set up real-time listener for patient document
 					const patientRef = doc(db, 'patients', patientDocId);
+					
+					// Set initial patient data from the snapshot we already have
+					const initialPatientData = patientDoc.data() as PatientRecordFull;
+					setReportPatientData(initialPatientData);
+					setLoadingReport(false);
+					
 					const unsubscribePatient = onSnapshot(patientRef, (docSnap) => {
-						if (docSnap.exists()) {
-							const patientData = docSnap.data() as PatientRecordFull;
-							
-							// Only update if user is not actively editing (formData is empty or matches current data)
-							// This prevents overwriting user's unsaved changes
-							const isUserEditing = Object.keys(formData).length > 0 && 
-								JSON.stringify(formData) !== JSON.stringify(reportPatientData);
-							
-							if (!isUserEditing || !editable) {
-								setReportPatientData(patientData);
+						try {
+							if (docSnap.exists()) {
+								const patientData = docSnap.data() as PatientRecordFull;
 								
-								// Check if it's a subsequent date for Physiotherapy report
-								if (patientData.dateOfConsultation) {
-									setIsSubsequentDatePhysio(isDateOnDifferentDay(patientData.dateOfConsultation));
-								} else if (patientData.updatedAt) {
-									const updatedDate = (patientData.updatedAt as any)?.toDate ? (patientData.updatedAt as any).toDate() : new Date(patientData.updatedAt);
-									if (!isNaN(updatedDate.getTime())) {
-										setIsSubsequentDatePhysio(isDateOnDifferentDay(updatedDate));
+								// Only update if user is not actively editing (formData is empty or matches current data)
+								// This prevents overwriting user's unsaved changes
+								const isUserEditing = Object.keys(formData).length > 0 && 
+									JSON.stringify(formData) !== JSON.stringify(reportPatientData);
+								
+								if (!isUserEditing || !editable) {
+									setReportPatientData(patientData);
+									
+									// Check if it's a subsequent date for Physiotherapy report
+									if (patientData.dateOfConsultation) {
+										setIsSubsequentDatePhysio(isDateOnDifferentDay(patientData.dateOfConsultation));
+									} else if (patientData.updatedAt) {
+										const updatedDate = (patientData.updatedAt as any)?.toDate ? (patientData.updatedAt as any).toDate() : new Date(patientData.updatedAt);
+										if (!isNaN(updatedDate.getTime())) {
+											setIsSubsequentDatePhysio(isDateOnDifferentDay(updatedDate));
+										} else {
+											setIsSubsequentDatePhysio(false);
+										}
 									} else {
 										setIsSubsequentDatePhysio(false);
 									}
-								} else {
-									setIsSubsequentDatePhysio(false);
-								}
-								
-								// Initialize formData with patient data if editable and form is empty
-								if (editable && Object.keys(formData).length === 0) {
-									const adjustedData = applyCurrentSessionAdjustments(patientData);
-									if (!adjustedData.dateOfConsultation) {
-										adjustedData.dateOfConsultation = new Date().toISOString().split('T')[0];
+									
+									// Initialize formData with patient data if editable and form is empty
+									if (editable && Object.keys(formData).length === 0) {
+										const adjustedData = applyCurrentSessionAdjustments(patientData);
+										if (!adjustedData.dateOfConsultation) {
+											adjustedData.dateOfConsultation = new Date().toISOString().split('T')[0];
+										}
+										if (!adjustedData.physioName && clinicalTeamMembers.length > 0) {
+											const currentUserStaff = clinicalTeamMembers.find(m => m.userEmail === user?.email);
+											adjustedData.physioName = currentUserStaff?.userName || user?.displayName || user?.email || '';
+										}
+										setFormData(adjustedData);
+										setIsPhysioNameEditable(false);
 									}
-									if (!adjustedData.physioName && clinicalTeamMembers.length > 0) {
-										const currentUserStaff = clinicalTeamMembers.find(m => m.userEmail === user?.email);
-										adjustedData.physioName = currentUserStaff?.userName || user?.displayName || user?.email || '';
-									}
-									setFormData(adjustedData);
-									setIsPhysioNameEditable(false);
 								}
+							} else {
+								setReportPatientData(null);
 							}
-						} else {
-							setReportPatientData(null);
+						} catch (err) {
+							console.error('Error processing patient data:', err);
 						}
-						setLoadingReport(false);
 					}, (error) => {
 						console.error('Error loading patient report:', error);
+						setReportPatientData(null);
 						setLoadingReport(false);
 					});
 					
 					patientUnsubscribeRef.current = unsubscribePatient;
 					
-					// Load session info
-					const initialPatientData = patientDoc.data() as PatientRecordFull;
+					// Load session info (use the data we already have)
 					if (initialPatientData.patientId) {
+						// Check for existing physiotherapy report versions first
+						let hasPhysioVersions = false;
+						try {
+							let physioVersionsQuery = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', initialPatientData.patientId),
+								where('reportType', '==', 'physiotherapy')
+							);
+							try {
+								const physioVersionsSnapshot = await getDocs(physioVersionsQuery);
+								hasPhysioVersions = physioVersionsSnapshot.docs.length > 0;
+								setHasPhysiotherapyVersions(hasPhysioVersions);
+							} catch {
+								// If reportType filter fails, try without it
+								const fallbackQuery = query(
+									collection(db, 'reportVersions'),
+									where('patientId', '==', initialPatientData.patientId)
+								);
+								const fallbackSnapshot = await getDocs(fallbackQuery);
+								hasPhysioVersions = fallbackSnapshot.docs.some(doc => {
+									const data = doc.data();
+									return data.reportType === 'physiotherapy' || !data.reportType;
+								});
+								setHasPhysiotherapyVersions(hasPhysioVersions);
+							}
+						} catch (err) {
+							console.error('Error checking physiotherapy report versions:', err);
+							setHasPhysiotherapyVersions(false);
+						}
+						
 						const sessionInfo = await getSessionInfo(initialPatientData.patientId);
 						setSessionNumber(sessionInfo.sessionNumber);
 						setFirstReportDate(sessionInfo.firstReportDate);
 						
 						// Determine if we're editing Session 1
-						const currentDate = initialPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
-						if (sessionInfo.firstReportDate && currentDate === sessionInfo.firstReportDate) {
-							setIsEditingSession1(true);
-							setSessionNumber(1);
-						} else if (!sessionInfo.firstReportDate) {
-							// No reports exist, this is Session 1
+						// If versions exist, this is NOT Session 1 (it's a follow-up)
+						if (hasPhysioVersions) {
+							// Versions exist, so this is a follow-up session
+							setIsEditingSession1(false);
+						} else if (sessionInfo.sessionNumber === 1) {
+							// No versions and session number is 1, so this is Session 1
 							setIsEditingSession1(true);
 							setSessionNumber(1);
 						} else {
-							setIsEditingSession1(false);
+							const currentDate = initialPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
+							if (sessionInfo.firstReportDate && currentDate === sessionInfo.firstReportDate) {
+								setIsEditingSession1(true);
+								setSessionNumber(1);
+							} else if (!sessionInfo.firstReportDate) {
+								// No first report date and no versions, this is Session 1
+								setIsEditingSession1(true);
+								setSessionNumber(1);
+							} else {
+								setIsEditingSession1(false);
+							}
 						}
 						
 						// Set up real-time listener for report versions
-						let versionsQuery = query(
-							collection(db, 'reportVersions'),
-							where('patientId', '==', initialPatientData.patientId)
-						);
-						
-						try {
-							versionsQuery = query(versionsQuery, orderBy('version', 'desc'));
-						} catch {
-							// If orderBy fails, continue without it
-						}
-						
-						const unsubscribeVersions = onSnapshot(
-							versionsQuery,
-							(snapshot) => {
-								const versions = snapshot.docs.map(doc => {
-									const data = doc.data();
-									const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
-									return {
-										id: doc.id,
-										version: data.version as number,
-										createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
-										createdBy: (data.createdBy as string) || 'Unknown',
-										data: (data.reportData as Partial<PatientRecordFull>) || {},
-										isStrengthConditioning: false,
-									};
-								});
-								
-								// Only update if version history is currently being viewed
-								if (showVersionHistory && activeReportTab === 'report') {
-									setVersionHistory(versions);
-								}
-							},
-							(error) => {
-								// If orderBy fails (missing index), try without it
-								if (error.code === 'failed-precondition' || error.message?.includes('index')) {
-									const versionsQueryNoOrder = query(
-										collection(db, 'reportVersions'),
-										where('patientId', '==', initialPatientData.patientId)
-									);
-									
-									onSnapshot(
-										versionsQueryNoOrder,
-										(snapshot) => {
-											const versions = snapshot.docs.map(doc => {
-												const data = doc.data();
-												const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
-												return {
-													id: doc.id,
-													version: data.version as number,
-													createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
-													createdBy: (data.createdBy as string) || 'Unknown',
-													data: (data.reportData as Partial<PatientRecordFull>) || {},
-													isStrengthConditioning: false,
-												};
-											});
-											versions.sort((a, b) => b.version - a.version);
-											
-											if (showVersionHistory && activeReportTab === 'report') {
-												setVersionHistory(versions);
-											}
-										},
-										(err) => console.error('Error loading report versions:', err)
-									);
-								} else {
-									console.error('Error loading report versions:', error);
-								}
+						// Only set up real-time listener for physiotherapy reports (activeReportTab === 'report')
+						// Psychology and Strength & Conditioning have their own collections
+						if (activeReportTab === 'report') {
+							let versionsQuery = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', initialPatientData.patientId),
+								where('reportType', '==', 'physiotherapy')
+							);
+							
+							try {
+								versionsQuery = query(versionsQuery, orderBy('version', 'desc'));
+							} catch {
+								// If orderBy fails, continue without it
 							}
-						);
-						
-						reportVersionsUnsubscribeRef.current = unsubscribeVersions;
+							
+							const unsubscribeVersions = onSnapshot(
+								versionsQuery,
+								(snapshot) => {
+									const versions = snapshot.docs.map(doc => {
+										const data = doc.data();
+										const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+										return {
+											id: doc.id,
+											version: data.version as number,
+											createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+											createdBy: (data.createdBy as string) || 'Unknown',
+											data: (data.reportData as Partial<PatientRecordFull>) || {},
+											isStrengthConditioning: false,
+											isPsychology: false,
+										};
+									});
+									
+									// Update hasPhysiotherapyVersions based on snapshot
+									const hasVersions = snapshot.docs.length > 0;
+									setHasPhysiotherapyVersions(hasVersions);
+									
+									// Update isEditingSession1 if versions exist
+									if (hasVersions) {
+										setIsEditingSession1(false);
+									}
+									
+									// Only update if version history is currently being viewed
+									if (showVersionHistory && activeReportTab === 'report') {
+										setVersionHistory(versions);
+									}
+								},
+								(error) => {
+									// If orderBy or reportType filter fails (missing index), try without reportType filter
+									if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+										const versionsQueryNoOrder = query(
+											collection(db, 'reportVersions'),
+											where('patientId', '==', initialPatientData.patientId)
+										);
+										
+										onSnapshot(
+											versionsQueryNoOrder,
+											(snapshot) => {
+												// Filter by reportType in memory for backward compatibility
+												const versions = snapshot.docs
+													.map(doc => {
+														const data = doc.data();
+														const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+														return {
+															id: doc.id,
+															version: data.version as number,
+															createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+															createdBy: (data.createdBy as string) || 'Unknown',
+															data: (data.reportData as Partial<PatientRecordFull>) || {},
+															isStrengthConditioning: false,
+															isPsychology: false,
+															reportType: data.reportType || 'physiotherapy',
+														};
+													})
+													.filter(v => v.reportType === 'physiotherapy' || !v.reportType); // Include old records without reportType
+												versions.sort((a, b) => b.version - a.version);
+												
+												// Update hasPhysiotherapyVersions based on filtered versions
+												const hasVersions = versions.length > 0;
+												setHasPhysiotherapyVersions(hasVersions);
+												
+												// Update isEditingSession1 if versions exist
+												if (hasVersions) {
+													setIsEditingSession1(false);
+												}
+												
+												if (showVersionHistory && activeReportTab === 'report') {
+													setVersionHistory(versions);
+												}
+											},
+											(err) => console.error('Error loading report versions:', err)
+										);
+									} else {
+										console.error('Error loading report versions:', error);
+									}
+								}
+							);
+							
+							reportVersionsUnsubscribeRef.current = unsubscribeVersions;
+						}
 						
 						// Load header config (one-time load)
 						const patientType = initialPatientData.patientType || 'nonDYES';
@@ -901,120 +1041,153 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							} as HeaderConfig);
 						}
 					}
-				} else {
-					setLoadingReport(false);
-				}
-			} catch (error) {
-				console.error('Failed to load patient report:', error);
-				setLoadingReport(false);
-			}
 
-			// Load strength and conditioning report
-			try {
-				const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
-				if (!patientSnap.empty) {
-					const patientDoc = patientSnap.docs[0];
-					const documentId = patientDoc.id || patientId;
-					
-					const reportRef = doc(db, 'strengthConditioningReports', documentId);
-					const unsubscribe = onSnapshot(reportRef, (docSnap) => {
-						if (docSnap.exists()) {
-							const data = docSnap.data() as StrengthConditioningData;
-							setStrengthConditioningData(data);
-							
-							// Check if it's a subsequent date for Strength & Conditioning report
-							if (data.assessmentDate) {
-								setIsSubsequentDateStrength(isDateOnDifferentDay(data.assessmentDate));
-							} else if ((data as any).updatedAt) {
-								// If no assessment date, check updatedAt
-								const updatedDate = typeof (data as any).updatedAt === 'string' ? new Date((data as any).updatedAt) : ((data as any).updatedAt as any)?.toDate ? ((data as any).updatedAt as any).toDate() : new Date();
-								if (!isNaN(updatedDate.getTime())) {
-									setIsSubsequentDateStrength(isDateOnDifferentDay(updatedDate));
+					// Load strength and conditioning report (using documentId from first query)
+					if (documentId) {
+						// Check for existing strength & conditioning report versions
+						if (initialPatientData.patientId) {
+							const scVersionsQuery = query(
+								collection(db, 'strengthConditioningReportVersions'),
+								where('patientId', '==', initialPatientData.patientId)
+							);
+							getDocs(scVersionsQuery).then((snapshot) => {
+								setHasStrengthConditioningVersions(snapshot.docs.length > 0);
+							}).catch((err) => {
+								console.error('Error checking strength & conditioning report versions:', err);
+								setHasStrengthConditioningVersions(false);
+							});
+						}
+						
+						const reportRef = doc(db, 'strengthConditioningReports', documentId);
+						const unsubscribe = onSnapshot(reportRef, (docSnap) => {
+							if (docSnap.exists()) {
+								const data = docSnap.data() as StrengthConditioningData;
+								setStrengthConditioningData(data);
+								
+								// Check if it's a subsequent date for Strength & Conditioning report
+								if (data.assessmentDate) {
+									setIsSubsequentDateStrength(isDateOnDifferentDay(data.assessmentDate));
+								} else if ((data as any).updatedAt) {
+									// If no assessment date, check updatedAt
+									const updatedDate = typeof (data as any).updatedAt === 'string' ? new Date((data as any).updatedAt) : ((data as any).updatedAt as any)?.toDate ? ((data as any).updatedAt as any).toDate() : new Date();
+									if (!isNaN(updatedDate.getTime())) {
+										setIsSubsequentDateStrength(isDateOnDifferentDay(updatedDate));
+									} else {
+										setIsSubsequentDateStrength(false);
+									}
 								} else {
 									setIsSubsequentDateStrength(false);
 								}
+								
+								// Initialize formData with strength conditioning data if editable
+								if (editable) {
+									const formDataWithDate = { ...data };
+									// Set assessmentDate to today's date if it's not already set
+									if (!formDataWithDate.assessmentDate) {
+										formDataWithDate.assessmentDate = new Date().toISOString().split('T')[0];
+									}
+									setStrengthConditioningFormData(formDataWithDate);
+									// Set uploaded PDF URL if it exists
+									if (data.uploadedPdfUrl) {
+										setUploadedPdfUrl(data.uploadedPdfUrl);
+									}
+								}
 							} else {
+								setStrengthConditioningData(null);
 								setIsSubsequentDateStrength(false);
-							}
-							
-							// Initialize formData with strength conditioning data if editable
-							if (editable) {
-								const formDataWithDate = { ...data };
-								// Set assessmentDate to today's date if it's not already set
-								if (!formDataWithDate.assessmentDate) {
-									formDataWithDate.assessmentDate = new Date().toISOString().split('T')[0];
-								}
-								setStrengthConditioningFormData(formDataWithDate);
-								// Set uploaded PDF URL if it exists
-								if (data.uploadedPdfUrl) {
-									setUploadedPdfUrl(data.uploadedPdfUrl);
+								if (editable) {
+									// Set assessmentDate to today's date for new reports
+									setStrengthConditioningFormData({
+										assessmentDate: new Date().toISOString().split('T')[0]
+									});
+									setUploadedPdfUrl(null);
 								}
 							}
-						} else {
+							setLoadingStrengthConditioning(false);
+						}, (error) => {
+							console.error('Error loading strength and conditioning report:', error);
 							setStrengthConditioningData(null);
 							setIsSubsequentDateStrength(false);
-							if (editable) {
-								// Set assessmentDate to today's date for new reports
-								setStrengthConditioningFormData({
-									assessmentDate: new Date().toISOString().split('T')[0]
-								});
-								setUploadedPdfUrl(null);
-							}
-						}
-						setLoadingStrengthConditioning(false);
-					}, (error) => {
-						console.error('Error loading strength and conditioning report:', error);
-						setStrengthConditioningData(null);
-						setIsSubsequentDateStrength(false);
-						setLoadingStrengthConditioning(false);
-					});
-					
-					strengthConditioningUnsubscribeRef.current = unsubscribe;
-				}
-			} catch (error) {
-				console.error('Failed to load strength and conditioning report', error);
-				setStrengthConditioningData(null);
-				setLoadingStrengthConditioning(false);
-			}
-		};
-
-		loadData();
-
-		// Load psychology data if psychology tab is active
-		if (isOpen && patientId && activeReportTab === 'psychology') {
-			const loadPsychologyData = async () => {
-				try {
-					const patientSnap = await getDocs(query(collection(db, 'patients'), where('patientId', '==', patientId)));
-					if (!patientSnap.empty) {
-						const patientDoc = patientSnap.docs[0];
-						const documentId = patientDoc.id || patientId;
+							setLoadingStrengthConditioning(false);
+						});
 						
-						const psychologyRef = doc(db, 'psychologyReports', documentId);
-						const unsubscribe = onSnapshot(psychologyRef, (docSnap) => {
-							if (docSnap.exists()) {
-								const data = docSnap.data();
-								setPsychologyData(data);
-								if (editable) {
-									setPsychologyFormData(data);
+						strengthConditioningUnsubscribeRef.current = unsubscribe;
+					} else {
+						setLoadingStrengthConditioning(false);
+					}
+
+					// Load psychology data (always load, not just when tab is active)
+					if (documentId) {
+						try {
+							// Check for existing psychology report versions
+							if (initialPatientData.patientId) {
+								const versionsQuery = query(
+									collection(db, 'psychologyReportVersions'),
+									where('patientId', '==', initialPatientData.patientId)
+								);
+								getDocs(versionsQuery).then((snapshot) => {
+									setHasPsychologyVersions(snapshot.docs.length > 0);
+								}).catch((err) => {
+									console.error('Error checking psychology report versions:', err);
+									setHasPsychologyVersions(false);
+								});
+							}
+							
+							const psychologyRef = doc(db, 'psychologyReports', documentId);
+							const unsubscribe = onSnapshot(psychologyRef, (docSnap) => {
+								try {
+									if (docSnap.exists()) {
+										const data = docSnap.data();
+										setPsychologyData(data);
+										if (editable) {
+											setPsychologyFormData(data);
+										}
+									} else {
+										setPsychologyData(null);
+										if (editable) {
+											setPsychologyFormData({});
+										}
+									}
+								} catch (err) {
+									console.error('Error processing psychology report data:', err);
+								} finally {
+									setLoadingPsychology(false);
 								}
-							} else {
+							}, (error) => {
+								console.error('Error loading psychology report:', error);
 								setPsychologyData(null);
 								if (editable) {
 									setPsychologyFormData({});
 								}
-							}
-						}, (error) => {
-							console.error('Error loading psychology report:', error);
+								setLoadingPsychology(false);
+							});
+							
+							psychologyUnsubscribeRef.current = unsubscribe;
+						} catch (err) {
+							console.error('Failed to set up psychology report listener:', err);
 							setPsychologyData(null);
-						});
+							if (editable) {
+								setPsychologyFormData({});
+							}
+							setLoadingPsychology(false);
+						}
+					} else {
+						setLoadingPsychology(false);
 					}
-				} catch (error) {
-					console.error('Failed to load psychology report', error);
-					setPsychologyData(null);
+				} else {
+					setLoadingReport(false);
+					setLoadingStrengthConditioning(false);
+					setLoadingPsychology(false);
 				}
-			};
-			loadPsychologyData();
-		}
+			} catch (error) {
+				console.error('Failed to load patient report:', error);
+				setLoadingReport(false);
+				setLoadingStrengthConditioning(false);
+				setLoadingPsychology(false);
+			}
+		};
+
+		loadData();
 	}, [isOpen, patientId, activeReportTab]);
 
 	// Load clinical team members
@@ -1334,7 +1507,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	};
 
 	const renderRomTable = (joint: string, data: any) => {
-		if (!ROM_HAS_SIDE[joint] && joint !== 'Neck') {
+		if (!ROM_HAS_SIDE[joint] && joint !== 'Cervical Spine') {
 			return (
 				<div key={joint} className="relative mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
 					<button
@@ -1354,7 +1527,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-slate-200 bg-white">
-							{ROM_MOTIONS[joint].map(({ motion }) => (
+							{(ROM_MOTIONS[joint] ?? []).map(({ motion }) => (
 								<tr key={motion}>
 									<td className="px-3 py-2 text-slate-700">{motion}</td>
 									<td className="px-3 py-2">
@@ -1375,14 +1548,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			);
 		}
 
-		if (joint === 'Neck') {
+		if (joint === 'Cervical Spine') {
 			return (
 				<div key={joint} className="relative mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
 					<button
 						type="button"
 						onClick={() => handleRemoveRomJoint(joint)}
 						className="absolute right-3 top-3 text-slate-400 transition hover:text-rose-500"
-						aria-label="Remove Neck"
+						aria-label="Remove Cervical Spine"
 					>
 						<i className="fas fa-times" />
 					</button>
@@ -1395,7 +1568,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-slate-200 bg-white">
-							{ROM_MOTIONS[joint].map(({ motion }) => {
+							{(ROM_MOTIONS[joint] ?? []).map(({ motion }) => {
 								if (motion.includes('Lateral Flexion')) {
 									const side = motion.includes('Left') ? 'left' : 'right';
 									const baseMotion = 'Lateral Flexion';
@@ -1465,7 +1638,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						</tr>
 					</thead>
 					<tbody className="divide-y divide-slate-200 bg-white">
-						{ROM_MOTIONS[joint].map(({ motion }) => (
+						{(ROM_MOTIONS[joint] ?? []).map(({ motion }) => (
 							<tr key={motion}>
 								<td className="px-3 py-2 text-slate-700">{motion}</td>
 								<td className="px-3 py-2">
@@ -1844,6 +2017,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						createdAt: serverTimestamp(),
 					});
 					await addDoc(collection(db, 'strengthConditioningReportVersions'), versionData);
+					// Update hasStrengthConditioningVersions since we just saved a version
+					setHasStrengthConditioningVersions(true);
 				} catch (versionError: any) {
 					// If orderBy fails (missing index), try without it
 					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
@@ -1869,6 +2044,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								createdAt: serverTimestamp(),
 							});
 							await addDoc(collection(db, 'strengthConditioningReportVersions'), versionDataRetry);
+							// Update hasStrengthConditioningVersions since we just saved a version
+							setHasStrengthConditioningVersions(true);
 						} catch (retryError) {
 							console.warn('Failed to save strength conditioning version history', retryError);
 							// Continue without version history
@@ -1986,8 +2163,118 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			}
 			const docRef = doc(db, 'psychologyReports', documentIdToUse);
 			await setDoc(docRef, dataToSave, { merge: true });
+			
+			// Save psychology report version
+			try {
+				// First, renumber versions sequentially if needed
+				await renumberVersionsSequentially('psychologyReportVersions', reportPatientData.patientId);
+				
+				// Get the next version number
+				let versionsQuery = query(
+					collection(db, 'psychologyReportVersions'),
+					where('patientId', '==', reportPatientData.patientId),
+					orderBy('version', 'desc')
+				);
+				let versionsSnapshot: QuerySnapshot;
+				try {
+					versionsSnapshot = await getDocs(versionsQuery);
+				} catch (queryError: any) {
+					// If orderBy fails, try without it
+					if (queryError.code === 'failed-precondition' || queryError.message?.includes('index')) {
+						const fallbackQuery = query(
+							collection(db, 'psychologyReportVersions'),
+							where('patientId', '==', reportPatientData.patientId)
+						);
+						const fallbackSnapshot = await getDocs(fallbackQuery);
+						const versions = fallbackSnapshot.docs.map(doc => ({
+							version: (doc.data().version as number) || 0,
+							doc: doc,
+						}));
+						versions.sort((a, b) => b.version - a.version);
+						// Use the sorted docs
+						versionsSnapshot = {
+							...fallbackSnapshot,
+							docs: versions.map(v => v.doc)
+						} as QuerySnapshot;
+					} else {
+						throw queryError;
+					}
+				}
+				const nextVersion = versionsSnapshot.docs.length > 0 
+					? (versionsSnapshot.docs[0].data().version as number) + 1 
+					: 1;
+
+				await addDoc(collection(db, 'psychologyReportVersions'), {
+					patientId: reportPatientData.patientId,
+					patientName: reportPatientData.name,
+					version: nextVersion,
+					reportType: 'psychology',
+					reportData: removeUndefined(dataToSave),
+					createdBy: user?.displayName || user?.email || 'Unknown',
+					createdById: user?.uid || '',
+					createdAt: serverTimestamp(),
+				});
+				// Update hasPsychologyVersions since we just saved a version
+				setHasPsychologyVersions(true);
+			} catch (versionError: any) {
+				console.error('Failed to save psychology report version:', versionError);
+				// Don't block the main save operation if version saving fails
+			}
+
+			// Handle session completion if checkbox is checked
+			if (psychologySessionCompleted && reportPatientData) {
+				try {
+					const patientRef = doc(db, 'patients', documentIdToUse);
+					const totalSessionsValue =
+						typeof reportPatientData.totalSessionsRequired === 'number'
+							? reportPatientData.totalSessionsRequired
+							: null;
+
+					const baseRemaining =
+						typeof reportPatientData.remainingSessions === 'number'
+							? reportPatientData.remainingSessions
+							: totalSessionsValue !== null
+								? totalSessionsValue
+								: null;
+
+					if (baseRemaining !== null && baseRemaining > 0) {
+						const newRemainingSessions = Math.max(0, baseRemaining - 1);
+
+						await updateDoc(patientRef, {
+							remainingSessions: newRemainingSessions,
+							updatedAt: serverTimestamp(),
+						});
+
+						setReportPatientData((prev: any) => prev ? { ...prev, remainingSessions: newRemainingSessions } : null);
+
+						const patientForProgress: PatientRecordFull = {
+							...reportPatientData,
+							id: documentIdToUse,
+							totalSessionsRequired: totalSessionsValue ?? reportPatientData.totalSessionsRequired,
+							remainingSessions: newRemainingSessions,
+						};
+
+						const consultationDate = psychologyFormData.dateOfAssessment || reportPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
+						await markAppointmentCompletedForReport(patientForProgress, consultationDate, false);
+
+						const sessionProgress = await refreshPatientSessionProgress(
+							patientForProgress,
+							totalSessionsValue ?? null
+						);
+
+						if (sessionProgress) {
+							setReportPatientData((prev: any) => (prev ? { ...prev, ...sessionProgress } : null));
+						}
+					}
+				} catch (sessionError) {
+					console.error('Failed to handle session completion for psychology report', sessionError);
+				}
+			}
+
+			setPsychologySessionCompleted(false);
 			setSavedPsychologyMessage(true);
 			setTimeout(() => setSavedPsychologyMessage(false), 3000);
+			setIsEditingLoadedPsychologyVersion(false); // After save, no longer "editing loaded version"
 		} catch (error) {
 			console.error('Failed to save psychology report:', error);
 			alert('Failed to save psychology report. Please try again.');
@@ -2322,12 +2609,37 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						sessionNum = 1;
 					}
 					
-					const versionsQuery = query(
+					// Query only physiotherapy versions to get the next version number
+					let versionsQuery = query(
 						collection(db, 'reportVersions'),
 						where('patientId', '==', reportPatientData.patientId),
+						where('reportType', '==', 'physiotherapy'),
 						orderBy('version', 'desc')
 					);
-					const versionsSnapshot = await getDocs(versionsQuery);
+					let versionsSnapshot;
+					try {
+						versionsSnapshot = await getDocs(versionsQuery);
+					} catch (queryError: any) {
+						// If reportType filter fails, try without it and filter in memory
+						if (queryError.code === 'failed-precondition' || queryError.message?.includes('index')) {
+							const fallbackQuery = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', reportPatientData.patientId),
+								orderBy('version', 'desc')
+							);
+							versionsSnapshot = await getDocs(fallbackQuery);
+							// Filter by reportType in memory
+							versionsSnapshot = {
+								...versionsSnapshot,
+								docs: versionsSnapshot.docs.filter(doc => {
+									const data = doc.data();
+									return data.reportType === 'physiotherapy' || !data.reportType;
+								})
+							} as any;
+						} else {
+							throw queryError;
+						}
+					}
 					const nextVersion = versionsSnapshot.docs.length > 0 
 						? (versionsSnapshot.docs[0].data().version as number) + 1 
 						: 1;
@@ -2337,29 +2649,44 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						patientName: reportPatientData.name,
 						version: nextVersion,
 						sessionNumber: sessionNum, // Add session number
+						reportType: 'physiotherapy', // Add report type to distinguish from psychology
 						reportData: removeUndefined(currentReportData),
 						createdBy: user?.displayName || user?.email || 'Unknown',
 						createdById: user?.uid || '',
 						createdAt: serverTimestamp(),
 					});
+					// Update hasPhysiotherapyVersions since we just saved a version
+					setHasPhysiotherapyVersions(true);
 				} catch (versionError: any) {
 					// If orderBy fails (missing index), try without it
 					if (versionError.code === 'failed-precondition' || versionError.message?.includes('index')) {
 						console.warn('Report version index not found, retrying without orderBy', versionError);
 						try {
-							// Retry query without orderBy
-							const versionsQueryWithoutOrder = query(
+							// Retry query without orderBy, but still filter by reportType
+							let versionsQueryWithoutOrder = query(
 								collection(db, 'reportVersions'),
 								where('patientId', '==', reportPatientData.patientId)
 							);
+							
+							// Try to add reportType filter
+							try {
+								versionsQueryWithoutOrder = query(versionsQueryWithoutOrder, where('reportType', '==', 'physiotherapy'));
+							} catch {
+								// If reportType filter fails, filter in memory
+							}
+							
 							const versionsSnapshot = await getDocs(versionsQueryWithoutOrder);
 							
-							// Manually sort by version number
-							const versions = versionsSnapshot.docs.map(doc => ({
+							// Manually sort by version number and filter by reportType if needed
+							let versions = versionsSnapshot.docs.map(doc => ({
 								id: doc.id,
 								version: (doc.data().version as number) || 0,
 								data: doc.data(),
+								reportType: doc.data().reportType as string | undefined,
 							}));
+							
+							// Filter by reportType in memory if not already filtered
+							versions = versions.filter(v => v.reportType === 'physiotherapy' || (!v.reportType && v.reportType === undefined));
 							versions.sort((a, b) => b.version - a.version);
 							
 							const nextVersion = versions.length > 0 
@@ -2382,11 +2709,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								patientName: reportPatientData.name,
 								version: nextVersion,
 								sessionNumber: sessionNum, // Add session number
+								reportType: 'physiotherapy', // Add report type to distinguish from psychology
 								reportData: removeUndefined(currentReportData),
 								createdBy: user?.displayName || user?.email || 'Unknown',
 								createdById: user?.uid || '',
 								createdAt: serverTimestamp(),
 							});
+							// Update hasPhysiotherapyVersions since we just saved a version
+							setHasPhysiotherapyVersions(true);
 						} catch (retryError: any) {
 							console.error('Failed to save report version even with fallback:', retryError);
 							// Still continue - don't block the main save operation
@@ -2401,23 +2731,24 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			await updateDoc(patientRef, reportData);
 			setReportPatientData((prev: any) => prev ? { ...prev, ...reportData } : null);
 			
-			const patientForProgress: PatientRecordFull = {
-				...reportPatientData,
-				id: patientDocIdToUse, // Add the document ID which is required by refreshPatientSessionProgress
-				totalSessionsRequired: totalSessionsValue !== undefined && totalSessionsValue !== null
-					? totalSessionsValue
-					: reportPatientData.totalSessionsRequired,
-				remainingSessions: sessionCompleted && reportData.remainingSessions !== undefined 
-					? reportData.remainingSessions as number
-					: reportPatientData.remainingSessions,
-			};
-			
-			await markAppointmentCompletedForReport(patientForProgress, consultationDate, isExtraTreatment);
-			
-			const sessionProgress = await refreshPatientSessionProgress(
-				patientForProgress,
-				totalSessionsValue ?? null
-			);
+			let sessionProgress: Partial<PatientRecordFull> | null | undefined;
+			if (sessionCompleted) {
+				const patientForProgress: PatientRecordFull = {
+					...reportPatientData,
+					id: patientDocIdToUse, // Add the document ID which is required by refreshPatientSessionProgress
+					totalSessionsRequired: totalSessionsValue !== undefined && totalSessionsValue !== null
+						? totalSessionsValue
+						: reportPatientData.totalSessionsRequired,
+					remainingSessions: reportData.remainingSessions !== undefined
+						? reportData.remainingSessions as number
+						: reportPatientData.remainingSessions,
+				};
+				await markAppointmentCompletedForReport(patientForProgress, consultationDate, isExtraTreatment);
+				sessionProgress = await refreshPatientSessionProgress(
+					patientForProgress,
+					totalSessionsValue ?? null
+				);
+			}
 
 			const finalRemainingSessions = sessionCompleted && reportData.remainingSessions !== undefined
 				? reportData.remainingSessions as number
@@ -2497,7 +2828,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	};
 
 	// Helper function to renumber versions sequentially
-	const renumberVersionsSequentially = async (collectionName: string, patientId: string): Promise<void> => {
+	const renumberVersionsSequentially = async (collectionName: string, patientId: string, reportType?: string): Promise<void> => {
 		try {
 			// Try with orderBy first
 			try {
@@ -2658,35 +2989,145 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						setVersionHistory([]);
 					}
 				}
-			} else {
-				// Regular report version history
+			} else if (activeReportTab === 'psychology') {
+				// Psychology report version history - use psychologyReportVersions collection
 				if (!reportPatientData?.patientId) {
 					setVersionHistory([]);
 					return;
 				}
-				// First, renumber versions sequentially if needed
-				await renumberVersionsSequentially('reportVersions', reportPatientData.patientId);
+				try {
+					// First, renumber versions sequentially if needed
+					await renumberVersionsSequentially('psychologyReportVersions', reportPatientData.patientId);
+					
+					// Then load the renumbered versions
+					const versionsQuery = query(
+						collection(db, 'psychologyReportVersions'),
+						where('patientId', '==', reportPatientData.patientId),
+						orderBy('version', 'desc')
+					);
+					const versionsSnapshot = await getDocs(versionsQuery);
+					const versions = versionsSnapshot.docs.map(doc => {
+						const data = doc.data();
+						const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+						return {
+							id: doc.id,
+							version: data.version as number,
+							createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+							createdBy: (data.createdBy as string) || 'Unknown',
+							data: (data.reportData as any) || {},
+							isPsychology: true,
+						};
+					});
+					setVersionHistory(versions);
+				} catch (psychError: any) {
+					// If orderBy fails (missing index), try without it
+					if (psychError.code === 'failed-precondition' || psychError.message?.includes('index')) {
+						try {
+							await renumberVersionsSequentially('psychologyReportVersions', reportPatientData.patientId);
+							const versionsQuery = query(
+								collection(db, 'psychologyReportVersions'),
+								where('patientId', '==', reportPatientData.patientId)
+							);
+							const versionsSnapshot = await getDocs(versionsQuery);
+							const versions = versionsSnapshot.docs.map(doc => {
+								const data = doc.data();
+								const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+								return {
+									id: doc.id,
+									version: data.version as number,
+									createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+									createdBy: (data.createdBy as string) || 'Unknown',
+									data: (data.reportData as any) || {},
+									isPsychology: true,
+								};
+							});
+							versions.sort((a, b) => b.version - a.version);
+							setVersionHistory(versions);
+						} catch (retryError: any) {
+							console.error('Psychology version history error:', retryError);
+							if (retryError.code !== 'failed-precondition' && !retryError.message?.includes('index')) {
+								console.warn('Failed to load psychology version history:', retryError);
+							}
+							setVersionHistory([]);
+						}
+					} else {
+						console.error('Psychology version history error:', psychError);
+						if (psychError.code !== 'permission-denied') {
+							console.warn('Failed to load psychology version history:', psychError);
+						}
+						setVersionHistory([]);
+					}
+				}
+			} else {
+				// Physiotherapy report version history - filter by reportType
+				if (!reportPatientData?.patientId) {
+					setVersionHistory([]);
+					return;
+				}
+				// First, renumber versions sequentially if needed (only for physiotherapy)
+				await renumberVersionsSequentially('reportVersions', reportPatientData.patientId, 'physiotherapy');
 				
-				// Then load the renumbered versions
-				const versionsQuery = query(
-					collection(db, 'reportVersions'),
-					where('patientId', '==', reportPatientData.patientId),
-					orderBy('version', 'desc')
-				);
-				const versionsSnapshot = await getDocs(versionsQuery);
-				const versions = versionsSnapshot.docs.map(doc => {
-					const data = doc.data();
-					const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
-					return {
-						id: doc.id,
-						version: data.version as number,
-						createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
-						createdBy: (data.createdBy as string) || 'Unknown',
-						data: (data.reportData as Partial<PatientRecordFull>) || {},
-						isStrengthConditioning: false,
-					};
-				});
-				setVersionHistory(versions);
+				// Then load the renumbered versions - filter by reportType = 'physiotherapy'
+				try {
+					const versionsQuery = query(
+						collection(db, 'reportVersions'),
+						where('patientId', '==', reportPatientData.patientId),
+						where('reportType', '==', 'physiotherapy'),
+						orderBy('version', 'desc')
+					);
+					const versionsSnapshot = await getDocs(versionsQuery);
+					const versions = versionsSnapshot.docs.map(doc => {
+						const data = doc.data();
+						const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+						return {
+							id: doc.id,
+							version: data.version as number,
+							createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+							createdBy: (data.createdBy as string) || 'Unknown',
+							data: (data.reportData as Partial<PatientRecordFull>) || {},
+							isStrengthConditioning: false,
+							isPsychology: false,
+						};
+					});
+					setVersionHistory(versions);
+				} catch (error: any) {
+					// If orderBy fails or reportType filter fails, try without reportType filter (for backward compatibility)
+					if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+						try {
+							await renumberVersionsSequentially('reportVersions', reportPatientData.patientId, 'physiotherapy');
+							const versionsQuery = query(
+								collection(db, 'reportVersions'),
+								where('patientId', '==', reportPatientData.patientId)
+							);
+							const versionsSnapshot = await getDocs(versionsQuery);
+							// Filter by reportType in memory for backward compatibility
+							const versions = versionsSnapshot.docs
+								.map(doc => {
+									const data = doc.data();
+									const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
+									return {
+										id: doc.id,
+										version: data.version as number,
+										createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
+										createdBy: (data.createdBy as string) || 'Unknown',
+										data: (data.reportData as Partial<PatientRecordFull>) || {},
+										isStrengthConditioning: false,
+										isPsychology: false,
+										reportType: data.reportType || 'physiotherapy', // Default to physiotherapy for old records
+									};
+								})
+								.filter(v => v.reportType === 'physiotherapy' || !v.reportType); // Include old records without reportType
+							versions.sort((a, b) => b.version - a.version);
+							setVersionHistory(versions);
+						} catch (retryError: any) {
+							console.error('Failed to load physiotherapy version history:', retryError);
+							setVersionHistory([]);
+						}
+					} else {
+						console.error('Failed to load physiotherapy version history:', error);
+						setVersionHistory([]);
+					}
+				}
 			}
 		} catch (error) {
 			console.error('Failed to load report history', error);
@@ -2719,6 +3160,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			// Determine which collection to delete from based on report type
 			const collectionName = activeReportTab === 'strength-conditioning' 
 				? 'strengthConditioningReportVersions' 
+				: activeReportTab === 'psychology'
+				? 'psychologyReportVersions'
 				: 'reportVersions';
 			
 			const versionRef = doc(db, collectionName, version.id);
@@ -2726,16 +3169,35 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			
 			// Get all remaining versions and renumber them sequentially
 			try {
-				const versionsQuery = query(
+				let versionsQuery = query(
 					collection(db, collectionName),
-					where('patientId', '==', reportPatientData?.patientId),
-					orderBy('version', 'asc')
+					where('patientId', '==', reportPatientData?.patientId)
 				);
+				
+				// Add reportType filter for physiotherapy reports
+				if (activeReportTab === 'report' && collectionName === 'reportVersions') {
+					try {
+						versionsQuery = query(versionsQuery, where('reportType', '==', 'physiotherapy'));
+					} catch {
+						// If reportType filter fails, filter in memory
+					}
+				}
+				
+				versionsQuery = query(versionsQuery, orderBy('version', 'asc'));
 				const versionsSnapshot = await getDocs(versionsQuery);
 				
-				if (versionsSnapshot.docs.length > 0) {
+				// Filter by reportType in memory if needed (for backward compatibility)
+				let versionsToRenumber = versionsSnapshot.docs;
+				if (activeReportTab === 'report' && collectionName === 'reportVersions') {
+					versionsToRenumber = versionsSnapshot.docs.filter(docSnap => {
+						const data = docSnap.data();
+						return data.reportType === 'physiotherapy' || !data.reportType;
+					});
+				}
+				
+				if (versionsToRenumber.length > 0) {
 					const batch = writeBatch(db);
-					versionsSnapshot.docs.forEach((docSnap, index) => {
+					versionsToRenumber.forEach((docSnap, index) => {
 						const newVersionNumber = index + 1;
 						const currentVersion = docSnap.data().version as number;
 						if (currentVersion !== newVersionNumber) {
@@ -2748,16 +3210,34 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				// If orderBy fails, try without it and sort manually
 				if (renumberError.code === 'failed-precondition' || renumberError.message?.includes('index')) {
 					try {
-						const versionsQuery = query(
+						let versionsQuery = query(
 							collection(db, collectionName),
 							where('patientId', '==', reportPatientData?.patientId)
 						);
+						
+						// Add reportType filter for physiotherapy reports
+						if (activeReportTab === 'report' && collectionName === 'reportVersions') {
+							try {
+								versionsQuery = query(versionsQuery, where('reportType', '==', 'physiotherapy'));
+							} catch {
+								// If reportType filter fails, filter in memory
+							}
+						}
+						
 						const versionsSnapshot = await getDocs(versionsQuery);
-						const versions = versionsSnapshot.docs.map(docSnap => ({
+						let versions = versionsSnapshot.docs.map(docSnap => ({
 							id: docSnap.id,
 							ref: docSnap.ref,
 							version: docSnap.data().version as number,
-						})).sort((a, b) => a.version - b.version);
+							reportType: docSnap.data().reportType as string | undefined,
+						}));
+						
+						// Filter by reportType in memory if needed
+						if (activeReportTab === 'report' && collectionName === 'reportVersions') {
+							versions = versions.filter(v => v.reportType === 'physiotherapy' || !v.reportType);
+						}
+						
+						versions.sort((a, b) => a.version - b.version);
 						
 						if (versions.length > 0) {
 							const batch = writeBatch(db);
@@ -2781,6 +3261,55 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			
 			// Reload version history
 			await loadVersionHistory();
+			
+			// Update version flags after deletion
+			if (reportPatientData?.patientId) {
+				if (activeReportTab === 'psychology') {
+					const versionsQuery = query(
+						collection(db, 'psychologyReportVersions'),
+						where('patientId', '==', reportPatientData.patientId)
+					);
+					getDocs(versionsQuery).then((snapshot) => {
+						setHasPsychologyVersions(snapshot.docs.length > 0);
+					}).catch((err) => {
+						console.error('Error checking psychology report versions after delete:', err);
+					});
+				} else if (activeReportTab === 'strength-conditioning') {
+					const versionsQuery = query(
+						collection(db, 'strengthConditioningReportVersions'),
+						where('patientId', '==', reportPatientData.patientId)
+					);
+					getDocs(versionsQuery).then((snapshot) => {
+						setHasStrengthConditioningVersions(snapshot.docs.length > 0);
+					}).catch((err) => {
+						console.error('Error checking strength & conditioning report versions after delete:', err);
+					});
+				} else if (activeReportTab === 'report') {
+					let physioVersionsQuery = query(
+						collection(db, 'reportVersions'),
+						where('patientId', '==', reportPatientData.patientId),
+						where('reportType', '==', 'physiotherapy')
+					);
+					getDocs(physioVersionsQuery).then((snapshot) => {
+						setHasPhysiotherapyVersions(snapshot.docs.length > 0);
+					}).catch(() => {
+						// If reportType filter fails, try without it
+						const fallbackQuery = query(
+							collection(db, 'reportVersions'),
+							where('patientId', '==', reportPatientData.patientId)
+						);
+						getDocs(fallbackQuery).then((snapshot) => {
+							const hasVersions = snapshot.docs.some(doc => {
+								const data = doc.data();
+								return data.reportType === 'physiotherapy' || !data.reportType;
+							});
+							setHasPhysiotherapyVersions(hasVersions);
+						}).catch((err) => {
+							console.error('Error checking physiotherapy report versions after delete:', err);
+						});
+					});
+				}
+			}
 		} catch (error) {
 			console.error('Failed to delete version', error);
 			alert(`Failed to delete version: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -2793,11 +3322,34 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			return;
 		}
 
+		// Determine which save function to use based on report type
+		if (version.isStrengthConditioning || activeReportTab === 'strength-conditioning') {
+			// Handle strength conditioning restore
+			if (strengthConditioningFormData && Object.keys(strengthConditioningFormData).length > 0) {
+				// Save current state first
+				await handleSaveStrengthConditioning();
+			}
+			setStrengthConditioningFormData(version.data as StrengthConditioningData);
+			alert(`Strength & Conditioning Report #${version.version} has been loaded successfully.`);
+			return;
+		}
+		
+		if (version.isPsychology || activeReportTab === 'psychology') {
+			// Handle psychology restore
+			if (psychologyFormData && Object.keys(psychologyFormData).length > 0) {
+				// Save current state first
+				await handleSavePsychology();
+			}
+			setPsychologyFormData(version.data as any);
+			alert(`Psychology Report #${version.version} has been loaded successfully.`);
+			return;
+		}
+
 		setSaving(true);
 		try {
 			const patientRef = doc(db, 'patients', reportPatientData.id);
 
-			// Create a report snapshot of current data before loading previous report
+			// Create a report snapshot of current data before loading previous report (physiotherapy only)
 			const currentReportData: Partial<PatientRecordFull> = {
 				history: reportPatientData.history || (reportPatientData.presentHistory || '') + (reportPatientData.pastHistory ? '\n' + reportPatientData.pastHistory : ''),
 				med_xray: reportPatientData.med_xray,
@@ -2882,14 +3434,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				!(typeof val === 'object' && Object.keys(val).length === 0)
 			);
 
-			// Save current state as report before loading previous report
+			// Save current state as report before loading previous report (physiotherapy only)
 			if (hasCurrentData) {
-				const versionsQuery = query(
+				// Query only physiotherapy versions to get the next version number
+				let versionsQuery = query(
 					collection(db, 'reportVersions'),
 					where('patientId', '==', reportPatientData.patientId),
+					where('reportType', '==', 'physiotherapy'),
 					orderBy('version', 'desc')
 				);
-				const versionsSnapshot = await getDocs(versionsQuery);
+				let versionsSnapshot;
+				try {
+					versionsSnapshot = await getDocs(versionsQuery);
+				} catch (queryError: any) {
+					// If reportType filter fails, try without it and filter in memory
+					if (queryError.code === 'failed-precondition' || queryError.message?.includes('index')) {
+						const fallbackQuery = query(
+							collection(db, 'reportVersions'),
+							where('patientId', '==', reportPatientData.patientId),
+							orderBy('version', 'desc')
+						);
+						versionsSnapshot = await getDocs(fallbackQuery);
+						// Filter by reportType in memory
+						versionsSnapshot = {
+							...versionsSnapshot,
+							docs: versionsSnapshot.docs.filter(doc => {
+								const data = doc.data();
+								return data.reportType === 'physiotherapy' || !data.reportType;
+							})
+						} as any;
+					} else {
+						throw queryError;
+					}
+				}
 				const nextVersion = versionsSnapshot.docs.length > 0 
 					? (versionsSnapshot.docs[0].data().version as number) + 1 
 					: 1;
@@ -2898,6 +3475,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					patientId: reportPatientData.patientId,
 					patientName: reportPatientData.name,
 					version: nextVersion,
+					reportType: 'physiotherapy',
 					reportData: removeUndefined(currentReportData),
 					createdBy: user?.displayName || user?.email || 'Unknown',
 					createdById: user?.uid || '',
@@ -2906,11 +3484,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				});
 			}
 
-			// Load the version data into the form
-			// Only load if it's a physiotherapy report (not strength conditioning)
-			if (!version.isStrengthConditioning) {
-				setFormData(version.data as Partial<PatientRecordFull>);
-			}
+			// Load the version data into the form (physiotherapy only)
+			setFormData(version.data as Partial<PatientRecordFull>);
 			
 			// Update the patient document with restored data
 			const reportData: Record<string, any> = {
@@ -2972,7 +3547,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	};
 
 	// Field change handlers for report form
-	const handleFieldChange = (field: keyof PatientRecordFull, value: any) => {
+	const handleFieldChange = (field: keyof PatientRecordFull | string, value: any) => {
 		if (!editable) return;
 		setFormData(prev => ({ ...prev, [field]: value }));
 		
@@ -2986,26 +3561,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				const firstDate = new Date(firstReportDate).toISOString().split('T')[0];
 				
 				if (selectedDate === firstDate) {
-					// Switch to Session 1 edit mode
-					setIsEditingSession1(true);
-					setSessionNumber(1);
+					// Switch to Session 1 edit mode only if no versions exist
+					// If versions exist, this is still a follow-up session
+					if (!hasPhysiotherapyVersions) {
+						setIsEditingSession1(true);
+						setSessionNumber(1);
+					} else {
+						setIsEditingSession1(false);
+					}
 					// Load the first report data if available
 					if (reportPatientData && reportPatientData.dateOfConsultation === firstDate) {
 						// Already have the data, just switch mode
 					}
 				} else {
 					// Not Session 1, use calculated session number
-					setIsEditingSession1(false);
+					// If versions exist, this is a follow-up
+					if (hasPhysiotherapyVersions) {
+						setIsEditingSession1(false);
+					}
 				}
 			} else if (!firstReportDate) {
-				// No first report exists yet, this will be Session 1
-				setIsEditingSession1(true);
-				setSessionNumber(1);
+				// No first report exists yet
+				// If versions exist, this is a follow-up, otherwise it's Session 1
+				if (hasPhysiotherapyVersions) {
+					setIsEditingSession1(false);
+				} else {
+					setIsEditingSession1(true);
+					setSessionNumber(1);
+				}
 			}
 		}
 	};
 
-	const handleCheckboxChange = (field: keyof PatientRecordFull, checked: boolean) => {
+	const handleCheckboxChange = (field: keyof PatientRecordFull | string, checked: boolean) => {
 		if (!editable) return;
 		setFormData(prev => ({ ...prev, [field]: checked }));
 	};
@@ -3052,6 +3640,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								onClick={() => {
 									setActiveReportTab('report');
 									setSessionCompleted(false);
+									setIsEditingLoadedPsychologyVersion(false);
 								}}
 								className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
 									activeReportTab === 'report'
@@ -3069,6 +3658,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								onClick={() => {
 									setActiveReportTab('strength-conditioning');
 									setSessionCompleted(false);
+									setIsEditingLoadedPsychologyVersion(false);
 								}}
 								className={`px-4 py-3 text-sm font-medium transition border-b-2 ${
 									activeReportTab === 'strength-conditioning'
@@ -3303,13 +3893,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 							{/* Date of Consultation - Always visible */}
 							<div className="mb-8 border-b border-slate-200 pb-4">
-								<div className="flex items-center justify-between mb-4">
+								<div className="mb-4">
 									<h3 className="text-sm font-semibold text-sky-600">Report Date</h3>
-									{sessionNumber && (
-										<div className="px-3 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-semibold">
-											{isEditingSession1 ? 'Session 1 - Initial Assessment' : `Session ${sessionNumber} - Follow-up Assessment`}
-										</div>
-									)}
 								</div>
 								<div className="grid gap-4 sm:grid-cols-2">
 									<div>
@@ -3329,8 +3914,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</div>
 							</div>
 
-							{/* Show Follow-up form only if NOT editing Session 1 AND it's a subsequent date */}
-							{!isEditingSession1 && (isSubsequentDatePhysio || (sessionNumber && sessionNumber > 1)) ? (
+							{/* Show Follow-up form only if NOT editing Session 1 AND versions exist */}
+							{!isEditingSession1 && hasPhysiotherapyVersions ? (
 								<>
 									{/* Simplified Follow-Up Form for Subsequent Dates */}
 									<div className="mb-8">
@@ -3384,575 +3969,288 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								<h3 className="mb-4 text-sm font-semibold text-sky-600">Assessment</h3>
 								<div className="grid gap-4 sm:grid-cols-2">
 									<div>
-										<label className="block text-xs font-medium text-slate-500">Referred By</label>
+										<label className="block text-xs font-medium text-slate-500">Referred by</label>
 										<input
 											type="text"
 											value={formData.referredBy || ''}
 											onChange={e => handleFieldChange('referredBy', e.target.value)}
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Enter referring doctor or source"
 										/>
 									</div>
 									<div>
-										<label className="block text-xs font-medium text-slate-500">Chief Complaint</label>
+										<label className="block text-xs font-medium text-slate-500">Chief complaints</label>
 										<textarea
 											value={formData.chiefComplaint || ''}
 											onChange={e => handleFieldChange('chiefComplaint', e.target.value)}
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={2}
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">History</label>
-										<textarea
-											value={formData.history || ''}
-											onChange={e => handleFieldChange('history', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 											rows={3}
+											placeholder="Enter chief complaints"
 										/>
 									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Medical History</label>
-										<div className="mt-2 space-y-2">
-											<label className="flex items-center gap-2 text-sm text-slate-700">
+								</div>
+							</div>
+
+							{/* 1. Subjective Assessment - History of Present Illness (HOPI) */}
+							<div className="mb-8">
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">1. Subjective Assessment</h3>
+								<div>
+									<label className="block text-xs font-medium text-slate-500 mb-2">History of Present Illness (HOPI)</label>
+									<p className="text-xs text-slate-500 mb-2">Please describe the history of the present condition detailedly.</p>
+									<textarea
+										value={formData.historyOfPresentIllness || formData.history || ''}
+										onChange={e => handleFieldChange('historyOfPresentIllness', e.target.value)}
+										className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										rows={6}
+										placeholder="Enter detailed history of present illness..."
+									/>
+								</div>
+							</div>
+
+							{/* 2. Pain Assessment Section */}
+							<div className="mb-8">
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">2. Pain Assessment</h3>
+								
+								{/* Pain Mapping System */}
+								<div className="mb-4">
+									<label className="block text-xs font-medium text-slate-500 mb-2">Pain Mapping System</label>
+									<p className="text-xs text-slate-500 mb-2">Mark the area of pain:</p>
+									<input
+										type="text"
+										value={formData.painLocation || formData.siteSide || ''}
+										onChange={e => handleFieldChange('painLocation', e.target.value)}
+										className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+										placeholder="Enter location description of pain"
+									/>
+								</div>
+
+								{/* Pain Characteristics */}
+								<div className="mb-4">
+									<label className="block text-xs font-medium text-slate-500 mb-2">Pain Characteristics</label>
+									<div className="grid gap-4 sm:grid-cols-2">
+										<div>
+											<label className="block text-xs font-medium text-slate-500 mb-1">Type of Pain</label>
+											<select
+												value={formData.painType || ''}
+												onChange={e => handleFieldChange('painType', e.target.value)}
+												className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											>
+												<option value="">Select type</option>
+												<option value="Sharp">Sharp</option>
+												<option value="Dull">Dull</option>
+												<option value="Throbbing">Throbbing</option>
+												<option value="Burning">Burning</option>
+												<option value="Aching">Aching</option>
+												<option value="Radiating">Radiating</option>
+												<option value="Numbness">Numbness</option>
+												<option value="Other">Other</option>
+											</select>
+										</div>
+										<div>
+											<label className="block text-xs font-medium text-slate-500 mb-2">VAS Scale (Visual Analog Scale)</label>
+											<div className="flex items-center gap-2">
+												<span className="text-xs font-semibold text-slate-500">0</span>
 												<input
-													type="checkbox"
-													checked={formData.med_xray || false}
-													onChange={e => handleCheckboxChange('med_xray', e.target.checked)}
-													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+													type="range"
+													min="0"
+													max="10"
+													value={vasValue}
+													onChange={e => handleFieldChange('vasScale', e.target.value)}
+													className="flex-1 h-2 bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 rounded-lg appearance-none cursor-pointer"
 												/>
-												X RAYS
-											</label>
-											<label className="flex items-center gap-2 text-sm text-slate-700">
-												<input
-													type="checkbox"
-													checked={formData.med_mri || false}
-													onChange={e => handleCheckboxChange('med_mri', e.target.checked)}
-													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
-												/>
-												MRI
-											</label>
-											<label className="flex items-center gap-2 text-sm text-slate-700">
-												<input
-													type="checkbox"
-													checked={formData.med_report || false}
-													onChange={e => handleCheckboxChange('med_report', e.target.checked)}
-													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
-												/>
-												Reports
-											</label>
-											<label className="flex items-center gap-2 text-sm text-slate-700">
-												<input
-													type="checkbox"
-													checked={formData.med_ct || false}
-													onChange={e => handleCheckboxChange('med_ct', e.target.checked)}
-													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
-												/>
-												CT Scans
-											</label>
+												<span className="text-xs font-semibold text-slate-500">10</span>
+											</div>
+											<div className="mt-2 text-center">
+												<span className="text-xs text-slate-600 font-medium">{vasValue}/10 {vasValue === 0 ? '(No Pain)' : vasValue === 10 ? '(Worst Pain)' : ''}</span>
+											</div>
+										</div>
+										<div>
+											<label className="block text-xs font-medium text-slate-500 mb-1">Aggravating Factors</label>
+											<p className="text-xs text-slate-500 mb-1">What makes the pain worse?</p>
+											<input
+												type="text"
+												value={formData.aggravatingFactor || ''}
+												onChange={e => handleFieldChange('aggravatingFactor', e.target.value)}
+												className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												placeholder="Enter aggravating factors"
+											/>
+										</div>
+										<div>
+											<label className="block text-xs font-medium text-slate-500 mb-1">Relieving Factors</label>
+											<p className="text-xs text-slate-500 mb-1">What makes the pain better?</p>
+											<input
+												type="text"
+												value={formData.relievingFactor || ''}
+												onChange={e => handleFieldChange('relievingFactor', e.target.value)}
+												className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												placeholder="Enter relieving factors"
+											/>
 										</div>
 									</div>
+								</div>
+							</div>
+
+							{/* 3. Medical History */}
+							<div className="mb-8">
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">3. Medical History</h3>
+								<div className="grid gap-4 sm:grid-cols-1">
 									<div>
-										<label className="block text-xs font-medium text-slate-500">Surgical History</label>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Past Medical History</label>
+										<textarea
+											value={formData.pastMedicalHistory || ''}
+											onChange={e => handleFieldChange('pastMedicalHistory', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											rows={4}
+											placeholder="Enter past medical history"
+										/>
+									</div>
+									<div>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Past Surgical History</label>
 										<textarea
 											value={formData.surgicalHistory || ''}
 											onChange={e => handleFieldChange('surgicalHistory', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={2}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											rows={4}
+											placeholder="Enter past surgical history"
 										/>
 									</div>
 									<div>
-										<label className="block text-xs font-medium text-slate-500">Personal History</label>
-										<div className="mt-2 space-y-2">
-											<label className="flex items-center gap-2 text-sm text-slate-700">
-												<input
-													type="checkbox"
-													checked={formData.per_smoking || false}
-													onChange={e => handleCheckboxChange('per_smoking', e.target.checked)}
-													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
-												/>
-												Smoking
-											</label>
-											<label className="flex items-center gap-2 text-sm text-slate-700">
-												<input
-													type="checkbox"
-													checked={formData.per_drinking || false}
-													onChange={e => handleCheckboxChange('per_drinking', e.target.checked)}
-													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
-												/>
-												Drinking
-											</label>
-											<label className="flex items-center gap-2 text-sm text-slate-700">
-												<input
-													type="checkbox"
-													checked={formData.per_alcohol || false}
-													onChange={e => handleCheckboxChange('per_alcohol', e.target.checked)}
-													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
-												/>
-												Alcohol
-											</label>
-											<label className="flex items-center gap-2 text-sm text-slate-700">
-												<input
-													type="checkbox"
-													checked={formData.per_drugs || false}
-													onChange={e => handleCheckboxChange('per_drugs', e.target.checked)}
-													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
-												/>
-												Drugs
-											</label>
-											{formData.per_drugs && (
-												<input
-													type="text"
-													value={formData.drugsText || ''}
-													onChange={e => handleFieldChange('drugsText', e.target.value)}
-													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-													placeholder="Which drug?"
-												/>
-											)}
-										</div>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Sleep Cycle</label>
-										<input
-											type="text"
-											value={formData.sleepCycle || ''}
-											onChange={e => handleFieldChange('sleepCycle', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500 mb-2">Hydration</label>
-										<div className="flex items-center gap-2">
-											<span className="text-xs font-semibold text-slate-500">1</span>
-											<input
-												type="range"
-												min="1"
-												max="8"
-												value={hydrationValue}
-												onChange={e => handleFieldChange('hydration', e.target.value)}
-												className="flex-1 h-2 bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 rounded-lg appearance-none cursor-pointer"
-											/>
-											<span className="text-xs font-semibold text-slate-500">8</span>
-										</div>
-										<div className="mt-3 flex items-center justify-center gap-2">
-											<span className="text-3xl transition-transform duration-200" style={{ transform: 'scale(1.2)' }}>
-												{hydrationEmoji}
-											</span>
-											<span className="text-xs text-slate-600 font-medium">{hydrationValue}/8</span>
-										</div>
-										<div className="mt-2 grid grid-cols-8 text-[10px] text-center text-slate-400">
-											{HYDRATION_EMOJIS.map((emoji, idx) => (
-												<span
-													key={`hydration-${emoji}-${idx}`}
-													className={`transition-transform duration-200 ${idx + 1 === hydrationValue ? 'scale-110' : 'scale-90'}`}
-												>
-													{emoji}
-												</span>
-											))}
-										</div>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Nutrition</label>
-										<input
-											type="text"
-											value={formData.nutrition || ''}
-											onChange={e => handleFieldChange('nutrition', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-								</div>
-							</div>
-
-							{/* Pain Assessment Section */}
-							<div className="mb-8">
-								<h3 className="mb-4 text-lg font-semibold text-sky-600 border-b border-sky-200 pb-2">Pain Assessment</h3>
-								<div className="grid gap-4 sm:grid-cols-2">
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Site and Side</label>
-										<input
-											type="text"
-											value={formData.siteSide || ''}
-											onChange={e => handleFieldChange('siteSide', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Onset</label>
-										<input
-											type="text"
-											value={formData.onset || ''}
-											onChange={e => handleFieldChange('onset', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Duration</label>
-										<input
-											type="text"
-											value={formData.duration || ''}
-											onChange={e => handleFieldChange('duration', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Nature of Injury</label>
-										<input
-											type="text"
-											value={formData.natureOfInjury || ''}
-											onChange={e => handleFieldChange('natureOfInjury', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Mechanism of Injury</label>
-										<input
-											type="text"
-											value={formData.mechanismOfInjury || ''}
-											onChange={e => handleFieldChange('mechanismOfInjury', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Pain Type</label>
-										<input
-											type="text"
-											value={formData.painType || ''}
-											onChange={e => handleFieldChange('painType', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Pain Intensity</label>
-										<input
-											type="text"
-											value={formData.painIntensity || ''}
-											onChange={e => handleFieldChange('painIntensity', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500 mb-2">VAS Scale</label>
-										<div className="flex items-center gap-2">
-											<span className="text-xs font-semibold text-slate-500">1</span>
-											<input
-												type="range"
-												min="1"
-												max="10"
-												value={vasValue}
-												onChange={e => handleFieldChange('vasScale', e.target.value)}
-												className="flex-1 h-2 bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 rounded-lg appearance-none cursor-pointer"
-											/>
-											<span className="text-xs font-semibold text-slate-500">10</span>
-										</div>
-										<div className="mt-3 flex items-center justify-center gap-2">
-											<span
-												className="text-3xl transition-transform duration-200"
-												style={{ transform: 'scale(1.2)' }}
-												role="img"
-												aria-label="Pain emoji"
-											>
-												{vasEmoji}
-											</span>
-											<span className="text-xs text-slate-600 font-medium">{vasValue}/10</span>
-										</div>
-										<div className="mt-2 grid grid-cols-10 text-[10px] text-center text-slate-400">
-											{VAS_EMOJIS.map((emoji, idx) => (
-												<span
-													key={emoji + idx}
-													className={`transition-transform duration-200 ${idx + 1 === vasValue ? 'scale-110' : 'scale-90'}`}
-												>
-													{emoji}
-												</span>
-											))}
-										</div>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Aggravating Factor</label>
-										<input
-											type="text"
-											value={formData.aggravatingFactor || ''}
-											onChange={e => handleFieldChange('aggravatingFactor', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Relieving Factor</label>
-										<input
-											type="text"
-											value={formData.relievingFactor || ''}
-											onChange={e => handleFieldChange('relievingFactor', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-								</div>
-							</div>
-
-							{/* On Observation Section */}
-							<div className="mb-8">
-								<h3 className="mb-4 text-lg font-semibold text-sky-600 border-b border-sky-200 pb-2">On Observation</h3>
-								<div className="grid gap-4 sm:grid-cols-2">
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Built</label>
-										<input
-											type="text"
-											value={formData.built || ''}
-											onChange={e => handleFieldChange('built', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500 mb-2">Posture</label>
-										<div className="flex gap-4">
-											<label className="flex items-center gap-2">
-												<input
-													type="radio"
-													name="posture"
-													value="Manual"
-													checked={formData.posture === 'Manual'}
-													onChange={e => handleFieldChange('posture', e.target.value)}
-													className="text-sky-600"
-												/>
-												<span className="text-sm text-slate-800">Manual</span>
-											</label>
-											<label className="flex items-center gap-2">
-												<input
-													type="radio"
-													name="posture"
-													value="Kinetisense"
-													checked={formData.posture === 'Kinetisense'}
-													onChange={e => handleFieldChange('posture', e.target.value)}
-													className="text-sky-600"
-												/>
-												<span className="text-sm text-slate-800">Kinetisense</span>
-											</label>
-										</div>
-										{formData.posture === 'Manual' && (
-											<textarea
-												className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-												rows={2}
-												placeholder="Add manual posture notes"
-												value={formData.postureManualNotes || ''}
-												onChange={e => handleFieldChange('postureManualNotes', e.target.value)}
-											/>
-										)}
-										{formData.posture === 'Kinetisense' && (
-											<div className="mt-2 space-y-2">
-												<input
-													type="file"
-													accept=".pdf,.jpg,.jpeg,.png"
-													onChange={e => handleFileUpload('postureFileData', 'postureFileName', e.target.files?.[0] || null)}
-													className="block w-full text-xs text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-sky-50 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-sky-700 hover:file:bg-sky-100"
-												/>
-												{formData.postureFileName && (
-													<div className="flex items-center gap-2">
-														<span className="text-xs text-slate-600">{formData.postureFileName}</span>
-														<button
-															type="button"
-															onClick={() => {
-																if (formData.postureFileData) {
-																	const viewWindow = window.open();
-																	if (viewWindow) {
-																		viewWindow.document.write(`
-																			<html>
-																				<head>
-																					<title>${formData.postureFileName}</title>
-																					<style>
-																						body { margin: 0; padding: 0; }
-																						iframe { width: 100%; height: 100vh; border: none; }
-																					</style>
-																				</head>
-																				<body>
-																					<iframe src="${formData.postureFileData}"></iframe>
-																				</body>
-																			</html>
-																		`);
-																		viewWindow.document.close();
-																	}
-																}
-															}}
-															className="inline-flex items-center gap-1 rounded-md bg-sky-100 px-2 py-1 text-xs font-semibold text-sky-700 transition hover:bg-sky-200"
-														>
-															<i className="fas fa-eye" />
-															View PDF
-														</button>
-													</div>
-												)}
-											</div>
-										)}
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500 mb-2">GAIT Analysis</label>
-										<div className="flex gap-4">
-											<label className="flex items-center gap-2">
-												<input
-													type="radio"
-													name="gaitAnalysis"
-													value="Manual"
-													checked={formData.gaitAnalysis === 'Manual'}
-													onChange={e => handleFieldChange('gaitAnalysis', e.target.value)}
-													className="text-sky-600"
-												/>
-												<span className="text-sm text-slate-800">Manual</span>
-											</label>
-											<label className="flex items-center gap-2">
-												<input
-													type="radio"
-													name="gaitAnalysis"
-													value="OptaGAIT"
-													checked={formData.gaitAnalysis === 'OptaGAIT'}
-													onChange={e => handleFieldChange('gaitAnalysis', e.target.value)}
-													className="text-sky-600"
-												/>
-												<span className="text-sm text-slate-800">OptaGAIT</span>
-											</label>
-										</div>
-										{formData.gaitAnalysis === 'Manual' && (
-											<textarea
-												className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-												rows={2}
-												placeholder="Manual GAIT analysis notes"
-												value={formData.gaitManualNotes || ''}
-												onChange={e => handleFieldChange('gaitManualNotes', e.target.value)}
-											/>
-										)}
-										{formData.gaitAnalysis === 'OptaGAIT' && (
-											<div className="mt-2 space-y-2">
-												<input
-													type="file"
-													accept=".pdf,.jpg,.jpeg,.png"
-													onChange={e => handleFileUpload('gaitFileData', 'gaitFileName', e.target.files?.[0] || null)}
-													className="block w-full text-xs text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-sky-50 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-sky-700 hover:file:bg-sky-100"
-												/>
-												{formData.gaitFileName && (
-													<div className="flex items-center gap-2">
-														<span className="text-xs text-slate-600">{formData.gaitFileName}</span>
-														<button
-															type="button"
-															onClick={() => {
-																if (formData.gaitFileData) {
-																	const viewWindow = window.open();
-																	if (viewWindow) {
-																		viewWindow.document.write(`
-																			<html>
-																				<head>
-																					<title>${formData.gaitFileName}</title>
-																					<style>
-																						body { margin: 0; padding: 0; }
-																						iframe { width: 100%; height: 100vh; border: none; }
-																					</style>
-																				</head>
-																				<body>
-																					<iframe src="${formData.gaitFileData}"></iframe>
-																				</body>
-																			</html>
-																		`);
-																		viewWindow.document.close();
-																	}
-																}
-															}}
-															className="inline-flex items-center gap-1 rounded-md bg-sky-100 px-2 py-1 text-xs font-semibold text-sky-700 transition hover:bg-sky-200"
-														>
-															<i className="fas fa-eye" />
-															View PDF
-														</button>
-													</div>
-												)}
-											</div>
-										)}
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Mobility Aids</label>
-										<input
-											type="text"
-											value={formData.mobilityAids || ''}
-											onChange={e => handleFieldChange('mobilityAids', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Local Observation</label>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Relevant History</label>
 										<textarea
-											value={formData.localObservation || ''}
-											onChange={e => handleFieldChange('localObservation', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={2}
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Swelling</label>
-										<input
-											type="text"
-											value={formData.swelling || ''}
-											onChange={e => handleFieldChange('swelling', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Muscle Wasting</label>
-										<input
-											type="text"
-											value={formData.muscleWasting || ''}
-											onChange={e => handleFieldChange('muscleWasting', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											value={formData.relevantHistory || ''}
+											onChange={e => handleFieldChange('relevantHistory', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											rows={4}
+											placeholder="Enter any other relevant history"
 										/>
 									</div>
 								</div>
 							</div>
 
-							{/* On Palpation Section */}
+							{/* 4. Objective Assessment - Observation */}
 							<div className="mb-8">
-								<h3 className="mb-4 text-lg font-semibold text-sky-600 border-b border-sky-200 pb-2">On Palpation</h3>
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">4. Objective Assessment - Observation</h3>
+								
+								{/* Local Observation (Area of Pain) */}
+								<div className="mb-4">
+									<label className="block text-xs font-medium text-slate-500 mb-2">Local Observation (Area of Pain)</label>
+									<p className="text-xs text-slate-500 mb-2">Please enter details below</p>
+									<div className="space-y-2">
+										<input
+											type="text"
+											value={formData.localObservation1 || ''}
+											onChange={e => handleFieldChange('localObservation1', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Local observation detail 1"
+										/>
+										<input
+											type="text"
+											value={formData.localObservation2 || ''}
+											onChange={e => handleFieldChange('localObservation2', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Local observation detail 2"
+										/>
+										<input
+											type="text"
+											value={formData.localObservation3 || ''}
+											onChange={e => handleFieldChange('localObservation3', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Local observation detail 3"
+										/>
+										<input
+											type="text"
+											value={formData.localObservation4 || ''}
+											onChange={e => handleFieldChange('localObservation4', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Local observation detail 4"
+										/>
+									</div>
+								</div>
+
+								{/* Systemic Observation */}
 								<div className="grid gap-4 sm:grid-cols-2">
 									<div>
-										<label className="block text-xs font-medium text-slate-500">Tenderness</label>
+										<label className="block text-xs font-medium text-slate-500 mb-1">Posture</label>
 										<input
 											type="text"
-											value={formData.tenderness || ''}
-											onChange={e => handleFieldChange('tenderness', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											value={formData.posture || ''}
+											onChange={e => handleFieldChange('posture', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Enter posture observation"
 										/>
 									</div>
 									<div>
-										<label className="block text-xs font-medium text-slate-500">Warmth</label>
+										<label className="block text-xs font-medium text-slate-500 mb-1">Gait</label>
 										<input
 											type="text"
-											value={formData.warmth || ''}
-											onChange={e => handleFieldChange('warmth', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Scar</label>
-										<input
-											type="text"
-											value={formData.scar || ''}
-											onChange={e => handleFieldChange('scar', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Crepitus</label>
-										<input
-											type="text"
-											value={formData.crepitus || ''}
-											onChange={e => handleFieldChange('crepitus', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-										/>
-									</div>
-									<div>
-										<label className="block text-xs font-medium text-slate-500">Odema</label>
-										<input
-											type="text"
-											value={formData.odema || ''}
-											onChange={e => handleFieldChange('odema', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											value={formData.gait || formData.gaitAnalysis || ''}
+											onChange={e => handleFieldChange('gait', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Enter gait observation"
 										/>
 									</div>
 								</div>
 							</div>
 
-							{/* On Examination Section - ROM Assessment */}
+							{/* 5. Objective Assessment - Palpation */}
 							<div className="mb-8">
-								<h3 className="mb-4 text-lg font-semibold text-sky-600 border-b border-sky-200 pb-2">On Examination</h3>
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">5. Objective Assessment - Palpation</h3>
+								<div className="space-y-4">
+									<div>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Tenderness</label>
+										<input
+											type="text"
+											value={formData.tenderness1 || formData.tenderness || ''}
+											onChange={e => handleFieldChange('tenderness1', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 mb-2"
+											placeholder="Tenderness detail 1"
+										/>
+										<input
+											type="text"
+											value={formData.tenderness2 || ''}
+											onChange={e => handleFieldChange('tenderness2', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Tenderness detail 2"
+										/>
+									</div>
+									<div className="grid gap-4 sm:grid-cols-2">
+										<div>
+											<label className="block text-xs font-medium text-slate-500 mb-1">Temperature</label>
+											<input
+												type="text"
+												value={formData.temperature || formData.warmth || ''}
+												onChange={e => handleFieldChange('temperature', e.target.value)}
+												className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												placeholder="e.g., Normal, Elevated"
+											/>
+										</div>
+										<div>
+											<label className="block text-xs font-medium text-slate-500 mb-1">ADIMA / Edema</label>
+											<input
+												type="text"
+												value={formData.adimaEdema || formData.odema || ''}
+												onChange={e => handleFieldChange('adimaEdema', e.target.value)}
+												className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												placeholder="Enter ADIMA/Edema details"
+											/>
+										</div>
+										<div className="sm:col-span-2">
+											<label className="block text-xs font-medium text-slate-500 mb-1">Other Signs of Inflammation</label>
+											<input
+												type="text"
+												value={formData.otherSignsOfInflammation || ''}
+												onChange={e => handleFieldChange('otherSignsOfInflammation', e.target.value)}
+												className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												placeholder="Enter other signs of inflammation"
+											/>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							{/* 6. On Examination */}
+							<div className="mb-8">
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">6. On Examination</h3>
 								<div className="mb-4">
 									<h4 className="mb-3 text-sm font-semibold text-slate-700">i) Range of Motion Assessment</h4>
 									<div className="mb-4 flex items-center gap-3">
@@ -4055,10 +4353,47 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</p>
 									)}
 								</div>
-								<div className="mt-8 grid gap-4">
+								<div className="mt-8 space-y-4">
+									<div>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Joint Play Movement</label>
+										<input
+											type="text"
+											value={formData.jointPlayMovement || ''}
+											onChange={e => handleFieldChange('jointPlayMovement', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Enter joint play movement details"
+										/>
+									</div>
+									<div>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Accessory Joint Movement</label>
+										<input
+											type="text"
+											value={formData.accessoryJointMovement || ''}
+											onChange={e => handleFieldChange('accessoryJointMovement', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Enter accessory joint movement details"
+										/>
+									</div>
+									<div>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Additional Notes</label>
+										<input
+											type="text"
+											value={formData.examinationAdditionalNotes || ''}
+											onChange={e => handleFieldChange('examinationAdditionalNotes', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											placeholder="Enter any additional examination notes"
+										/>
+									</div>
+								</div>
+							</div>
+
+							{/* 7. Diagnosis & Investigation */}
+							<div className="mb-8">
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">7. Diagnosis & Investigation</h3>
+								<div className="space-y-4">
 									<div>
 										<div className="flex items-center justify-between mb-2">
-											<h4 className="text-sm font-semibold text-slate-700">iii) Special Tests</h4>
+											<label className="block text-xs font-medium text-slate-500">Special Tests</label>
 											<SpecialTestsLibrarySelector
 												onSelectTests={(tests) => {
 													const currentValue = formData.specialTest || '';
@@ -4076,53 +4411,332 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										/>
 									</div>
 									<div>
-										<h4 className="mb-2 text-sm font-semibold text-slate-700">iv) Differential Diagnosis</h4>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Differential Diagnosis</label>
 										<textarea
 											value={formData.differentialDiagnosis || formData.clinicalDiagnosis || ''}
 											onChange={e => handleFieldChange('differentialDiagnosis', e.target.value)}
 											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={3}
-											placeholder="Differential diagnosis"
+											rows={4}
+											placeholder="Enter differential diagnosis"
 										/>
 									</div>
 									<div>
-										<h4 className="mb-2 text-sm font-semibold text-slate-700">v) Diagnosis</h4>
-										<textarea
-											value={formData.finalDiagnosis || ''}
-											onChange={e => handleFieldChange('finalDiagnosis', e.target.value)}
-											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={3}
-											placeholder="Final working diagnosis"
-										/>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Investigations</label>
+										<p className="text-xs text-slate-500 mb-2">Check available reports:</p>
+										<div className="grid gap-2 sm:grid-cols-2 mb-4">
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.investigationXray || formData.med_xray || false}
+													onChange={e => handleCheckboxChange('investigationXray', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												X-ray
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.investigationMRI || formData.med_mri || false}
+													onChange={e => handleCheckboxChange('investigationMRI', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												MRI
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.investigationCTScan || formData.med_ct || false}
+													onChange={e => handleCheckboxChange('investigationCTScan', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												CT-Scan
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.investigationBlood || false}
+													onChange={e => handleCheckboxChange('investigationBlood', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Blood Investigation
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.investigationOthers || false}
+													onChange={e => handleCheckboxChange('investigationOthers', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Others
+											</label>
+										</div>
+										<div className="mb-4">
+											<label className="block text-xs font-medium text-slate-500 mb-2">Upload Image</label>
+											<input
+												type="file"
+												accept="image/*,.pdf"
+												onChange={e => {
+													const file = e.target.files?.[0];
+													if (file) {
+														const reader = new FileReader();
+														reader.onloadend = () => {
+															handleFieldChange('investigationImage', reader.result as string);
+															handleFieldChange('investigationImageName', file.name);
+														};
+														reader.readAsDataURL(file);
+													}
+												}}
+												className="block w-full text-xs text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-sky-50 file:px-3 file:py-1 file:text-sm file:font-semibold file:text-sky-700 hover:file:bg-sky-100"
+											/>
+										</div>
+										<div>
+											<label className="block text-xs font-medium text-slate-500 mb-2">Assessment of Investigation</label>
+											<textarea
+												value={formData.assessmentOfInvestigation || ''}
+												onChange={e => handleFieldChange('assessmentOfInvestigation', e.target.value)}
+												className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												rows={4}
+												placeholder="Enter assessment of investigation"
+											/>
+										</div>
+										<div>
+											<label className="block text-xs font-medium text-slate-500 mb-2">Final Diagnosis</label>
+											<input
+												type="text"
+												value={formData.finalDiagnosis || ''}
+												onChange={e => handleFieldChange('finalDiagnosis', e.target.value)}
+												className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												placeholder="Enter final diagnosis"
+											/>
+										</div>
 									</div>
 								</div>
 							</div>
 
-							{/* Physiotherapy Management */}
-							<div className="mb-10">
-								<h3 className="mb-4 text-lg font-semibold text-sky-600 border-b border-sky-200 pb-2">Physiotherapy Management</h3>
-								<div className="space-y-4">
+							{/* 8. Physiotherapy Management */}
+							<div className="mb-8">
+								<h3 className="mb-4 text-sm font-semibold text-sky-600">8. Physiotherapy Management</h3>
+								<div className="space-y-6">
+									{/* Patient Education */}
 									<div>
-										<label className="block text-xs font-medium text-slate-500">i) Short Term Goals</label>
-										<textarea
-											value={formData.shortTermGoals || ''}
-											onChange={e => handleFieldChange('shortTermGoals', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={3}
-										/>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Patient Education (Select all that apply)</label>
+										<div className="space-y-2">
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.patientEducationCondition || false}
+													onChange={e => handleCheckboxChange('patientEducationCondition', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Explained the condition in detail
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.patientEducationGoals || false}
+													onChange={e => handleCheckboxChange('patientEducationGoals', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Explained the outcome of short-term and long-term goals
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.patientEducationAdvantages || false}
+													onChange={e => handleCheckboxChange('patientEducationAdvantages', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Explained the advantages and complications of the condition
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.patientEducationOthers || false}
+													onChange={e => handleCheckboxChange('patientEducationOthers', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Others: 
+												<input
+													type="text"
+													value={formData.patientEducationOthersText || ''}
+													onChange={e => handleFieldChange('patientEducationOthersText', e.target.value)}
+													className="ml-2 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="Specify other education"
+													disabled={!formData.patientEducationOthers}
+												/>
+											</label>
+										</div>
 									</div>
+
+									{/* Short Term Goals */}
 									<div>
-										<label className="block text-xs font-medium text-slate-500">ii) Long Term Goals</label>
-										<textarea
-											value={formData.longTermGoals || ''}
-											onChange={e => handleFieldChange('longTermGoals', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={3}
-										/>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Short Term Goals (Select all that apply)</label>
+										<div className="space-y-2">
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.shortTermGoalReducePain || false}
+													onChange={e => handleCheckboxChange('shortTermGoalReducePain', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Reduce pain
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.shortTermGoalImproveROM || false}
+													onChange={e => handleCheckboxChange('shortTermGoalImproveROM', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Improve ROM
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.shortTermGoalImproveStrength || false}
+													onChange={e => handleCheckboxChange('shortTermGoalImproveStrength', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Improve & Maintain Strength
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.shortTermGoalOthers || false}
+													onChange={e => handleCheckboxChange('shortTermGoalOthers', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Others: 
+												<input
+													type="text"
+													value={formData.shortTermGoalOthersText || ''}
+													onChange={e => handleFieldChange('shortTermGoalOthersText', e.target.value)}
+													className="ml-2 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="Specify other short-term goals"
+													disabled={!formData.shortTermGoalOthers}
+												/>
+											</label>
+										</div>
 									</div>
+
+									{/* Treatment Given */}
+									<div>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Treatment Given (Select all that apply)</label>
+										<div className="grid gap-2 sm:grid-cols-2">
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentCryotherapy || false}
+													onChange={e => handleCheckboxChange('treatmentCryotherapy', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Cryotherapy
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentIFT || false}
+													onChange={e => handleCheckboxChange('treatmentIFT', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												IFT (Interferential Therapy)
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentTENS || false}
+													onChange={e => handleCheckboxChange('treatmentTENS', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												TENS
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentLaser || false}
+													onChange={e => handleCheckboxChange('treatmentLaser', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Laser
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentSWT || false}
+													onChange={e => handleCheckboxChange('treatmentSWT', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												SWT (Shockwave Therapy)
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentHotTherapy || false}
+													onChange={e => handleCheckboxChange('treatmentHotTherapy', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Hot Therapy
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentManualTherapy || false}
+													onChange={e => handleCheckboxChange('treatmentManualTherapy', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Manual Therapy
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentSoftTissueManipulation || false}
+													onChange={e => handleCheckboxChange('treatmentSoftTissueManipulation', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Soft Tissue Manipulation
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentDryNeedling || false}
+													onChange={e => handleCheckboxChange('treatmentDryNeedling', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Dry Needling
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentCuppingTherapy || false}
+													onChange={e => handleCheckboxChange('treatmentCuppingTherapy', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Cupping Therapy
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.treatmentOthers || false}
+													onChange={e => handleCheckboxChange('treatmentOthers', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Others: 
+												<input
+													type="text"
+													value={formData.treatmentOthersText || ''}
+													onChange={e => handleFieldChange('treatmentOthersText', e.target.value)}
+													className="ml-2 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="Specify other treatment"
+													disabled={!formData.treatmentOthers}
+												/>
+											</label>
+										</div>
+									</div>
+
+									{/* Treatment (keep as is) */}
 									<div>
 										<div className="flex items-center justify-between mb-2">
-											<label className="block text-xs font-medium text-slate-500">iii) Treatment</label>
+											<label className="block text-xs font-medium text-slate-500">Treatment</label>
 											<ExerciseLibrarySelector
 												onSelectExercises={(exercises) => {
 													const currentValue = formData.treatment || '';
@@ -4135,22 +4749,95 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										<textarea
 											value={formData.treatment || formData.treatmentProvided || ''}
 											onChange={e => handleFieldChange('treatment', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 											rows={6}
 											placeholder="Enter treatment or use Exercise Library to select exercises..."
 										/>
 									</div>
+
+									{/* Long Term Goals */}
 									<div>
-										<label className="block text-xs font-medium text-slate-500">iv) Advice</label>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Long Term Goals (Select all that apply)</label>
+										<div className="space-y-2">
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.longTermGoalReducePain || false}
+													onChange={e => handleCheckboxChange('longTermGoalReducePain', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Reduce pain & Maintain pain-free movement
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.longTermGoalImproveROM || false}
+													onChange={e => handleCheckboxChange('longTermGoalImproveROM', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Improve & Maintain ROM
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.longTermGoalImproveStrength || false}
+													onChange={e => handleCheckboxChange('longTermGoalImproveStrength', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Improve & Maintain Strength
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.longTermGoalImproveStability || false}
+													onChange={e => handleCheckboxChange('longTermGoalImproveStability', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Improve stability
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.longTermGoalRTP || false}
+													onChange={e => handleCheckboxChange('longTermGoalRTP', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												RTP (Return to Play) plan
+											</label>
+											<label className="flex items-center gap-2 text-sm text-slate-700">
+												<input
+													type="checkbox"
+													checked={formData.longTermGoalOthers || false}
+													onChange={e => handleCheckboxChange('longTermGoalOthers', e.target.checked)}
+													className="rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+												/>
+												Others: 
+												<input
+													type="text"
+													value={formData.longTermGoalOthersText || ''}
+													onChange={e => handleFieldChange('longTermGoalOthersText', e.target.value)}
+													className="ml-2 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+													placeholder="Specify other long-term goals"
+													disabled={!formData.longTermGoalOthers}
+												/>
+											</label>
+										</div>
+									</div>
+
+									{/* Home Advice */}
+									<div>
+										<label className="block text-xs font-medium text-slate-500 mb-2">Home Advice</label>
 										<textarea
-											value={formData.advice || ''}
-											onChange={e => handleFieldChange('advice', e.target.value)}
-											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-											rows={3}
+											value={formData.advice || formData.homeAdvice || ''}
+											onChange={e => handleFieldChange('homeAdvice', e.target.value)}
+											className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+											rows={4}
+											placeholder="Enter home advice"
 										/>
 									</div>
 								</div>
 							</div>
+
 
 
 							{/* Signature Section */}
@@ -4203,7 +4890,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 							{/* Save Section */}
 							<div className="space-y-4 border-t border-slate-200 pt-6 mt-8">
-								<div className="flex items-center justify-between">
+								<div>
 									<label className="flex items-center gap-2 cursor-pointer">
 										<input
 											type="checkbox"
@@ -4216,15 +4903,6 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											Completion of one session
 										</span>
 									</label>
-									<button 
-										type="button" 
-										onClick={handleSave} 
-										className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 focus-visible:outline-none disabled:opacity-50"
-										disabled={saving || !reportPatientData}
-									>
-										<i className="fas fa-save text-xs mr-2" aria-hidden="true" />
-										{saving ? 'Saving...' : 'Save Report'}
-									</button>
 								</div>
 								{reportPatientData?.patientType?.toUpperCase() === 'DYES' && sessionCompleted && (
 									<div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
@@ -4322,13 +5000,23 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
 										>
 											<option value="">-- Select therapist --</option>
-											{clinicalTeamMembers.map(member => (
+											{(clinicalTeamMembers ?? []).map(member => (
 												<option key={member.id} value={member.userName}>
 													{member.userName}
 												</option>
 											))}
 										</select>
 									</div>
+
+									{/* Follow-up assessment disclaimer */}
+									{hasStrengthConditioningVersions && (
+										<div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+											<p className="text-sm text-blue-800">
+												<i className="fas fa-info-circle mr-2" aria-hidden="true" />
+												This is a follow-up assessment. Please update the follow-up assessment, progress, and treatment details.
+											</p>
+										</div>
+									)}
 
 									{/* PDF Upload */}
 									<div className="mb-6">
@@ -4535,7 +5223,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									</div>
 
 									{/* Skill Training - Hidden on subsequent dates */}
-									{!isSubsequentDateStrength && (
+									{!hasStrengthConditioningVersions && (
 									<div className="mb-8 border-t border-slate-200 pt-6">
 										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
 											1. Skill Training
@@ -5223,7 +5911,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									</div>
 
 									{/* Injury Risk Screening - Hidden on subsequent dates */}
-									{!isSubsequentDateStrength && (
+									{!hasStrengthConditioningVersions && (
 									<div className="mb-8">
 										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
 											Injury Risk Screening
@@ -5718,13 +6406,43 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						</div>
 					) : activeReportTab === 'psychology' ? (
 						<div className="space-y-6">
-							{loadingReport || !reportPatientData ? (
+							{loadingPsychology ? (
 								<div className="text-center py-12">
 									<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
 									<p className="mt-4 text-sm text-slate-600">Loading psychology data...</p>
 								</div>
+							) : !reportPatientData ? (
+								<div className="text-center py-12">
+									<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
+									<p className="mt-4 text-sm text-slate-600">Loading patient data...</p>
+								</div>
 							) : (
 								<>
+									{/* Viewing Version Indicator */}
+									{viewingVersionIsPsychology && viewingPsychologyVersionData && (
+										<div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+											<div className="flex items-center justify-between">
+												<div className="flex items-center gap-2">
+													<i className="fas fa-eye text-amber-600" aria-hidden="true" />
+													<p className="text-sm font-medium text-amber-900">
+														Viewing saved report version (read-only)
+													</p>
+												</div>
+												<button
+													type="button"
+													onClick={() => {
+														setViewingVersionIsPsychology(false);
+														setViewingPsychologyVersionData(null);
+													}}
+													className="inline-flex items-center rounded-lg border border-amber-600 bg-white px-3 py-1.5 text-xs font-semibold text-amber-600 transition hover:bg-amber-50 focus-visible:outline-none"
+												>
+													<i className="fas fa-times mr-1.5" aria-hidden="true" />
+													Exit View Mode
+												</button>
+											</div>
+										</div>
+									)}
+									
 									{/* Patient Information */}
 									<div className="mb-8 border-b border-slate-200 pb-6">
 										<h2 className="mb-4 text-xl font-bold text-indigo-600">Brain Training / Sports Psychology</h2>
@@ -5758,11 +6476,37 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 									{/* Psychology Report Component */}
 									<PsychologyReport
+										key={viewingVersionIsPsychology ? `viewing-${viewingPsychologyVersionData?.dateOfAssessment || 'version'}` : `editing-${psychologyFormDataKey}`}
 										patientData={reportPatientData}
-										formData={psychologyFormData}
+										formData={viewingVersionIsPsychology && viewingPsychologyVersionData ? viewingPsychologyVersionData : psychologyFormData}
 										onChange={setPsychologyFormData}
-										editable={editable}
+										editable={editable && !viewingVersionIsPsychology}
+										hasExistingVersions={hasPsychologyVersions}
+										isViewingSavedVersion={viewingVersionIsPsychology}
+										isEditingLoadedVersion={isEditingLoadedPsychologyVersion}
+										sessionCompleted={psychologySessionCompleted}
+										onSessionCompletedChange={setPsychologySessionCompleted}
 									/>
+
+									{/* Save Section with Completion of one session Checkbox */}
+									{!viewingVersionIsPsychology && editable && (
+										<div className="space-y-4 border-t border-slate-200 pt-6 mt-8">
+											<div className="flex items-center justify-between">
+												<label className="flex items-center gap-2 cursor-pointer">
+													<input
+														type="checkbox"
+														checked={psychologySessionCompleted}
+														onChange={e => setPsychologySessionCompleted(e.target.checked)}
+														disabled={savingPsychology || !reportPatientData}
+														className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+													/>
+													<span className="text-sm font-medium text-slate-700">
+														Completion of one session
+													</span>
+												</label>
+											</div>
+										</div>
+									)}
 								</>
 							)}
 						</div>
@@ -5783,28 +6527,22 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						</button>
 					)}
 					<div className="flex items-center gap-3">
-						{editable && (reportPatientData || strengthConditioningData || psychologyData) && (
+						{editable && (reportPatientData || strengthConditioningData || psychologyData) && activeReportTab !== 'strength-conditioning' && (
 							<button
 								type="button"
 								onClick={
-									activeReportTab === 'strength-conditioning' 
-										? handleSaveStrengthConditioning 
-										: activeReportTab === 'psychology'
+									activeReportTab === 'psychology'
 										? handleSavePsychology
 										: handleSave
 								}
 								disabled={
-									activeReportTab === 'strength-conditioning' 
-										? savingStrengthConditioning 
-										: activeReportTab === 'psychology'
+									activeReportTab === 'psychology'
 										? savingPsychology
 										: saving
 								}
 								className="inline-flex items-center rounded-lg border border-sky-600 bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
 							>
-								{(activeReportTab === 'strength-conditioning' 
-									? savingStrengthConditioning 
-									: activeReportTab === 'psychology'
+								{(activeReportTab === 'psychology'
 									? savingPsychology
 									: saving) ? (
 									<>
@@ -5814,79 +6552,31 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								) : (
 									<>
 										<i className="fas fa-save mr-2" aria-hidden="true" />
-										Save Changes
+										{activeReportTab === 'psychology' || activeReportTab === 'report' ? 'Save Report' : 'Save Changes'}
 									</>
 								)}
 							</button>
 						)}
 						{activeReportTab === 'report' && (reportPatientData || viewingVersionData) && (
-							<>
-								<button
-									type="button"
-									onClick={handleCrispReport}
-									className="inline-flex items-center rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-none"
-								>
-									<i className="fas fa-file-alt mr-2" aria-hidden="true" />
-									Crisp Report
-								</button>
-								<button
-									type="button"
-									onClick={() => handleDownloadReportPDF()}
-									className="inline-flex items-center rounded-lg border border-sky-600 px-4 py-2 text-sm font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
-								>
-									<i className="fas fa-download mr-2" aria-hidden="true" />
-									Download PDF
-								</button>
-								<button
-									type="button"
-									onClick={() => handlePrintReport()}
-									className="inline-flex items-center rounded-lg border border-sky-600 px-4 py-2 text-sm font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
-								>
-									<i className="fas fa-print mr-2" aria-hidden="true" />
-									Print Report
-								</button>
-							</>
+							<button
+								type="button"
+								onClick={handleCrispReport}
+								className="inline-flex items-center rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-none"
+							>
+								<i className="fas fa-file-alt mr-2" aria-hidden="true" />
+								Crisp Report
+							</button>
 						)}
 						{activeReportTab === 'strength-conditioning' && reportPatientData && (
-							<>
-								<button
-									type="button"
-									onClick={handleSaveStrengthConditioning}
-									className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 focus-visible:outline-none disabled:opacity-50"
-									disabled={savingStrengthConditioning}
-								>
-									<i className="fas fa-save mr-2" aria-hidden="true" />
-									{savingStrengthConditioning ? 'Saving...' : 'Save Report'}
-								</button>
-								<button
-									type="button"
-									onClick={() => {}}
-									className="inline-flex items-center rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-									disabled={true}
-									title="Crisp Report not available for Strength and Conditioning reports"
-								>
-									<i className="fas fa-file-alt mr-2" aria-hidden="true" />
-									Crisp Report
-								</button>
-								<button
-									type="button"
-									onClick={handleDownloadStrengthConditioningPDF}
-									className="inline-flex items-center rounded-lg border border-sky-600 px-4 py-2 text-sm font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none disabled:opacity-50"
-									disabled={!strengthConditioningFormData || Object.keys(strengthConditioningFormData).length === 0}
-								>
-									<i className="fas fa-download mr-2" aria-hidden="true" />
-									Download PDF
-								</button>
-								<button
-									type="button"
-									onClick={() => handlePrintReport()}
-									className="inline-flex items-center rounded-lg border border-sky-600 px-4 py-2 text-sm font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none disabled:opacity-50"
-									disabled={!strengthConditioningFormData || Object.keys(strengthConditioningFormData).length === 0}
-								>
-									<i className="fas fa-print mr-2" aria-hidden="true" />
-									Print Report
-								</button>
-							</>
+							<button
+								type="button"
+								onClick={handleSaveStrengthConditioning}
+								className="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 focus-visible:outline-none disabled:opacity-50"
+								disabled={savingStrengthConditioning}
+							>
+								<i className="fas fa-save mr-2" aria-hidden="true" />
+								{savingStrengthConditioning ? 'Saving...' : 'Save Report'}
+							</button>
 						)}
 						<button
 							type="button"
@@ -5989,7 +6679,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
 									<p className="mt-4 text-sm text-slate-600">Loading report history...</p>
 								</div>
-							) : versionHistory.length === 0 ? (
+							) : (versionHistory ?? []).length === 0 ? (
 								<div className="text-center py-12">
 									<p className="text-slate-600">
 										{activeReportTab === 'strength-conditioning' 
@@ -6007,7 +6697,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</div>
 							) : (
 								<div className="space-y-4">
-									{versionHistory.map((version) => {
+									{(versionHistory ?? []).map((version) => {
 										const isExpanded = expandedVersionId === version.id;
 										const versionData = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
 										return (
@@ -6020,7 +6710,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 														<div className="flex-1">
 															<div className="flex items-center gap-2">
 																<span className="font-semibold text-slate-900">Report #{version.version}</span>
-																{version.version === versionHistory[0]?.version && (
+																{version.version === (versionHistory ?? [])[0]?.version && (
 																	<span className="px-2 py-1 text-xs font-medium bg-sky-100 text-sky-700 rounded">
 																		Latest
 																	</span>
@@ -6035,8 +6725,27 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 															<button
 																type="button"
 																onClick={() => {
-																	setViewingVersionIsStrengthConditioning(version.isStrengthConditioning || false);
-																	setViewingVersionData(versionData);
+																	if (version.isPsychology) {
+																		// Handle psychology version viewing
+																		setViewingVersionIsPsychology(true);
+																		setViewingVersionIsStrengthConditioning(false);
+																		setViewingVersionData(null);
+																		// Ensure we're using the reportData from the version
+																		// version.data should already contain the reportData from the mapping
+																		const psychologyData = version.data && typeof version.data === 'object' && Object.keys(version.data).length > 0 
+																			? version.data 
+																			: {};
+																		setViewingPsychologyVersionData(psychologyData);
+																		setActiveReportTab('psychology');
+																		// Close version history modal to show the report
+																		setShowVersionHistory(false);
+																	} else {
+																		// Handle physiotherapy or strength & conditioning version viewing
+																		setViewingVersionIsStrengthConditioning(version.isStrengthConditioning || false);
+																		setViewingVersionIsPsychology(false);
+																		setViewingPsychologyVersionData(null);
+																		setViewingVersionData(versionData);
+																	}
 																}}
 																className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
 															>
@@ -6048,6 +6757,24 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																onClick={async () => {
 																	try {
 																		const versionData = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
+																		
+																		// Check if this is a Psychology version
+																		if (version.isPsychology) {
+																			// Generate Psychology PDF
+																			const psychologyData = version.data && typeof version.data === 'object' ? version.data : {};
+																			await generatePsychologyPDF({
+																				patient: {
+																					name: reportPatientData.name,
+																					patientId: reportPatientData.patientId,
+																					dob: reportPatientData.dob || '',
+																					gender: reportPatientData.gender || '',
+																					phone: reportPatientData.phone || '',
+																					email: reportPatientData.email || '',
+																				},
+																				formData: psychologyData as PsychologyReportPDFData['formData'],
+																			});
+																			return;
+																		}
 																		
 																		// Check if this is a Strength and Conditioning version
 																		if (version.isStrengthConditioning || activeReportTab === 'strength-conditioning') {
@@ -6149,15 +6876,49 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																type="button"
 																onClick={() => {
 																	// Load version data into form for editing
-																	if (version.isStrengthConditioning || activeReportTab === 'strength-conditioning') {
+																	if (version.isPsychology) {
+																		// Handle psychology version editing
+																		// Ensure we're using the reportData from the version
+																		let psychologyData: any = {};
+																		if (version.data && typeof version.data === 'object') {
+																			psychologyData = { ...version.data };
+																		}
+																		
+																		if (Object.keys(psychologyData).length === 0) {
+																			alert('The saved version appears to be empty. Please check the version data.');
+																			return;
+																		}
+																		
+																		// Close version history modal first
+																		setShowVersionHistory(false);
+																		
+																		// Clear viewing state
+																		setViewingVersionIsPsychology(false);
+																		setViewingPsychologyVersionData(null);
+																		setViewingVersionData(null);
+																		
+																		// Mark that we're editing a loaded version (so follow-up visibility uses form data)
+																		setIsEditingLoadedPsychologyVersion(true);
+																		
+																		// Switch to psychology tab
+																		setActiveReportTab('psychology');
+																		
+																		// Set the form data with the version data
+																		setPsychologyFormData(JSON.parse(JSON.stringify(psychologyData)));
+																		
+																		// Update key to force component re-render with new data
+																		setPsychologyFormDataKey(prev => prev + 1);
+																	} else if (version.isStrengthConditioning || activeReportTab === 'strength-conditioning') {
 																		setStrengthConditioningFormData(version.data as StrengthConditioningData);
 																		setActiveReportTab('strength-conditioning');
+																		setShowVersionHistory(false);
+																		setViewingVersionData(null);
 																	} else {
 																		setFormData(version.data as Partial<PatientRecordFull>);
 																		setActiveReportTab('report');
+																		setShowVersionHistory(false);
+																		setViewingVersionData(null);
 																	}
-																	setShowVersionHistory(false);
-																	setViewingVersionData(null);
 																}}
 																className="inline-flex items-center rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 focus-visible:outline-none"
 																title="Edit this version"

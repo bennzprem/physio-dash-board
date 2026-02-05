@@ -1871,14 +1871,14 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 									<div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-slate-900 border-r-transparent"></div>
 									<p className="mt-4 text-sm text-slate-600">Loading report history...</p>
 								</div>
-							) : versionHistory.length === 0 ? (
+							) : (versionHistory ?? []).length === 0 ? (
 								<div className="text-center py-12">
 									<p className="text-slate-600">No report history available for this patient.</p>
 									<p className="text-sm text-slate-500 mt-2">Previous reports will appear here when you save changes to the report.</p>
 								</div>
 							) : (
 								<div className="space-y-4">
-									{versionHistory.map((version) => {
+									{(versionHistory ?? []).map((version) => {
 										const isExpanded = expandedVersionId === version.id;
 										const versionData = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
 										return (
@@ -1891,7 +1891,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 														<div className="flex-1">
 															<div className="flex items-center gap-2">
 																<span className="font-semibold text-slate-900">Report #{version.version}</span>
-																{version.version === versionHistory[0]?.version && (
+																{version.version === (versionHistory ?? [])[0]?.version && (
 																	<span className="px-2 py-1 text-xs font-medium bg-sky-100 text-sky-700 rounded">
 																		Latest
 																	</span>
