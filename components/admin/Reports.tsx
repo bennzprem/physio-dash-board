@@ -982,6 +982,8 @@ export default function Reports() {
 					gender: selectedPatientForSC.gender,
 					phone: selectedPatientForSC.phone,
 					email: selectedPatientForSC.email,
+					totalSessionsRequired: selectedPatientForSC.totalSessionsRequired,
+					remainingSessions: selectedPatientForSC.remainingSessions,
 				},
 				formData: strengthConditioningData,
 			}, { forPrint: true });
@@ -1002,6 +1004,8 @@ export default function Reports() {
 					gender: selectedPatientForSC.gender,
 					phone: selectedPatientForSC.phone,
 					email: selectedPatientForSC.email,
+					totalSessionsRequired: selectedPatientForSC.totalSessionsRequired,
+					remainingSessions: selectedPatientForSC.remainingSessions,
 				},
 				formData: strengthConditioningData,
 			}, { forPrint: false });

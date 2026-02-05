@@ -685,11 +685,13 @@ export default function EditReport() {
 
 	const clinicianName = useMemo(() => normalize(user?.displayName ?? ''), [user?.displayName]);
 
-	// Get patientId from URL on client side
+	// Get patientId and versionId from URL on client side (e.g. when opening from frontdesk "Edit" link)
+	const [versionIdParam, setVersionIdParam] = useState<string | null>(null);
 	useEffect(() => {
 		if (typeof window !== 'undefined') {
 			const params = new URLSearchParams(window.location.search);
 			setPatientIdParam(params.get('patientId'));
+			setVersionIdParam(params.get('versionId'));
 		}
 	}, []);
 
@@ -893,6 +895,14 @@ export default function EditReport() {
 			}
 		}
 	}, [patientIdParam, patients, selectedPatient]);
+
+	// When opened from frontdesk "Edit" link with patientId and versionId, open the report modal so EditReportModal can load that version
+	useEffect(() => {
+		if (versionIdParam && patientIdParam && selectedPatient?.patientId === patientIdParam && !showReportModal) {
+			setReportModalPatientId(patientIdParam);
+			setShowReportModal(true);
+		}
+	}, [versionIdParam, patientIdParam, selectedPatient?.patientId, showReportModal]);
 
 	// Real-time listener for selected patient document
 	useEffect(() => {
@@ -3715,6 +3725,7 @@ export default function EditReport() {
 					initialTab={selectedReportType || 'report'}
 					onClose={handleCloseReportModal}
 					editable={true}
+					initialVersionId={versionIdParam}
 				/>
 
 				{/* Analytics Modal */}
@@ -5521,14 +5532,37 @@ export default function EditReport() {
 													<p>Diagnosis: {version.data.clinicalDiagnosis}</p>
 												)}
 											</div>
-											<button
-												type="button"
-												onClick={() => setViewingVersion(version)}
-												className="px-4 py-2 text-sm font-medium text-sky-600 bg-sky-50 border border-sky-200 rounded-md hover:bg-sky-100 transition"
-											>
-												<i className="fas fa-eye mr-2" />
-												View Full Report
-											</button>
+											<div className="flex gap-2">
+												<button
+													type="button"
+													onClick={(e) => {
+														e.preventDefault();
+														e.stopPropagation();
+														setViewingVersion(version);
+														setShowVersionHistory(false);
+													}}
+													className="px-4 py-2 text-sm font-medium text-sky-600 bg-sky-50 border border-sky-200 rounded-md hover:bg-sky-100 transition"
+												>
+													<i className="fas fa-eye mr-2" />
+													View Full Report
+												</button>
+												<button
+													type="button"
+													onClick={(e) => {
+														e.preventDefault();
+														e.stopPropagation();
+														setShowVersionHistory(false);
+														setViewingVersion(null);
+														const reportData = version.data && typeof version.data === 'object' ? version.data : {};
+														setFormData(reportData as Partial<PatientRecordFull>);
+													}}
+													className="px-4 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition"
+													title="Edit this version"
+												>
+													<i className="fas fa-edit mr-2" />
+													Edit
+												</button>
+											</div>
 										</div>
 									))}
 								</div>
@@ -5970,6 +6004,8 @@ export default function EditReport() {
 				patientId={reportModalPatientId}
 				initialTab={selectedReportType || 'report'}
 				onClose={handleCloseReportModal}
+				editable={true}
+				initialVersionId={versionIdParam}
 			/>
 
 			{/* Analytics Modal */}

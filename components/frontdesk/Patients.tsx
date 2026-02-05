@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { collection, doc, onSnapshot, updateDoc, deleteDoc, query, where, getDocs, writeBatch, addDoc, serverTimestamp, orderBy, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 
 import {
@@ -448,6 +449,7 @@ function formatDurationLabel(minutes: number) {
 
 export default function Patients() {
 	const { user } = useAuth();
+	const router = useRouter();
 	const [patients, setPatients] = useState<FrontdeskPatient[]>([]);
 	const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
 	const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -4553,6 +4555,12 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 				patientId={reportModalPatientId}
 				initialTab={reportModalInitialTab}
 				onClose={handleCloseReportModal}
+				onEditVersion={(version) => {
+					handleCloseReportModal();
+					if (reportModalPatientId) {
+						router.push(`/clinical-team/edit-report?patientId=${encodeURIComponent(reportModalPatientId)}&versionId=${encodeURIComponent(version.id)}`);
+					}
+				}}
 			/>
 
 			{/* Delete Confirmation Modal */}
