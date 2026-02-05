@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-	apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function POST(req: Request) {
 	try {
 		const body = await req.json();
@@ -31,6 +27,8 @@ export async function POST(req: Request) {
 				{ status: 500 }
 			);
 		}
+
+		const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 		// Prepare the system prompt
 		const systemPrompt = `You are an expert Clinical Data Analyst. I am providing you with a chronological list of report versions (sessions) for a patient.
