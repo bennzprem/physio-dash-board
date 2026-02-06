@@ -160,7 +160,7 @@ export default function LoginPage() {
 									type="email"
 									id="email"
 									className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10"
-									placeholder="name@clinic.com"
+									placeholder="name@css.com"
 									value={formState.email}
 									onChange={e => setFormState(prev => ({ ...prev, email: e.target.value }))}
 									disabled={loading}
@@ -233,13 +233,8 @@ export default function LoginPage() {
 					</form>
 				</div>
 
-				{/* Footer */}
-				<div className="text-center text-sm text-slate-500">
-					Don&apos;t have an account?{' '}
-					<Link href="#" className="font-semibold text-blue-600 hover:underline">
-						Request Access
-					</Link>
-				</div>
+				{/* Footer - Empty for spacing */}
+				<div></div>
 			</div>
 
 			{/* Right Side: Professional Branding Panel */}
