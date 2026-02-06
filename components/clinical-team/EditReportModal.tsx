@@ -517,6 +517,7 @@ function buildPhysioReportPayloadForPDF(reportPatientData: Record<string, any>, 
 		rehabProtocol: (fd.rehabProtocol as string) || '',
 		nextFollowUpDate: (fd.nextFollowUpDate as string) || '',
 		nextFollowUpTime: (fd.nextFollowUpTime as string) || '',
+		followUpAssessment: (fd.followUpAssessment as string) || '',
 		followUpVisits: (fd.followUpVisits as any) || [],
 		physioName: (fd.physioName as string) || (fd.physioId as string) || '',
 		patientType: (fd.patientType as string) || '',
@@ -711,6 +712,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	}>>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | StrengthConditioningData | null>(null);
+	// Fetched data for the version we're viewing — set ONLY in getDoc callback; used for follow-up view so Treatment is never from another report
+	const [viewingVersionFetchedData, setViewingVersionFetchedData] = useState<Partial<PatientRecordFull> | null>(null);
 	const [viewingVersionId, setViewingVersionId] = useState<string | null>(null); // key for View Full Report modal to avoid stale data
 	const [viewingVersionIsStrengthConditioning, setViewingVersionIsStrengthConditioning] = useState(false);
 	const [viewingVersionIsPsychology, setViewingVersionIsPsychology] = useState(false);
@@ -718,6 +721,12 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const [psychologyFormDataKey, setPsychologyFormDataKey] = useState(0); // Key to force re-render when loading version data
 	const [isEditingLoadedPsychologyVersion, setIsEditingLoadedPsychologyVersion] = useState(false); // True when form was loaded from version via Edit
 	const isEditingLoadedPhysioVersionRef = useRef(false); // True when physio form was loaded from version via Edit (prevents listener from overwriting)
+	const viewingVersionIdRequestedRef = useRef<string | null>(null); // Version id we're loading for View Full Report (avoids stale getDoc overwriting with wrong version)
+	const viewingVersionForEditRef = useRef<typeof versionHistory[0] | null>(null); // Version object we're viewing — used by Edit so we always edit the correct report
+	const viewingVersionIdForEditRef = useRef<string | null>(null); // Version id when View Full Report was opened — single source of truth for which report to edit
+	const viewingVersionFetchedDataIdRef = useRef<string | null>(null); // Version id that viewingVersionFetchedData belongs to — avoid showing another report's data
+	// Fetched report data keyed by version id — single source for follow-up view so we never show another report's treatment
+	const fetchedDataByVersionIdRef = useRef<Record<string, Partial<PatientRecordFull>>>({});
 	const [isEditingLoadedPhysioVersion, setIsEditingLoadedPhysioVersion] = useState(false); // True when editing a loaded version → show full primary report form
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 	const [hasPsychologyVersions, setHasPsychologyVersions] = useState(false);
@@ -3336,6 +3345,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const handleViewVersionHistory = async () => {
 		setShowVersionHistory(true);
 		setViewingVersionData(null);
+		setViewingVersionFetchedData(null);
 		await loadVersionHistory();
 	};
 
@@ -3346,6 +3356,9 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 	// View the clicked version (pass version object so the correct row is always used)
 	const handleViewFullReport = (version: typeof versionHistory[0]) => {
+		viewingVersionIdRequestedRef.current = version.id; // ignore stale getDoc responses for other versions
+		viewingVersionForEditRef.current = version; // so Edit always edits this report, not another
+		viewingVersionIdForEditRef.current = version.id; // single source of truth for Edit: always use this id to resolve version
 		const versionDataFromList = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
 		setViewingVersionId(version.id); // key modal so it remounts when version changes (avoids stale data)
 		if (version.isPsychology) {
@@ -3363,33 +3376,48 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
 			setShowVersionHistory(false);
 		} else {
-			// Physiotherapy: use version data as source of truth; only add patient demographics from current patient
+			// Physiotherapy: do NOT use list data — only set viewingVersionData/viewingVersionFetchedData when getDoc returns
 			setViewingVersionIsStrengthConditioning(false);
 			setViewingVersionIsPsychology(false);
 			setViewingPsychologyVersionData(null);
-			const versionFirst = reportPatientData
-				? { ...version.data, name: reportPatientData.name, patientId: reportPatientData.patientId, dob: reportPatientData.dob }
-				: version.data;
-			setViewingVersionData(versionFirst as Partial<PatientRecordFull>);
+			setViewingVersionData(null);
+			setViewingVersionFetchedData(null);
+			viewingVersionFetchedDataIdRef.current = null;
+			delete fetchedDataByVersionIdRef.current[version.id]; // force re-fetch for this version
 			setShowVersionHistory(false);
 
-			getDoc(doc(db, 'reportVersions', version.id))
+			const versionIdForFetch = version.id;
+			const versionFirstFallback = reportPatientData
+				? { ...version.data, name: reportPatientData.name, patientId: reportPatientData.patientId, dob: reportPatientData.dob }
+				: version.data;
+			getDoc(doc(db, 'reportVersions', versionIdForFetch))
 				.then((versionSnap) => {
-					if (!versionSnap.exists()) return;
+					if (!versionSnap.exists()) {
+						setViewingVersionData(versionFirstFallback as Partial<PatientRecordFull>);
+						// Do NOT set viewingVersionFetchedData from list — would show Report#1's treatment for Report#2
+						viewingVersionFetchedDataIdRef.current = null;
+						return;
+					}
+					if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
 					const data = versionSnap.data() as Record<string, unknown> | undefined;
 					const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
 					const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
-					// Use version data as source of truth for all report fields; only fill patient demographics from current patient
 					const merged: Partial<PatientRecordFull> = {
 						...normalized,
 						name: reportPatientData?.name ?? normalized.name,
 						patientId: reportPatientData?.patientId ?? normalized.patientId,
 						dob: reportPatientData?.dob ?? normalized.dob,
 					};
+					// Store by version id so follow-up view always reads the correct report's data
+					fetchedDataByVersionIdRef.current[versionIdForFetch] = merged;
+					viewingVersionFetchedDataIdRef.current = versionIdForFetch;
 					setViewingVersionData(merged);
+					setViewingVersionFetchedData(merged);
 				})
 				.catch((err) => {
 					console.error('Failed to load version for view:', err);
+					setViewingVersionData(versionFirstFallback as Partial<PatientRecordFull>);
+					viewingVersionFetchedDataIdRef.current = null;
 				});
 		}
 	};
@@ -3451,18 +3479,18 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			return;
 		}
 
-		// Physiotherapy: fetch full version doc, normalize Firestore types, merge with patient data, then show full primary report form
+		// Physiotherapy: load form from the version doc (version.id). Report #2+ → show follow-up form only; Report #1 → show full primary form
 		setViewingVersionData(null);
-		setIsEditingLoadedPhysioVersion(true);
-		const versionDataFromList = reportPatientData
-			? { ...reportPatientData, ...version.data }
-			: (version.data as Partial<PatientRecordFull>);
-		setFormData(versionDataFromList as Partial<PatientRecordFull>);
+		setViewingVersionFetchedData(null);
+		// When editing Report #2+ show the follow-up assessment form only; when editing Report #1 show the full primary report form
+		setIsEditingLoadedPhysioVersion(version.version < 2);
+		// Set form to patient demographics only until fetch completes; never use version.data from list (can be wrong report)
+		setFormData(reportPatientData ? { ...reportPatientData } : {});
 		setActiveReportTab('report');
 		setShowVersionHistory(false);
 
-		// Fetch the version doc so we have the complete saved reportData and normalize Timestamps/nested objects for the form
-		getDoc(doc(db, 'reportVersions', version.id))
+		const versionIdToLoad = version.id;
+		getDoc(doc(db, 'reportVersions', versionIdToLoad))
 			.then((versionSnap) => {
 				if (!versionSnap.exists()) return;
 				const data = versionSnap.data() as Record<string, unknown> | undefined;
@@ -3470,12 +3498,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
 				const merged = reportPatientData
 					? { ...reportPatientData, ...normalized }
-					: normalized;
+					: { ...normalized };
+				// Form uses treatmentProvided; doc may have treatment only
+				if ((merged.treatmentProvided == null || merged.treatmentProvided === '') && merged.treatment)
+					merged.treatmentProvided = merged.treatment as string;
 				setFormData(merged);
 			})
 			.catch((err) => {
 				console.error('Failed to load version for edit:', err);
-				// Form already has versionDataFromList; only overwrite if fetch failed and user might have stale data
+				alert('Failed to load this report version. Please try again.');
 			});
 	};
 
@@ -7171,17 +7202,19 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				document.body
 			)}
 
-			{/* View Full Report Modal - key by viewingVersionId so modal remounts when version changes (no stale data) */}
-			{viewingVersionData && reportPatientData && (() => {
-				// Check if this is a Strength and Conditioning report
-				const isSCReport = viewingVersionIsStrengthConditioning || 
-					'sports' in viewingVersionData || 
-					'trainingAge' in viewingVersionData || 
-					'competitionLevel' in viewingVersionData ||
-					'scRPEPlanned' in viewingVersionData;
-				
+			{/* View Full Report Modal - show when viewing a version (by id or data); physio waits for getDoc so data is correct */}
+			{(viewingVersionId || viewingVersionData) && reportPatientData && (() => {
+				// Check if this is a Strength and Conditioning report (viewingVersionData may be null while physio report is loading)
+				const isSCReport = viewingVersionIsStrengthConditioning ||
+					(viewingVersionData != null && (
+						'sports' in viewingVersionData ||
+						'trainingAge' in viewingVersionData ||
+						'competitionLevel' in viewingVersionData ||
+						'scRPEPlanned' in viewingVersionData
+					));
+
 				return (
-					<div key={viewingVersionId ?? 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionId(null); } }}>
+					<div key={viewingVersionId ?? 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionFetchedData(null); setViewingVersionId(null); viewingVersionIdRequestedRef.current = null; viewingVersionForEditRef.current = null; viewingVersionIdForEditRef.current = null; viewingVersionFetchedDataIdRef.current = null; fetchedDataByVersionIdRef.current = {}; } }}>
 						<div className="bg-white rounded-lg shadow-xl max-w-6xl w-full h-[95vh] max-h-[95vh] flex flex-col overflow-hidden">
 							<div className="flex items-center justify-between p-6 border-b border-slate-200 flex-shrink-0 bg-white">
 							<h2 className="text-xl font-semibold text-slate-900">
@@ -7191,8 +7224,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								type="button"
 								onClick={() => {
 									setViewingVersionData(null);
+									setViewingVersionFetchedData(null);
 									setViewingVersionId(null);
 									setViewingVersionIsStrengthConditioning(false);
+									viewingVersionIdRequestedRef.current = null;
+									viewingVersionForEditRef.current = null;
+									viewingVersionIdForEditRef.current = null;
+									viewingVersionFetchedDataIdRef.current = null;
+									fetchedDataByVersionIdRef.current = {};
 								}}
 								className="text-slate-400 hover:text-slate-600 transition"
 								aria-label="Close"
@@ -7203,6 +7242,18 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						<div className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-white">
 							<div className="space-y-6">
 								{(() => {
+									// Physio: wait for getDoc so Treatment/Follow-up show this version's data (not Report#1)
+									const hasFetchedForThisVersion = viewingVersionId && fetchedDataByVersionIdRef.current[viewingVersionId];
+									const physioLoading = viewingVersionId && !hasFetchedForThisVersion && !viewingVersionData;
+									if (physioLoading) {
+										return (
+											<div className="flex flex-col items-center justify-center py-16 text-slate-600">
+												<i className="fas fa-spinner fa-spin text-3xl mb-4" aria-hidden="true" />
+												<p>Loading report…</p>
+											</div>
+										);
+									}
+									if (!viewingVersionData && !viewingVersionFetchedData) return null;
 									if (isSCReport) {
 										return (
 											// Strength and Conditioning Report View
@@ -7885,11 +7936,47 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											}
 											return String(val);
 										};
+										// Report #2 (follow-up): read only from ref keyed by viewingVersionId so we never show another report's treatment
+										const currentVersion = (versionHistory ?? []).find(vh => vh.id === viewingVersionId);
+										const isFollowUpReport = currentVersion != null && currentVersion.version >= 2;
+										if (isFollowUpReport) {
+											const viewOnly = (fetchedDataByVersionIdRef.current[viewingVersionId ?? ''] ?? {}) as Record<string, unknown>;
+											const followUpVal = viewOnly.followUpAssessment != null && String(viewOnly.followUpAssessment).trim() !== '' ? String(viewOnly.followUpAssessment) : '—';
+											const treatmentVal = (viewOnly.treatment ?? viewOnly.treatmentProvided) != null && String(viewOnly.treatment ?? viewOnly.treatmentProvided).trim() !== '' ? String(viewOnly.treatment ?? viewOnly.treatmentProvided) : '—';
+											const completionChecked = viewOnly.completionOfOneSession === true || viewOnly.completionOfOneSession === 'true';
+											return (
+												<>
+													<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
+														<strong>Follow-up report (Report #{currentVersion?.version ?? 2})</strong> — Follow-up Assessment · Treatment
+													</div>
+													{/* Follow-up Assessment — from this version only */}
+													<div className="mb-8 border-b border-slate-200 pb-6">
+														<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap min-h-[80px]">
+															{followUpVal}
+														</div>
+													</div>
+													{/* Treatment — from this version only */}
+													<div className="mb-8">
+														<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Treatment</h3>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap min-h-[80px]">
+															{treatmentVal}
+														</div>
+														{completionChecked && (
+															<div className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+																<i className="fas fa-check-circle text-sky-600" aria-hidden="true" />
+																<span>Completion of one session</span>
+															</div>
+														)}
+													</div>
+												</>
+											);
+										}
 										return (
 											<>
 											{/* Current Primary Report format - same structure as edit form */}
 											<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
-												<strong>Sections:</strong> Patient Information · Report Date · Assessment · 1. Subjective Assessment · 2. Pain Assessment · 3. Medical History · 4. Objective Assessment (Observation) · 5. Objective Assessment (Palpation) · 6. On Examination (ROM/MMT) · 7. Diagnosis & Investigation · 8. Physiotherapy Management · Physiotherapist Signature — <em>scroll to view all</em>
+												<strong>Sections:</strong> Patient Information · Report Date · Assessment · 1–8 · Follow-up Assessment · Follow-Up Visits · Physiotherapist Signature — <em>scroll to view all</em>
 											</div>
 											{/* Patient Information */}
 											<div className="mb-8 border-b border-slate-200 pb-6">
@@ -8279,6 +8366,47 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									);
 									})()}
 
+									{/* Follow-up Assessment (for follow-up visit reports e.g. Report #2+) */}
+									{has('followUpAssessment') && (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+										<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('followUpAssessment'))}</div>
+									</div>
+									)}
+
+									{/* Follow-Up Visits (for follow-up reports with visit history) */}
+									{Array.isArray(physioData.followUpVisits) && physioData.followUpVisits.length > 0 && (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-Up Visits</h3>
+										<div className="space-y-4">
+											{physioData.followUpVisits.map((visit: { visitDate?: string; painLevel?: string; findings?: string }, idx: number) => (
+												<div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+													<div className="grid gap-3 sm:grid-cols-3 text-sm">
+														{visit.visitDate != null && visit.visitDate !== '' && (
+															<div>
+																<label className="block text-xs font-medium text-slate-500 mb-1">Visit Date</label>
+																<div className="text-slate-800">{String(visit.visitDate)}</div>
+															</div>
+														)}
+														{visit.painLevel != null && visit.painLevel !== '' && (
+															<div>
+																<label className="block text-xs font-medium text-slate-500 mb-1">Pain Level</label>
+																<div className="text-slate-800">{String(visit.painLevel)}</div>
+															</div>
+														)}
+														{visit.findings != null && visit.findings !== '' && (
+															<div className="sm:col-span-3">
+																<label className="block text-xs font-medium text-slate-500 mb-1">Findings</label>
+																<div className="text-slate-800 whitespace-pre-wrap">{String(visit.findings)}</div>
+															</div>
+														)}
+													</div>
+												</div>
+											))}
+										</div>
+									</div>
+									)}
+
 									{has('physioName') && (
 									<div>
 										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapist Signature</h3>
@@ -8301,13 +8429,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							<button
 								type="button"
 								onClick={async () => {
+									if (!viewingVersionData) return;
 									try {
 										const versionData = reportPatientData ? { ...reportPatientData, ...viewingVersionData } : viewingVersionData;
 										
 										// Check if this is a Strength and Conditioning report
-										const isSCReport = viewingVersionIsStrengthConditioning || 
-											'sports' in viewingVersionData || 
-											'trainingAge' in viewingVersionData || 
+										const isSCReport = viewingVersionIsStrengthConditioning ||
+											'sports' in viewingVersionData ||
+											'trainingAge' in viewingVersionData ||
 											'competitionLevel' in viewingVersionData ||
 											'scRPEPlanned' in viewingVersionData;
 										
@@ -8345,12 +8474,21 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								<button
 									type="button"
 									onClick={() => {
-										const version = (versionHistory ?? []).find(v => v.id === viewingVersionId);
+										// Use the version we stored when opening View Full Report so we always edit that report (Report #2 → edit Report #2)
+										const versionIdToEdit = viewingVersionIdForEditRef.current ?? viewingVersionId;
+										const versionFromRef = viewingVersionForEditRef.current?.id === versionIdToEdit ? viewingVersionForEditRef.current : null;
+										const version = versionFromRef ?? (versionHistory ?? []).find(v => v.id === versionIdToEdit);
 										if (version) {
 											handleEditVersion(version);
 											setViewingVersionData(null);
+											setViewingVersionFetchedData(null);
 											setViewingVersionIsStrengthConditioning(false);
 											setViewingVersionId(null);
+											viewingVersionIdRequestedRef.current = null;
+											viewingVersionForEditRef.current = null;
+											viewingVersionIdForEditRef.current = null;
+											viewingVersionFetchedDataIdRef.current = null;
+											fetchedDataByVersionIdRef.current = {};
 										}
 									}}
 									className="inline-flex items-center rounded-lg border border-amber-600 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 transition hover:bg-amber-100 focus-visible:outline-none"
@@ -8363,8 +8501,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								type="button"
 								onClick={() => {
 									setViewingVersionData(null);
+									setViewingVersionFetchedData(null);
 									setViewingVersionIsStrengthConditioning(false);
 									setViewingVersionId(null);
+									viewingVersionIdRequestedRef.current = null;
+									viewingVersionForEditRef.current = null;
+									viewingVersionIdForEditRef.current = null;
+									viewingVersionFetchedDataIdRef.current = null;
+									fetchedDataByVersionIdRef.current = {};
 								}}
 								className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition"
 							>

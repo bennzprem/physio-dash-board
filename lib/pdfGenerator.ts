@@ -121,6 +121,7 @@ export interface PatientReportData {
 	managementRemarks?: string;
 	nextFollowUpDate?: string;
 	nextFollowUpTime?: string;
+	followUpAssessment?: string;
 	followUpVisits?: Array<{ visitDate: string; painLevel: string; findings: string }>;
 	currentPainStatus?: string;
 	currentRom?: string;
@@ -231,6 +232,7 @@ export type ReportSection =
 	| 'mmt'
 	| 'advancedAssessment'
 	| 'physiotherapyManagement'
+	| 'followUpAssessment'
 	| 'followUpVisits'
 	| 'currentStatus'
 	| 'nextFollowUp'
@@ -811,6 +813,48 @@ export async function generatePhysiotherapyReportPDF(
 	}
 
 	// CURRENT STATUS section removed from PDF (per current report format)
+
+	// Follow-up Assessment (for follow-up visit reports)
+	if (includeSection('followUpAssessment') && data.followUpAssessment && String(data.followUpAssessment).trim() !== '') {
+		checkPageBreak(20);
+		autoTable(doc, {
+			startY: y,
+			theme: 'grid',
+			head: [['FOLLOW-UP ASSESSMENT', '']],
+			body: [['Assessment', normalizePdfText(data.followUpAssessment)]],
+			headStyles,
+			styles: { ...baseStyles, overflow: 'linebreak' },
+			columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto', overflow: 'linebreak' } },
+			margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
+		});
+		y = (doc as any).lastAutoTable.finalY + 1;
+	}
+
+	// Follow-Up Visits (for follow-up reports with visit history)
+	if (includeSection('followUpVisits') && data.followUpVisits && data.followUpVisits.length > 0) {
+		checkPageBreak(25);
+		const visitRows: string[][] = [['Visit Date', 'Pain Level', 'Findings']];
+		for (const v of data.followUpVisits) {
+			visitRows.push([
+				v.visitDate || '—',
+				v.painLevel || '—',
+				normalizePdfText(v.findings) || '—',
+			]);
+		}
+		autoTable(doc, {
+			startY: y,
+			theme: 'grid',
+			head: [['FOLLOW-UP VISITS', '', '']],
+			body: visitRows,
+			headStyles,
+			styles: baseStyles,
+			columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 35 }, 2: { cellWidth: 'auto', overflow: 'linebreak' } },
+			margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
+		});
+		y = (doc as any).lastAutoTable.finalY + 1;
+	}
 
 	if (includeSection('nextFollowUp') && (data.nextFollowUpDate || data.nextFollowUpTime)) {
 		autoTable(doc, {
