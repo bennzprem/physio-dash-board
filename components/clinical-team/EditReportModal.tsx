@@ -2550,6 +2550,61 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				managementRemarks: formData.managementRemarks || '',
 				nextFollowUpDate: formData.nextFollowUpDate || '',
 				nextFollowUpTime: formData.nextFollowUpTime || '',
+				// Current primary report format fields (so View Full Report shows saved data)
+				historyOfPresentIllness: formData.historyOfPresentIllness || formData.history || '',
+				painLocation: formData.painLocation || formData.siteSide || '',
+				painType: formData.painType || formData.typeOfPain || '',
+				pastMedicalHistory: formData.pastMedicalHistory || '',
+				relevantHistory: formData.relevantHistory || '',
+				localObservation1: formData.localObservation1 || '',
+				localObservation2: formData.localObservation2 || '',
+				localObservation3: formData.localObservation3 || '',
+				localObservation4: formData.localObservation4 || '',
+				gait: formData.gait || formData.gaitAnalysis || '',
+				tenderness1: formData.tenderness1 || formData.tenderness || '',
+				tenderness2: formData.tenderness2 || '',
+				temperature: formData.temperature || formData.warmth || '',
+				adimaEdema: formData.adimaEdema || formData.odema || '',
+				otherSignsOfInflammation: formData.otherSignsOfInflammation || '',
+				jointPlayMovement: formData.jointPlayMovement || '',
+				accessoryJointMovement: formData.accessoryJointMovement || '',
+				examinationAdditionalNotes: formData.examinationAdditionalNotes || '',
+				assessmentOfInvestigation: formData.assessmentOfInvestigation || '',
+				investigationXray: formData.investigationXray || formData.med_xray || false,
+				investigationMRI: formData.investigationMRI || formData.med_mri || false,
+				investigationCTScan: formData.investigationCTScan || formData.med_ct || false,
+				investigationBlood: formData.investigationBlood || false,
+				investigationOthers: formData.investigationOthers || false,
+				patientEducationCondition: formData.patientEducationCondition || false,
+				patientEducationGoals: formData.patientEducationGoals || false,
+				patientEducationAdvantages: formData.patientEducationAdvantages || false,
+				patientEducationOthers: formData.patientEducationOthers || false,
+				patientEducationOthersText: formData.patientEducationOthersText || '',
+				shortTermGoalReducePain: formData.shortTermGoalReducePain || false,
+				shortTermGoalImproveROM: formData.shortTermGoalImproveROM || false,
+				shortTermGoalImproveStrength: formData.shortTermGoalImproveStrength || false,
+				shortTermGoalOthers: formData.shortTermGoalOthers || false,
+				shortTermGoalOthersText: formData.shortTermGoalOthersText || '',
+				treatmentCryotherapy: formData.treatmentCryotherapy || false,
+				treatmentIFT: formData.treatmentIFT || false,
+				treatmentTENS: formData.treatmentTENS || false,
+				treatmentLaser: formData.treatmentLaser || false,
+				treatmentSWT: formData.treatmentSWT || false,
+				treatmentHotTherapy: formData.treatmentHotTherapy || false,
+				treatmentManualTherapy: formData.treatmentManualTherapy || false,
+				treatmentSoftTissueManipulation: formData.treatmentSoftTissueManipulation || false,
+				treatmentDryNeedling: formData.treatmentDryNeedling || false,
+				treatmentCuppingTherapy: formData.treatmentCuppingTherapy || false,
+				treatmentOthers: formData.treatmentOthers || false,
+				treatmentOthersText: formData.treatmentOthersText || '',
+				longTermGoalReducePain: formData.longTermGoalReducePain || false,
+				longTermGoalImproveROM: formData.longTermGoalImproveROM || false,
+				longTermGoalImproveStrength: formData.longTermGoalImproveStrength || false,
+				longTermGoalImproveStability: formData.longTermGoalImproveStability || false,
+				longTermGoalRTP: formData.longTermGoalRTP || false,
+				longTermGoalOthers: formData.longTermGoalOthers || false,
+				longTermGoalOthersText: formData.longTermGoalOthersText || '',
+				homeAdvice: formData.homeAdvice || formData.advice || '',
 				sessionNumber: sessionNum, // Add session number to patient record
 				totalSessionsRequired:
 					typeof formData.totalSessionsRequired === 'number'
@@ -3187,11 +3242,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
 			setShowVersionHistory(false);
 		} else {
-			// Physiotherapy: show list data first, then fetch full version doc so all saved fields are displayed
+			// Physiotherapy: use version data as source of truth; only add patient demographics from current patient
 			setViewingVersionIsStrengthConditioning(false);
 			setViewingVersionIsPsychology(false);
 			setViewingPsychologyVersionData(null);
-			setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
+			const versionFirst = reportPatientData
+				? { ...version.data, name: reportPatientData.name, patientId: reportPatientData.patientId, dob: reportPatientData.dob }
+				: version.data;
+			setViewingVersionData(versionFirst as Partial<PatientRecordFull>);
 			setShowVersionHistory(false);
 
 			getDoc(doc(db, 'reportVersions', version.id))
@@ -3200,9 +3258,13 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					const data = versionSnap.data() as Record<string, unknown> | undefined;
 					const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
 					const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
-					const merged = reportPatientData
-						? { ...reportPatientData, ...normalized }
-						: normalized;
+					// Use version data as source of truth for all report fields; only fill patient demographics from current patient
+					const merged: Partial<PatientRecordFull> = {
+						...normalized,
+						name: reportPatientData?.name ?? normalized.name,
+						patientId: reportPatientData?.patientId ?? normalized.patientId,
+						dob: reportPatientData?.dob ?? normalized.dob,
+					};
 					setViewingVersionData(merged);
 				})
 				.catch((err) => {
@@ -7749,626 +7811,431 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</>
 										);
 									} else {
-										// Type assertion: we know this is a physiotherapy report in this branch
-										const physioData = viewingVersionData as Partial<PatientRecordFull>;
+										// Merge current patient with version so we show version value when present, else patient (handles legacy keys and missing keys)
+										const physioData = { ...(reportPatientData || {}), ...(viewingVersionData || {}) } as Partial<PatientRecordFull> & Record<string, unknown>;
+										const v = (x: any) => (x !== undefined && x !== null && x !== '') ? String(x) : '—';
+										// Get first non-empty value from merged data (version wins; supports legacy + new keys) so saved data always shows
+										const get = (...keys: string[]) => {
+											for (const k of keys) {
+												const val = physioData[k];
+												if (val !== undefined && val !== null && val !== '') return val;
+											}
+											return undefined;
+										};
+										const has = (...keys: string[]) => get(...keys) !== undefined;
+										// Format ROM/MMT cell values so nested objects (e.g. left/right) show as readable text, not [object Object]
+										const formatCell = (val: any): string => {
+											if (val == null || val === '') return '—';
+											if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+												return Object.entries(val).map(([k, v]) => `${k}: ${formatCell(v)}`).join('; ');
+											}
+											return String(val);
+										};
 										return (
 											<>
+											{/* Current Primary Report format - same structure as edit form */}
+											<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
+												<strong>Sections:</strong> Patient Information · Report Date · Assessment · 1. Subjective Assessment · 2. Pain Assessment · 3. Medical History · 4. Objective Assessment (Observation) · 5. Objective Assessment (Palpation) · 6. On Examination (ROM/MMT) · 7. Diagnosis & Investigation · 8. Physiotherapy Management · Physiotherapist Signature — <em>scroll to view all</em>
+											</div>
 											{/* Patient Information */}
 											<div className="mb-8 border-b border-slate-200 pb-6">
 												<h2 className="mb-4 text-xl font-bold text-sky-600">Physiotherapy Report</h2>
 												<div className="mb-4 text-right text-sm text-slate-600">
-													<div>
-														<b>Clinic:</b> Centre For Sports Science, Kanteerava Stadium
-													</div>
-													<div>
-														<b>Report Date:</b> {physioData.dateOfConsultation || new Date().toLocaleDateString()}
-													</div>
+													<div><b>Clinic:</b> Centre For Sports Science, Kanteerava Stadium</div>
+													{has('dateOfConsultation') && <div><b>Report Date:</b> {String(get('dateOfConsultation'))}</div>}
 												</div>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+													{reportPatientData.name != null && reportPatientData.name !== '' && (
 													<div>
 														<label className="block text-xs font-medium text-slate-500">Patient Name</label>
-														<input
-															type="text"
-															value={reportPatientData.name || ''}
-															readOnly
-															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-														/>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{reportPatientData.name}</div>
 													</div>
+													)}
+													{has('patientType') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500">Type of Organization</label>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('patientType') ?? reportPatientData.patientType)}</div>
+													</div>
+													)}
+													{reportPatientData.patientId != null && reportPatientData.patientId !== '' && (
 													<div>
 														<label className="block text-xs font-medium text-slate-500">Patient ID</label>
-														<input
-															type="text"
-															value={reportPatientData.patientId || ''}
-															readOnly
-															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-														/>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{reportPatientData.patientId}</div>
 													</div>
+													)}
+													{reportPatientData.dob != null && reportPatientData.dob !== '' && (
 													<div>
 														<label className="block text-xs font-medium text-slate-500">Date of Birth</label>
-														<input
-															type="date"
-															value={reportPatientData.dob || ''}
-															readOnly
-															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-														/>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{reportPatientData.dob}</div>
 													</div>
-												</div>
-											</div>
-
-											{/* Assessment Section - Read Only */}
-											<div className="space-y-6">
-												{physioData.dateOfConsultation && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Date of Consultation</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-												{physioData.dateOfConsultation}
-											</div>
-										</div>
-									)}
-
-									{physioData.chiefComplaint && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Chief Complaint</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.chiefComplaint}
-											</div>
-										</div>
-									)}
-
-									{(physioData.history || physioData.presentHistory || physioData.pastHistory) && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">History</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.history || (physioData.presentHistory || '') + (physioData.pastHistory ? '\n' + physioData.pastHistory : '')}
-											</div>
-										</div>
-									)}
-
-									{((physioData.med_xray || physioData.med_mri || physioData.med_report || physioData.med_ct) || physioData.surgicalHistory) && (
-										<div className="grid gap-4 sm:grid-cols-2">
-											{(physioData.med_xray || physioData.med_mri || physioData.med_report || physioData.med_ct) && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Medical History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{[
-															physioData.med_xray && 'X-RAYS',
-															physioData.med_mri && 'MRI',
-															physioData.med_report && 'Reports',
-															physioData.med_ct && 'CT Scans'
-														].filter(Boolean).join(', ') || '—'}
-													</div>
-												</div>
-											)}
-											{physioData.surgicalHistory && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Surgical History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-														{physioData.surgicalHistory}
-													</div>
-												</div>
-											)}
-										</div>
-									)}
-
-									{((physioData.per_smoking || physioData.per_drinking || physioData.per_alcohol || physioData.per_drugs) || physioData.sleepCycle || physioData.hydration || physioData.nutrition) && (
-										<div className="grid gap-4 sm:grid-cols-2">
-											{(physioData.per_smoking || physioData.per_drinking || physioData.per_alcohol || physioData.per_drugs) && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Personal History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{[
-															physioData.per_smoking && 'Smoking',
-															physioData.per_drinking && 'Drinking',
-															physioData.per_alcohol && 'Alcohol',
-															physioData.per_drugs && `Drugs${physioData.drugsText ? ` (${physioData.drugsText})` : ''}`
-														].filter(Boolean).join(', ') || '—'}
-													</div>
-												</div>
-											)}
-											{physioData.sleepCycle && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Sleep Cycle</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.sleepCycle}
-													</div>
-												</div>
-											)}
-											{physioData.hydration && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Hydration</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.hydration}/8 {HYDRATION_EMOJIS[Math.min(HYDRATION_EMOJIS.length - 1, Math.max(1, Number(physioData.hydration)) - 1)]}
-													</div>
-												</div>
-											)}
-											{physioData.nutrition && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Nutrition</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.nutrition}
-													</div>
-												</div>
-											)}
-										</div>
-									)}
-
-									{(physioData.siteSide || physioData.onset || physioData.duration || physioData.natureOfInjury || physioData.typeOfPain || physioData.aggravatingFactor || physioData.relievingFactor) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Pain Assessment</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.siteSide && (
+													)}
+													{(get('totalSessionsRequired') != null && get('totalSessionsRequired') !== '' || (reportPatientData.totalSessionsRequired != null && reportPatientData.totalSessionsRequired !== '')) && (
 													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Site and Side</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.siteSide}
-														</div>
+														<label className="block text-xs font-medium text-slate-500">Total Sessions Required</label>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('totalSessionsRequired') ?? reportPatientData.totalSessionsRequired)}</div>
 													</div>
-												)}
-												{physioData.onset && (
+													)}
+													{(get('remainingSessions') != null && get('remainingSessions') !== '' || (reportPatientData.remainingSessions != null && reportPatientData.remainingSessions !== '')) && (
 													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Onset</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.onset}
-														</div>
+														<label className="block text-xs font-medium text-slate-500">Remaining Sessions</label>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('remainingSessions') ?? reportPatientData.remainingSessions)}</div>
 													</div>
-												)}
-												{physioData.duration && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Duration</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.duration}
-														</div>
-													</div>
-												)}
-												{physioData.natureOfInjury && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Nature of Injury</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.natureOfInjury}
-														</div>
-													</div>
-												)}
-												{physioData.aggravatingFactor && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Aggravating Factor</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.aggravatingFactor}
-														</div>
-													</div>
-												)}
-												{physioData.relievingFactor && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Relieving Factor</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.relievingFactor}
-														</div>
-													</div>
-												)}
+													)}
+												</div>
 											</div>
-										</div>
-									)}
 
-									{(physioData.differentialDiagnosis || physioData.clinicalDiagnosis) && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Differential Diagnosis</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.differentialDiagnosis || physioData.clinicalDiagnosis}
+											{has('dateOfConsultation') && (
+											<div className="mb-8 border-b border-slate-200 pb-4">
+												<h3 className="text-sm font-semibold text-sky-600 mb-2">Report Date</h3>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('dateOfConsultation'))}</div>
 											</div>
-										</div>
-									)}
+											)}
 
-									{physioData.vasScale && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">VAS Scale</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-												{physioData.vasScale} {VAS_EMOJIS[Math.min(VAS_EMOJIS.length - 1, Math.max(1, Number(physioData.vasScale)) - 1)]}
+											{(has('referredBy') || has('chiefComplaint', 'complaints')) && (
+											<div className="mb-8">
+												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Assessment</h3>
+												<div className="grid gap-4 sm:grid-cols-2">
+													{has('referredBy') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Referred by</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('referredBy'))}</div>
+													</div>
+													)}
+													{has('chiefComplaint', 'complaints') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Chief complaints</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('chiefComplaint', 'complaints'))}</div>
+													</div>
+													)}
+												</div>
 											</div>
-										</div>
-									)}
+											)}
 
-									{physioData.rom && Object.keys(physioData.rom).length > 0 && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-2">ROM (Range of Motion)</label>
-											<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
-												{Object.entries(physioData.rom).map(([joint, data]: [string, any]) => (
-													<div key={joint} className="mb-4 last:mb-0">
-														<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
-														{data && typeof data === 'object' && (
-															<div className="text-xs text-slate-700 space-y-1 ml-4">
-																{Object.entries(data).map(([motion, value]: [string, any]) => (
-																	<div key={motion}>
-																		<span className="font-medium">{motion}:</span> {String(value || '—')}
-																	</div>
-																))}
+											{(has('historyOfPresentIllness', 'history') || has('presentHistory') || has('pastHistory')) && (
+											<div className="mb-8">
+												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">1. Subjective Assessment</h3>
+												<label className="block text-xs font-medium text-slate-500 mb-1">History of Present Illness (HOPI)</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
+													{String(get('historyOfPresentIllness', 'history') || (get('presentHistory') ? (get('presentHistory') as string) + (get('pastHistory') ? '\n' + get('pastHistory') : '') : ''))}
+												</div>
+											</div>
+											)}
+
+											{(has('painLocation', 'siteSide') || has('painType', 'typeOfPain') || has('vasScale') || has('aggravatingFactor') || has('relievingFactor')) && (
+											<div className="mb-8">
+												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">2. Pain Assessment</h3>
+												<div className="space-y-4">
+													{has('painLocation', 'siteSide') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Pain Mapping System (Location)</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('painLocation', 'siteSide'))}</div>
+													</div>
+													)}
+													<div className="grid gap-4 sm:grid-cols-2">
+														{has('painType', 'typeOfPain') && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Type of Pain</label>
+															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('painType', 'typeOfPain'))}</div>
+														</div>
+														)}
+														{has('vasScale') && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">VAS Scale</label>
+															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+																{`${get('vasScale')} ${VAS_EMOJIS[Math.min(VAS_EMOJIS.length - 1, Math.max(0, Number(get('vasScale')) - 1))]}`}
 															</div>
+														</div>
+														)}
+														{has('aggravatingFactor') && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Aggravating Factors</label>
+															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('aggravatingFactor'))}</div>
+														</div>
+														)}
+														{has('relievingFactor') && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Relieving Factors</label>
+															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('relievingFactor'))}</div>
+														</div>
 														)}
 													</div>
-												))}
+												</div>
 											</div>
-										</div>
-									)}
+											)}
 
-									{physioData.mmt && Object.keys(physioData.mmt).length > 0 && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-2">MMT (Manual Muscle Testing)</label>
-											<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
-												{Object.entries(physioData.mmt).map(([joint, data]: [string, any]) => (
-													<div key={joint} className="mb-4 last:mb-0">
-														<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
-														{data && typeof data === 'object' && (
-															<div className="text-xs text-slate-700 space-y-1 ml-4">
-																{Object.entries(data).map(([motion, value]: [string, any]) => (
-																	<div key={motion}>
-																		<span className="font-medium">{motion}:</span> {String(value || '—')}
-																	</div>
-																))}
-															</div>
-														)}
+											{(has('pastMedicalHistory') || has('surgicalHistory') || has('relevantHistory')) && (
+											<div className="mb-8">
+												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">3. Medical History</h3>
+												<div className="space-y-4">
+													{has('pastMedicalHistory') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Past Medical History</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('pastMedicalHistory'))}</div>
 													</div>
-												))}
+													)}
+													{has('surgicalHistory') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Past Surgical History</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('surgicalHistory'))}</div>
+													</div>
+													)}
+													{has('relevantHistory') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Relevant History</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('relevantHistory'))}</div>
+													</div>
+													)}
+												</div>
 											</div>
-										</div>
-									)}
+											)}
 
-									{/* On Observation Section */}
-									{(physioData.built || physioData.posture || physioData.gaitAnalysis || physioData.mobilityAids) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">On Observation</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.built && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Built</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.built}
-														</div>
-													</div>
-												)}
-												{physioData.posture && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Posture</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.posture}
-														</div>
-													</div>
-												)}
-												{physioData.gaitAnalysis && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Gait Analysis</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.gaitAnalysis}
-														</div>
-													</div>
-												)}
-												{physioData.mobilityAids && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Mobility Aids</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.mobilityAids}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{/* On Palpation Section */}
-									{(physioData.localObservation || physioData.swelling || physioData.muscleWasting || physioData.tenderness || physioData.warmth || physioData.scar || physioData.crepitus || physioData.odema) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">On Palpation</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.localObservation && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Local Observation</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.localObservation}
-														</div>
-													</div>
-												)}
-												{physioData.swelling && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Swelling</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.swelling}
-														</div>
-													</div>
-												)}
-												{physioData.muscleWasting && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Muscle Wasting</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.muscleWasting}
-														</div>
-													</div>
-												)}
-												{physioData.tenderness && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Tenderness</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.tenderness}
-														</div>
-													</div>
-												)}
-												{physioData.warmth && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Warmth</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.warmth}
-														</div>
-													</div>
-												)}
-												{physioData.scar && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Scar</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.scar}
-														</div>
-													</div>
-												)}
-												{physioData.crepitus && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Crepitus</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.crepitus}
-														</div>
-													</div>
-												)}
-												{physioData.odema && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Oedema</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.odema}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{/* Advanced Assessment */}
-									{(physioData.specialTest || physioData.differentialDiagnosis || physioData.finalDiagnosis) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Advanced Assessment</h3>
-											<div className="space-y-4">
-												{physioData.specialTest && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Special Test</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.specialTest}
-														</div>
-													</div>
-												)}
-												{physioData.differentialDiagnosis && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Differential Diagnosis</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.differentialDiagnosis}
-														</div>
-													</div>
-												)}
-												{physioData.finalDiagnosis && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Final Diagnosis</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.finalDiagnosis}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{/* Treatment Plan & Management */}
-									<div>
-										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapy Management</h3>
+									{([1, 2, 3, 4].some(i => has(`localObservation${i}`) || (i === 1 && has('localObservation'))) || has('posture') || has('gait', 'gaitAnalysis')) && (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">4. Objective Assessment - Observation</h3>
 										<div className="space-y-4">
-												{physioData.shortTermGoals && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Short Term Goals</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.shortTermGoals}
-														</div>
-													</div>
+											{([1, 2, 3, 4].some(i => has(`localObservation${i}`) || (i === 1 && has('localObservation')))) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Local Observation (Area of Pain)</label>
+												<div className="space-y-2">
+													{[1, 2, 3, 4].map(i => {
+														const val = get(`localObservation${i}`) ?? (i === 1 ? get('localObservation') : undefined);
+														return val != null && String(val).trim() !== '' ? (
+															<div key={i} className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(val)}</div>
+														) : null;
+													})}
+												</div>
+											</div>
+											)}
+											<div className="grid gap-4 sm:grid-cols-2">
+												{has('posture') && (
+												<div>
+													<label className="block text-xs font-medium text-slate-500 mb-1">Posture</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('posture'))}</div>
+												</div>
 												)}
-												{physioData.longTermGoals && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Long Term Goals</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.longTermGoals}
-														</div>
-													</div>
+												{has('gait', 'gaitAnalysis') && (
+												<div>
+													<label className="block text-xs font-medium text-slate-500 mb-1">Gait</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('gait', 'gaitAnalysis'))}</div>
+												</div>
 												)}
-												{(physioData.treatment || physioData.treatmentProvided) && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Treatment</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.treatment || physioData.treatmentProvided}
-														</div>
-													</div>
-												)}
-												{physioData.treatmentPlan && Array.isArray(physioData.treatmentPlan) && physioData.treatmentPlan.length > 0 && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Treatment Plan</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															<ul className="list-disc list-inside space-y-1">
-																{physioData.treatmentPlan.map((item: any, index: number) => (
-																	<li key={index}>
-																		{typeof item === 'string' ? item : `${item.therapy || ''} - ${item.frequency || ''} - ${item.remarks || ''}`}
-																	</li>
-																))}
-															</ul>
-														</div>
-													</div>
-												)}
-												{physioData.progressNotes && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Progress Notes</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.progressNotes}
-														</div>
-													</div>
-												)}
-												{physioData.advice && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Advice</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.advice}
-														</div>
-													</div>
-												)}
-												{!physioData.shortTermGoals && !physioData.longTermGoals && !physioData.treatment && !physioData.treatmentProvided && (!physioData.treatmentPlan || (Array.isArray(physioData.treatmentPlan) && physioData.treatmentPlan.length === 0)) && !physioData.progressNotes && !physioData.advice && (
-													<div className="text-sm text-slate-500 italic py-4 text-center">
-														No management information available for this report.
-													</div>
-												)}
+											</div>
 										</div>
 									</div>
-
-									{/* Follow-up Assessment (after Physiotherapy Management) */}
-									{physioData.followUpAssessment && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.followUpAssessment}
-											</div>
-										</div>
 									)}
 
-									{/* Follow-Up Visits */}
-									{physioData.followUpVisits && Array.isArray(physioData.followUpVisits) && physioData.followUpVisits.length > 0 && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-Up Visits</h3>
-											<div className="overflow-x-auto">
-												<table className="min-w-full divide-y divide-slate-200 border border-slate-300">
-													<thead className="bg-slate-100">
-														<tr>
-															<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Visit #</th>
-															<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Date</th>
-															<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Pain Level</th>
-															<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Findings</th>
-														</tr>
-													</thead>
-													<tbody className="bg-white divide-y divide-slate-200">
-														{physioData.followUpVisits.map((visit: any, index: number) => (
-															<tr key={index}>
-																<td className="px-3 py-2 text-xs text-slate-700">{index + 1}</td>
-																<td className="px-3 py-2 text-xs text-slate-700">{visit.visitDate || '—'}</td>
-																<td className="px-3 py-2 text-xs text-slate-700">{visit.painLevel || '—'}</td>
-																<td className="px-3 py-2 text-xs text-slate-700">{visit.findings || '—'}</td>
-															</tr>
-														))}
-													</tbody>
-												</table>
-											</div>
-										</div>
-									)}
-
-									{/* Current Status */}
-									{(physioData.currentPainStatus || physioData.currentRom || physioData.currentStrength || physioData.currentFunctionalAbility || physioData.complianceWithHEP) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Current Status</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.currentPainStatus && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Current Pain Status</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.currentPainStatus}
-														</div>
-													</div>
-												)}
-												{physioData.currentRom && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Current ROM</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.currentRom}
-														</div>
-													</div>
-												)}
-												{physioData.currentStrength && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Current Strength</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.currentStrength}
-														</div>
-													</div>
-												)}
-												{physioData.currentFunctionalAbility && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Current Functional Ability</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.currentFunctionalAbility}
-														</div>
-													</div>
-												)}
-												{physioData.complianceWithHEP && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Compliance with HEP</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.complianceWithHEP}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{physioData.recommendations && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Recommendations</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.recommendations}
-											</div>
-										</div>
-									)}
-
-									{physioData.managementRemarks && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Management Remarks</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.managementRemarks}
-											</div>
-										</div>
-									)}
-
-									{/* Physiotherapist Information */}
-									{physioData.physioName && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapist Information</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Physiotherapist Name</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.physioName}
-													</div>
+									{(has('tenderness1') || has('tenderness') || has('tenderness2') || has('temperature', 'warmth') || has('adimaEdema', 'odema') || has('otherSignsOfInflammation')) && (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">5. Objective Assessment - Palpation</h3>
+										<div className="space-y-4">
+											{(has('tenderness1') || has('tenderness') || has('tenderness2')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Tenderness</label>
+												<div className="space-y-2">
+													{((physioData as Record<string, unknown>).tenderness1 || physioData.tenderness) != null && String((physioData as Record<string, unknown>).tenderness1 || physioData.tenderness).trim() !== '' && (
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String((physioData as Record<string, unknown>).tenderness1 || physioData.tenderness)}</div>
+													)}
+													{has('tenderness2') && (
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('tenderness2'))}</div>
+													)}
 												</div>
 											</div>
+											)}
+											<div className="grid gap-4 sm:grid-cols-2">
+												{has('temperature', 'warmth') && (
+												<div>
+													<label className="block text-xs font-medium text-slate-500 mb-1">Temperature</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('temperature', 'warmth'))}</div>
+												</div>
+												)}
+												{has('adimaEdema', 'odema') && (
+												<div>
+													<label className="block text-xs font-medium text-slate-500 mb-1">ADIMA / Edema</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('adimaEdema', 'odema'))}</div>
+												</div>
+												)}
+												{has('otherSignsOfInflammation') && (
+												<div className="sm:col-span-2">
+													<label className="block text-xs font-medium text-slate-500 mb-1">Other Signs of Inflammation</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('otherSignsOfInflammation'))}</div>
+												</div>
+												)}
+											</div>
 										</div>
+									</div>
 									)}
 
-									{/* Next Follow-up (after Physiotherapist Information) */}
-									{(physioData.nextFollowUpDate || physioData.nextFollowUpTime) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Next Follow-up</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.nextFollowUpDate && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Date</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.nextFollowUpDate}
+									{(physioData.rom && Object.keys(physioData.rom).length > 0) || (physioData.mmt && Object.keys(physioData.mmt).length > 0) || has('jointPlayMovement') || has('accessoryJointMovement') || has('examinationAdditionalNotes') ? (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">6. On Examination</h3>
+										<div className="space-y-6">
+											{physioData.rom && Object.keys(physioData.rom).length > 0 && (
+											<div>
+												<h4 className="text-xs font-semibold text-slate-700 mb-2">i) Range of Motion Assessment</h4>
+												<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
+													{Object.entries(physioData.rom).map(([joint, data]: [string, any]) => (
+														<div key={joint} className="mb-4 last:mb-0">
+															<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
+															{data && typeof data === 'object' ? (
+																<div className="text-xs text-slate-700 space-y-1 ml-4">
+																	{Object.entries(data).map(([motion, value]: [string, any]) => (
+																		<div key={motion}><span className="font-medium">{motion}:</span> {formatCell(value)}</div>
+																	))}
+																</div>
+															) : <div className="text-sm text-slate-500 italic">No data</div>}
 														</div>
-													</div>
-												)}
-												{physioData.nextFollowUpTime && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Time</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.nextFollowUpTime}
+													))}
+												</div>
+											</div>
+											)}
+											{physioData.mmt && Object.keys(physioData.mmt).length > 0 && (
+											<div>
+												<h4 className="text-xs font-semibold text-slate-700 mb-2">ii) Manual Muscle Testing</h4>
+												<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
+													{Object.entries(physioData.mmt).map(([joint, data]: [string, any]) => (
+														<div key={joint} className="mb-4 last:mb-0">
+															<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
+															{data && typeof data === 'object' ? (
+																<div className="text-xs text-slate-700 space-y-1 ml-4">
+																	{Object.entries(data).map(([motion, value]: [string, any]) => (
+																		<div key={motion}><span className="font-medium">{motion}:</span> {formatCell(value)}</div>
+																	))}
+																</div>
+															) : <div className="text-sm text-slate-500 italic">No data</div>}
 														</div>
-													</div>
-												)}
+													))}
+												</div>
+											</div>
+											)}
+											{has('jointPlayMovement') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Joint Play Movement</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('jointPlayMovement'))}</div>
+											</div>
+											)}
+											{has('accessoryJointMovement') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Accessory Joint Movement</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('accessoryJointMovement'))}</div>
+											</div>
+											)}
+											{has('examinationAdditionalNotes') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Additional Notes</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('examinationAdditionalNotes'))}</div>
+											</div>
+											)}
+										</div>
+									</div>
+									) : null}
+
+									{(() => {
+										const invList = [(physioData as Record<string, unknown>).investigationXray && 'X-ray', (physioData as Record<string, unknown>).investigationMRI && 'MRI', (physioData as Record<string, unknown>).investigationCTScan && 'CT-Scan', (physioData as Record<string, unknown>).investigationBlood && 'Blood', (physioData as Record<string, unknown>).investigationOthers && 'Others', physioData.med_xray && 'X-RAY', physioData.med_mri && 'MRI', physioData.med_ct && 'CT'].filter(Boolean);
+										const hasInv = invList.length > 0;
+										const hasDiagSection = has('specialTest') || (physioData.differentialDiagnosis != null && String(physioData.differentialDiagnosis).trim() !== '') || (physioData.clinicalDiagnosis != null && String(physioData.clinicalDiagnosis).trim() !== '') || hasInv || has('assessmentOfInvestigation') || (physioData.finalDiagnosis != null && String(physioData.finalDiagnosis).trim() !== '');
+										if (!hasDiagSection) return null;
+										return (
+									<div className="mb-8" key="diag">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">7. Diagnosis & Investigation</h3>
+										<div className="space-y-4">
+											{has('specialTest') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Special Tests</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('specialTest'))}</div>
+											</div>
+											)}
+											{((physioData.differentialDiagnosis != null && String(physioData.differentialDiagnosis).trim() !== '') || (physioData.clinicalDiagnosis != null && String(physioData.clinicalDiagnosis).trim() !== '')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Differential Diagnosis</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(physioData.differentialDiagnosis || physioData.clinicalDiagnosis)}</div>
+											</div>
+											)}
+											{hasInv && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Investigations</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{invList.join(', ')}</div>
+											</div>
+											)}
+											{has('assessmentOfInvestigation') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Assessment of Investigation</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('assessmentOfInvestigation'))}</div>
+											</div>
+											)}
+											{physioData.finalDiagnosis != null && String(physioData.finalDiagnosis).trim() !== '' && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Final Diagnosis</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(physioData.finalDiagnosis)}</div>
+											</div>
+											)}
+										</div>
+									</div>
+									);
+									})()}
+
+									{(() => {
+										const peArr = [get('patientEducationCondition') && 'Explained the condition', get('patientEducationGoals') && 'Explained goals', get('patientEducationAdvantages') && 'Explained advantages/complications', get('patientEducationOthers') && `Others: ${get('patientEducationOthersText') || ''}`].filter(Boolean);
+										const stArr = [get('shortTermGoalReducePain') && 'Reduce pain', get('shortTermGoalImproveROM') && 'Improve ROM', get('shortTermGoalImproveStrength') && 'Improve & Maintain Strength', get('shortTermGoalOthers') && `Others: ${get('shortTermGoalOthersText') || ''}`].filter(Boolean);
+										const tgArr = [get('treatmentCryotherapy') && 'Cryotherapy', get('treatmentIFT') && 'IFT', get('treatmentTENS') && 'TENS', get('treatmentLaser') && 'Laser', get('treatmentSWT') && 'SWT', get('treatmentHotTherapy') && 'Hot Therapy', get('treatmentManualTherapy') && 'Manual Therapy', get('treatmentSoftTissueManipulation') && 'Soft Tissue Manipulation', get('treatmentDryNeedling') && 'Dry Needling', get('treatmentCuppingTherapy') && 'Cupping', get('treatmentOthers') && `Others: ${get('treatmentOthersText') || ''}`].filter(Boolean);
+										const ltArr = [get('longTermGoalReducePain') && 'Reduce pain & Maintain pain-free movement', get('longTermGoalImproveROM') && 'Improve & Maintain ROM', get('longTermGoalImproveStrength') && 'Improve & Maintain Strength', get('longTermGoalImproveStability') && 'Improve stability', get('longTermGoalRTP') && 'RTP plan', get('longTermGoalOthers') && `Others: ${get('longTermGoalOthersText') || ''}`].filter(Boolean);
+										const hasMgmtSection = peArr.length > 0 || get('advice') || stArr.length > 0 || has('shortTermGoals') || tgArr.length > 0 || has('treatment', 'treatmentProvided') || ltArr.length > 0 || has('longTermGoals') || has('homeAdvice', 'advice');
+										if (!hasMgmtSection) return null;
+										return (
+									<div className="mb-8" key="mgmt">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">8. Physiotherapy Management</h3>
+										<div className="space-y-6">
+											{(peArr.length > 0 || get('advice')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Patient Education</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{peArr.length > 0 ? peArr.join('; ') : String(get('advice'))}</div>
+											</div>
+											)}
+											{(stArr.length > 0 || has('shortTermGoals')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Short Term Goals</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{stArr.length > 0 ? stArr.join('; ') : String(get('shortTermGoals'))}</div>
+											</div>
+											)}
+											{tgArr.length > 0 && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Treatment Given</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{tgArr.join(', ')}</div>
+											</div>
+											)}
+											{has('treatment', 'treatmentProvided') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Treatment</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('treatment', 'treatmentProvided'))}</div>
+											</div>
+											)}
+											{(ltArr.length > 0 || has('longTermGoals')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Long Term Goals</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{ltArr.length > 0 ? ltArr.join('; ') : String(get('longTermGoals'))}</div>
+											</div>
+											)}
+											{has('homeAdvice', 'advice') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Home Advice</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('homeAdvice', 'advice'))}</div>
+											</div>
+											)}
+										</div>
+									</div>
+									);
+									})()}
+
+									{has('physioName') && (
+									<div>
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapist Signature</h3>
+										<div className="grid gap-4 sm:grid-cols-2">
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Physiotherapist Name</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('physioName'))}</div>
 											</div>
 										</div>
+									</div>
 									)}
-											</div>
 										</>
 									) as React.ReactElement;
 									}
