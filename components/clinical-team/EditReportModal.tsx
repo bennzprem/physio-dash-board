@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { collection, doc, query, where, getDocs, getDoc, onSnapshot, orderBy, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, writeBatch, type Timestamp, type QuerySnapshot } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -168,6 +169,53 @@ function removeUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
 		cleaned[key] = value;
 	}
 	return cleaned;
+}
+
+const VERSION_DOC_METADATA_KEYS = new Set(['patientId', 'patientName', 'version', 'reportType', 'createdBy', 'createdById', 'createdAt', 'sessionNumber', 'restoredFrom']);
+
+/** Get report payload from a reportVersions doc: use reportData, or legacy top-level fields (e.g. Report #1) */
+function getReportDataFromVersionDoc(data: Record<string, unknown> | undefined): Record<string, unknown> {
+	if (!data) return {};
+	const fromReportData = (data.reportData as Record<string, unknown>) || {};
+	if (Object.keys(fromReportData).length >= 5) return fromReportData;
+	const topLevel: Record<string, unknown> = {};
+	for (const key of Object.keys(data)) {
+		if (VERSION_DOC_METADATA_KEYS.has(key)) continue;
+		topLevel[key] = data[key];
+	}
+	return Object.keys(topLevel).length > Object.keys(fromReportData).length ? { ...fromReportData, ...topLevel } : fromReportData;
+}
+
+/** Normalize report data from Firestore: convert Timestamps to ISO strings, deep-clone so form gets plain values */
+function normalizeReportDataFromFirestore(obj: Record<string, unknown>): Record<string, unknown> {
+	if (!obj || typeof obj !== 'object') return obj as Record<string, unknown>;
+	const out: Record<string, unknown> = {};
+	for (const key of Object.keys(obj)) {
+		const value = obj[key];
+		if (value === undefined) continue;
+		if (value === null) {
+			out[key] = null;
+			continue;
+		}
+		// Firestore Timestamp
+		if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate: () => Date }).toDate === 'function') {
+			out[key] = (value as { toDate: () => Date }).toDate().toISOString().split('T')[0];
+			continue;
+		}
+		if (Array.isArray(value)) {
+			out[key] = value.map((item) => {
+				if (item !== null && typeof item === 'object' && !Array.isArray(item)) return normalizeReportDataFromFirestore(item as Record<string, unknown>);
+				return item;
+			});
+			continue;
+		}
+		if (typeof value === 'object') {
+			out[key] = normalizeReportDataFromFirestore(value as Record<string, unknown>);
+			continue;
+		}
+		out[key] = value;
+	}
+	return out;
 }
 
 function deriveCurrentSessionRemaining(
@@ -542,11 +590,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	}>>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | StrengthConditioningData | null>(null);
+	const [viewingVersionId, setViewingVersionId] = useState<string | null>(null); // key for View Full Report modal to avoid stale data
 	const [viewingVersionIsStrengthConditioning, setViewingVersionIsStrengthConditioning] = useState(false);
 	const [viewingVersionIsPsychology, setViewingVersionIsPsychology] = useState(false);
 	const [viewingPsychologyVersionData, setViewingPsychologyVersionData] = useState<any | null>(null);
 	const [psychologyFormDataKey, setPsychologyFormDataKey] = useState(0); // Key to force re-render when loading version data
 	const [isEditingLoadedPsychologyVersion, setIsEditingLoadedPsychologyVersion] = useState(false); // True when form was loaded from version via Edit
+	const isEditingLoadedPhysioVersionRef = useRef(false); // True when physio form was loaded from version via Edit (prevents listener from overwriting)
+	const [isEditingLoadedPhysioVersion, setIsEditingLoadedPhysioVersion] = useState(false); // True when editing a loaded version → show full primary report form
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 	const [hasPsychologyVersions, setHasPsychologyVersions] = useState(false);
 	const [hasPhysiotherapyVersions, setHasPhysiotherapyVersions] = useState(false);
@@ -740,6 +791,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					const data = versionSnap.data();
 					const reportData = (data?.reportData as Partial<PatientRecordFull>) || {};
 					if (typeof reportData === 'object' && Object.keys(reportData).length > 0) {
+						isEditingLoadedPhysioVersionRef.current = true; // Prevent patient listener from overwriting this loaded version
 						setFormData(reportData);
 						setActiveReportTab('report');
 						initialVersionLoadedRef.current = initialVersionId;
@@ -753,9 +805,12 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		loadInitialVersion();
 	}, [isOpen, patientId, initialVersionId, reportPatientData]);
 
-	// Reset initial version ref when modal closes so next open with versionId can load again
+	// Reset initial version ref and loaded-version ref when modal closes so next open with versionId can load again
 	useEffect(() => {
-		if (!isOpen) initialVersionLoadedRef.current = null;
+		if (!isOpen) {
+			initialVersionLoadedRef.current = null;
+			isEditingLoadedPhysioVersionRef.current = false;
+		}
 	}, [isOpen]);
 
 		// Reset state when modal closes
@@ -859,8 +914,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										setIsSubsequentDatePhysio(false);
 									}
 									
-									// Initialize formData with patient data if editable and form is empty
-									if (editable && Object.keys(formData).length === 0) {
+									// Initialize formData with patient data if editable and form is empty (do not overwrite when user just loaded a version to edit)
+									if (editable && Object.keys(formData).length === 0 && !isEditingLoadedPhysioVersionRef.current) {
 										const adjustedData = applyCurrentSessionAdjustments(patientData);
 										if (!adjustedData.dateOfConsultation) {
 											adjustedData.dateOfConsultation = new Date().toISOString().split('T')[0];
@@ -973,7 +1028,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											version: data.version as number,
 											createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
 											createdBy: (data.createdBy as string) || 'Unknown',
-											data: (data.reportData as Partial<PatientRecordFull>) || {},
+											data: getReportDataFromVersionDoc(data) as Partial<PatientRecordFull>,
 											isStrengthConditioning: false,
 											isPsychology: false,
 										};
@@ -988,10 +1043,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										setIsEditingSession1(false);
 									}
 									
-									// Only update if version history is currently being viewed
-									if (showVersionHistory && activeReportTab === 'report') {
-										setVersionHistory(versions);
-									}
+									// Always keep versionHistory in sync so "View Versions" -> list is populated (avoids stale closure)
+									setVersionHistory(versions);
 								},
 								(error) => {
 									// If orderBy or reportType filter fails (missing index), try without reportType filter
@@ -1014,7 +1067,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 															version: data.version as number,
 															createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
 															createdBy: (data.createdBy as string) || 'Unknown',
-															data: (data.reportData as Partial<PatientRecordFull>) || {},
+															data: getReportDataFromVersionDoc(data) as Partial<PatientRecordFull>,
 															isStrengthConditioning: false,
 															isPsychology: false,
 															reportType: data.reportType || 'physiotherapy',
@@ -1032,9 +1085,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 													setIsEditingSession1(false);
 												}
 												
-												if (showVersionHistory && activeReportTab === 'report') {
-													setVersionHistory(versions);
-												}
+												setVersionHistory(versions);
 											},
 											(err) => console.error('Error loading report versions:', err)
 										);
@@ -2545,85 +2596,10 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				updatedAt: serverTimestamp(),
 			};
 
-			// Create report snapshot before updating
-			const currentReportData: Partial<PatientRecordFull> = {
-				history: reportPatientData.history || (reportPatientData.presentHistory || '') + (reportPatientData.pastHistory ? '\n' + reportPatientData.pastHistory : ''),
-				med_xray: reportPatientData.med_xray,
-				med_mri: reportPatientData.med_mri,
-				med_report: reportPatientData.med_report,
-				med_ct: reportPatientData.med_ct,
-				surgicalHistory: reportPatientData.surgicalHistory,
-				per_smoking: reportPatientData.per_smoking,
-				per_drinking: reportPatientData.per_drinking,
-				per_alcohol: reportPatientData.per_alcohol,
-				per_drugs: reportPatientData.per_drugs,
-				drugsText: reportPatientData.drugsText,
-				sleepCycle: reportPatientData.sleepCycle,
-				hydration: reportPatientData.hydration,
-				nutrition: reportPatientData.nutrition,
-				siteSide: reportPatientData.siteSide,
-				onset: reportPatientData.onset,
-				duration: reportPatientData.duration,
-				natureOfInjury: reportPatientData.natureOfInjury,
-				typeOfPain: reportPatientData.typeOfPain,
-				vasScale: reportPatientData.vasScale,
-				aggravatingFactor: reportPatientData.aggravatingFactor,
-				relievingFactor: reportPatientData.relievingFactor,
-				rom: reportPatientData.rom,
-				treatmentProvided: reportPatientData.treatmentProvided,
-				progressNotes: reportPatientData.progressNotes,
-				physioName: reportPatientData.physioName,
-				physioId: reportPatientData.physioId,
-				dateOfConsultation: reportPatientData.dateOfConsultation,
-				referredBy: reportPatientData.referredBy,
-				chiefComplaint: reportPatientData.chiefComplaint,
-				onsetType: reportPatientData.onsetType,
-				mechanismOfInjury: reportPatientData.mechanismOfInjury,
-				painType: reportPatientData.painType,
-				painIntensity: reportPatientData.painIntensity,
-				clinicalDiagnosis: reportPatientData.clinicalDiagnosis,
-				treatmentPlan: reportPatientData.treatmentPlan,
-				followUpVisits: reportPatientData.followUpVisits,
-				followUpAssessment: reportPatientData.followUpAssessment,
-				currentPainStatus: reportPatientData.currentPainStatus,
-				currentRom: reportPatientData.currentRom,
-				currentStrength: reportPatientData.currentStrength,
-				currentFunctionalAbility: reportPatientData.currentFunctionalAbility,
-				complianceWithHEP: reportPatientData.complianceWithHEP,
-				recommendations: reportPatientData.recommendations,
-				physiotherapistRemarks: reportPatientData.physiotherapistRemarks,
-				built: reportPatientData.built,
-				posture: reportPatientData.posture,
-				gaitAnalysis: reportPatientData.gaitAnalysis,
-				mobilityAids: reportPatientData.mobilityAids,
-				localObservation: reportPatientData.localObservation,
-				swelling: reportPatientData.swelling,
-				muscleWasting: reportPatientData.muscleWasting,
-				postureManualNotes: reportPatientData.postureManualNotes,
-				postureFileName: reportPatientData.postureFileName,
-				postureFileData: reportPatientData.postureFileData,
-				gaitManualNotes: reportPatientData.gaitManualNotes,
-				gaitFileName: reportPatientData.gaitFileName,
-				gaitFileData: reportPatientData.gaitFileData,
-				tenderness: reportPatientData.tenderness,
-				warmth: reportPatientData.warmth,
-				scar: reportPatientData.scar,
-				crepitus: reportPatientData.crepitus,
-				odema: reportPatientData.odema,
-				mmt: reportPatientData.mmt,
-				specialTest: reportPatientData.specialTest,
-				differentialDiagnosis: reportPatientData.differentialDiagnosis,
-				finalDiagnosis: reportPatientData.finalDiagnosis,
-				shortTermGoals: reportPatientData.shortTermGoals,
-				longTermGoals: reportPatientData.longTermGoals,
-				rehabProtocol: reportPatientData.rehabProtocol,
-				advice: reportPatientData.advice,
-				managementRemarks: reportPatientData.managementRemarks,
-				nextFollowUpDate: reportPatientData.nextFollowUpDate,
-				nextFollowUpTime: reportPatientData.nextFollowUpTime,
-				totalSessionsRequired: reportPatientData.totalSessionsRequired,
-				remainingSessions: reportPatientData.remainingSessions,
-			};
+			// Version snapshot: use the same report payload we're saving to the patient (form data), so Edit shows saved data
+			const versionReportData = { ...reportData };
+			delete (versionReportData as Record<string, unknown>).updatedAt;
+			const currentReportData = versionReportData as Partial<PatientRecordFull>;
 
 			const hasReportData = Object.values(currentReportData).some(val => 
 				val !== undefined && val !== null && val !== '' && 
@@ -2811,8 +2787,12 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			}
 
 			setSessionCompleted(false);
+			isEditingLoadedPhysioVersionRef.current = false; // After save, allow listener to update form again
+			setIsEditingLoadedPhysioVersion(false);
 			setSavedMessage(true);
 			setTimeout(() => setSavedMessage(false), 3000);
+			// Refresh version list so View Versions shows the new save
+			await loadVersionHistory();
 		} catch (error: any) {
 			console.error('Failed to save report', error);
 			const errorMessage = error?.message || 'Unknown error occurred';
@@ -3114,15 +3094,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						orderBy('version', 'desc')
 					);
 					const versionsSnapshot = await getDocs(versionsQuery);
-					const versions = versionsSnapshot.docs.map(doc => {
-						const data = doc.data();
+					const versions = versionsSnapshot.docs.map(docSnap => {
+						const data = docSnap.data();
 						const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
 						return {
-							id: doc.id,
+							id: docSnap.id,
 							version: data.version as number,
 							createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
 							createdBy: (data.createdBy as string) || 'Unknown',
-							data: (data.reportData as Partial<PatientRecordFull>) || {},
+							data: getReportDataFromVersionDoc(data) as Partial<PatientRecordFull>,
 							isStrengthConditioning: false,
 							isPsychology: false,
 						};
@@ -3140,15 +3120,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							const versionsSnapshot = await getDocs(versionsQuery);
 							// Filter by reportType in memory for backward compatibility
 							const versions = versionsSnapshot.docs
-								.map(doc => {
-									const data = doc.data();
+								.map(docSnap => {
+									const data = docSnap.data();
 									const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
 									return {
-										id: doc.id,
+										id: docSnap.id,
 										version: data.version as number,
 										createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
 										createdBy: (data.createdBy as string) || 'Unknown',
-										data: (data.reportData as Partial<PatientRecordFull>) || {},
+										data: getReportDataFromVersionDoc(data) as Partial<PatientRecordFull>,
 										isStrengthConditioning: false,
 										isPsychology: false,
 										reportType: data.reportType || 'physiotherapy', // Default to physiotherapy for old records
@@ -3186,6 +3166,134 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	// Toggle expanded version
 	const toggleVersionExpansion = (versionId: string) => {
 		setExpandedVersionId(expandedVersionId === versionId ? null : versionId);
+	};
+
+	// View the clicked version (pass version object so the correct row is always used)
+	const handleViewFullReport = (version: typeof versionHistory[0]) => {
+		const versionDataFromList = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
+		setViewingVersionId(version.id); // key modal so it remounts when version changes (avoids stale data)
+		if (version.isPsychology) {
+			setViewingVersionIsPsychology(true);
+			setViewingVersionIsStrengthConditioning(false);
+			setViewingVersionData(null);
+			const psychologyData = version.data && typeof version.data === 'object' && Object.keys(version.data).length > 0 ? version.data : {};
+			setViewingPsychologyVersionData(psychologyData);
+			setActiveReportTab('psychology');
+			setShowVersionHistory(false);
+		} else if (version.isStrengthConditioning) {
+			setViewingVersionIsStrengthConditioning(true);
+			setViewingVersionIsPsychology(false);
+			setViewingPsychologyVersionData(null);
+			setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
+			setShowVersionHistory(false);
+		} else {
+			// Physiotherapy: show list data first, then fetch full version doc so all saved fields are displayed
+			setViewingVersionIsStrengthConditioning(false);
+			setViewingVersionIsPsychology(false);
+			setViewingPsychologyVersionData(null);
+			setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
+			setShowVersionHistory(false);
+
+			getDoc(doc(db, 'reportVersions', version.id))
+				.then((versionSnap) => {
+					if (!versionSnap.exists()) return;
+					const data = versionSnap.data() as Record<string, unknown> | undefined;
+					const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
+					const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
+					const merged = reportPatientData
+						? { ...reportPatientData, ...normalized }
+						: normalized;
+					setViewingVersionData(merged);
+				})
+				.catch((err) => {
+					console.error('Failed to load version for view:', err);
+				});
+		}
+	};
+
+	// Edit: load the clicked version into the form (pass version object so the correct row is always used)
+	const handleEditVersion = (version: typeof versionHistory[0]) => {
+		const reportType = version.isPsychology ? 'psychology' : version.isStrengthConditioning ? 'strength-conditioning' : 'physiotherapy';
+
+		// Set ref immediately so the patient listener never overwrites formData
+		if (reportType !== 'psychology' && reportType !== 'strength-conditioning') {
+			isEditingLoadedPhysioVersionRef.current = true;
+		}
+
+		if (reportType === 'psychology') {
+			setShowVersionHistory(false);
+			setViewingVersionIsPsychology(false);
+			setViewingPsychologyVersionData(null);
+			setViewingVersionData(null);
+			if (version.data && Object.keys(version.data).length > 0) {
+				setIsEditingLoadedPsychologyVersion(true);
+				setActiveReportTab('psychology');
+				setPsychologyFormData(JSON.parse(JSON.stringify(version.data)));
+				setPsychologyFormDataKey((prev) => prev + 1);
+			} else {
+				getDoc(doc(db, 'psychologyReportVersions', version.id)).then((versionSnap) => {
+					if (versionSnap.exists()) {
+						const reportData = (versionSnap.data()?.reportData as Record<string, unknown>) || {};
+						setIsEditingLoadedPsychologyVersion(true);
+						setActiveReportTab('psychology');
+						setPsychologyFormData(JSON.parse(JSON.stringify(reportData)));
+						setPsychologyFormDataKey((prev) => prev + 1);
+					}
+				}).catch((err) => {
+					console.error('Failed to load psychology version:', err);
+					alert('Failed to load this report version. Please try again.');
+				});
+			}
+			return;
+		}
+
+		if (reportType === 'strength-conditioning') {
+			setShowVersionHistory(false);
+			setViewingVersionData(null);
+			if (version.data) {
+				setStrengthConditioningFormData((version.data || {}) as StrengthConditioningData);
+				setActiveReportTab('strength-conditioning');
+			} else {
+				getDoc(doc(db, 'strengthConditioningReportVersions', version.id)).then((versionSnap) => {
+					if (versionSnap.exists()) {
+						const reportData = (versionSnap.data()?.reportData as StrengthConditioningData) || {};
+						setStrengthConditioningFormData(reportData);
+						setActiveReportTab('strength-conditioning');
+					}
+				}).catch((err) => {
+					console.error('Failed to load strength version:', err);
+					alert('Failed to load this report version. Please try again.');
+				});
+			}
+			return;
+		}
+
+		// Physiotherapy: fetch full version doc, normalize Firestore types, merge with patient data, then show full primary report form
+		setViewingVersionData(null);
+		setIsEditingLoadedPhysioVersion(true);
+		const versionDataFromList = reportPatientData
+			? { ...reportPatientData, ...version.data }
+			: (version.data as Partial<PatientRecordFull>);
+		setFormData(versionDataFromList as Partial<PatientRecordFull>);
+		setActiveReportTab('report');
+		setShowVersionHistory(false);
+
+		// Fetch the version doc so we have the complete saved reportData and normalize Timestamps/nested objects for the form
+		getDoc(doc(db, 'reportVersions', version.id))
+			.then((versionSnap) => {
+				if (!versionSnap.exists()) return;
+				const data = versionSnap.data() as Record<string, unknown> | undefined;
+				const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
+				const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
+				const merged = reportPatientData
+					? { ...reportPatientData, ...normalized }
+					: normalized;
+				setFormData(merged);
+			})
+			.catch((err) => {
+				console.error('Failed to load version for edit:', err);
+				// Form already has versionDataFromList; only overwrite if fetch failed and user might have stale data
+			});
 	};
 
 	// Handle delete version
@@ -3297,8 +3405,12 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				}
 			}
 			
-			// Reload version history
+			// Reload version history so list is fresh
 			await loadVersionHistory();
+			// Clear view modal so it doesn't show stale/deleted data
+			setViewingVersionData(null);
+			setViewingVersionId(null);
+			setViewingPsychologyVersionData(null);
 			
 			// Update version flags after deletion
 			if (reportPatientData?.patientId) {
@@ -3645,6 +3757,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 	const handleClose = () => {
 		setViewingVersionData(null);
+		setIsEditingLoadedPhysioVersion(false);
 		if (strengthConditioningUnsubscribeRef.current) {
 			strengthConditioningUnsubscribeRef.current();
 			strengthConditioningUnsubscribeRef.current = null;
@@ -3952,8 +4065,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</div>
 							</div>
 
-							{/* Show Follow-up form only if NOT editing Session 1 AND versions exist */}
-							{!isEditingSession1 && hasPhysiotherapyVersions ? (
+							{/* Show Follow-up form only if NOT editing Session 1 AND versions exist AND not editing a loaded version (loaded version = show full primary report) */}
+							{!isEditingSession1 && hasPhysiotherapyVersions && !isEditingLoadedPhysioVersion ? (
 								<>
 									{/* Simplified Follow-Up Form for Subsequent Dates */}
 									<div className="mb-8">
@@ -6699,10 +6812,17 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				</div>
 			)}
 
-			{/* Version History Modal - Same structure as ReportModal */}
-			{showVersionHistory && reportPatientData && (
-				<div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-					<div className="flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+			{/* Version History Modal - rendered in portal so it is always on top; backdrop captures all clicks */}
+			{showVersionHistory && reportPatientData && typeof document !== 'undefined' && createPortal(
+				<div
+					className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 px-4 py-6"
+					onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+					onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+					role="dialog"
+					aria-modal="true"
+					aria-label="Report Versions"
+				>
+					<div className="flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
 						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
 							<h2 className="text-lg font-semibold text-slate-900">
 								Report Versions - {reportPatientData.name} ({reportPatientData.patientId})
@@ -6743,7 +6863,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								</div>
 							) : (
 								<div className="space-y-4">
-									{(versionHistory ?? []).map((version) => {
+									{(versionHistory ?? []).map((version, index) => {
 										const isExpanded = expandedVersionId === version.id;
 										const versionData = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
 										return (
@@ -6770,28 +6890,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 														<div className="ml-4 flex gap-2">
 															<button
 																type="button"
-																onClick={(e) => {
-																	e.preventDefault();
-																	e.stopPropagation();
-																	// Ensure the selected row's version is shown, not the first in the list
-																	if (version.isPsychology) {
-																		setViewingVersionIsPsychology(true);
-																		setViewingVersionIsStrengthConditioning(false);
-																		setViewingVersionData(null);
-																		const psychologyData = version.data && typeof version.data === 'object' && Object.keys(version.data).length > 0 
-																			? version.data 
-																			: {};
-																		setViewingPsychologyVersionData(psychologyData);
-																		setActiveReportTab('psychology');
-																		setShowVersionHistory(false);
-																	} else {
-																		setViewingVersionIsStrengthConditioning(version.isStrengthConditioning || false);
-																		setViewingVersionIsPsychology(false);
-																		setViewingPsychologyVersionData(null);
-																		setViewingVersionData(versionData);
-																		setShowVersionHistory(false);
-																	}
-																}}
+																onClick={() => handleViewFullReport(version)}
 																className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
 															>
 																<i className="fas fa-eye mr-1.5" aria-hidden="true" />
@@ -6923,64 +7022,6 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 															</button>
 															<button
 																type="button"
-																onClick={(e) => {
-																	e.preventDefault();
-																	e.stopPropagation();
-																	// Load version data into form for editing
-																	if (version.isPsychology) {
-																		// Handle psychology version editing
-																		// Ensure we're using the reportData from the version
-																		let psychologyData: any = {};
-																		if (version.data && typeof version.data === 'object') {
-																			psychologyData = { ...version.data };
-																		}
-																		
-																		if (Object.keys(psychologyData).length === 0) {
-																			alert('The saved version appears to be empty. Please check the version data.');
-																			return;
-																		}
-																		
-																		// Close version history modal first
-																		setShowVersionHistory(false);
-																		
-																		// Clear viewing state
-																		setViewingVersionIsPsychology(false);
-																		setViewingPsychologyVersionData(null);
-																		setViewingVersionData(null);
-																		
-																		// Mark that we're editing a loaded version (so follow-up visibility uses form data)
-																		setIsEditingLoadedPsychologyVersion(true);
-																		
-																		// Switch to psychology tab
-																		setActiveReportTab('psychology');
-																		
-																		// Set the form data with the version data
-																		setPsychologyFormData(JSON.parse(JSON.stringify(psychologyData)));
-																		
-																		// Update key to force component re-render with new data
-																		setPsychologyFormDataKey(prev => prev + 1);
-																	} else if (version.isStrengthConditioning || activeReportTab === 'strength-conditioning') {
-																		setShowVersionHistory(false);
-																		setViewingVersionData(null);
-																		setStrengthConditioningFormData((version.data || {}) as StrengthConditioningData);
-																		setActiveReportTab('strength-conditioning');
-																	} else {
-																		// Physiotherapy: close modal first, then load version into form
-																		setShowVersionHistory(false);
-																		setViewingVersionData(null);
-																		const reportData = version.data && typeof version.data === 'object' ? version.data : {};
-																		setFormData(reportData as Partial<PatientRecordFull>);
-																		setActiveReportTab('report');
-																	}
-																}}
-																className="inline-flex items-center rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 focus-visible:outline-none"
-																title="Edit this version"
-															>
-																<i className="fas fa-edit mr-1.5" aria-hidden="true" />
-																Edit
-															</button>
-															<button
-																type="button"
 																onClick={() => handleDeleteVersion(version)}
 																className="inline-flex items-center rounded-lg border border-rose-600 px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 focus-visible:outline-none"
 																title="Delete this version"
@@ -7010,10 +7051,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							</button>
 						</footer>
 					</div>
-				</div>
+				</div>,
+				document.body
 			)}
 
-			{/* View Full Report Modal */}
+			{/* View Full Report Modal - key by viewingVersionId so modal remounts when version changes (no stale data) */}
 			{viewingVersionData && reportPatientData && (() => {
 				// Check if this is a Strength and Conditioning report
 				const isSCReport = viewingVersionIsStrengthConditioning || 
@@ -7023,7 +7065,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					'scRPEPlanned' in viewingVersionData;
 				
 				return (
-					<div className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => e.target === e.currentTarget && setViewingVersionData(null)}>
+					<div key={viewingVersionId ?? 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionId(null); } }}>
 						<div className="bg-white rounded-lg shadow-xl max-w-6xl w-full h-[95vh] max-h-[95vh] flex flex-col overflow-hidden">
 							<div className="flex items-center justify-between p-6 border-b border-slate-200 flex-shrink-0 bg-white">
 							<h2 className="text-xl font-semibold text-slate-900">
@@ -7033,6 +7075,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								type="button"
 								onClick={() => {
 									setViewingVersionData(null);
+									setViewingVersionId(null);
 									setViewingVersionIsStrengthConditioning(false);
 								}}
 								className="text-slate-400 hover:text-slate-600 transition"
@@ -8177,8 +8220,18 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 														No management information available for this report.
 													</div>
 												)}
+										</div>
+									</div>
+
+									{/* Follow-up Assessment (after Physiotherapy Management) */}
+									{physioData.followUpAssessment && (
+										<div>
+											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
+												{physioData.followUpAssessment}
 											</div>
 										</div>
+									)}
 
 									{/* Follow-Up Visits */}
 									{physioData.followUpVisits && Array.isArray(physioData.followUpVisits) && physioData.followUpVisits.length > 0 && (
@@ -8291,22 +8344,28 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									)}
 
-									{physioData.nextFollowUpDate && (
-										<div className="grid gap-4 sm:grid-cols-2">
-											<div>
-												<label className="block text-xs font-medium text-slate-500 mb-1">Next Follow-up Date</label>
-												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-													{physioData.nextFollowUpDate}
-												</div>
-											</div>
-											{physioData.nextFollowUpTime && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Next Follow-up Time</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.nextFollowUpTime}
+									{/* Next Follow-up (after Physiotherapist Information) */}
+									{(physioData.nextFollowUpDate || physioData.nextFollowUpTime) && (
+										<div>
+											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Next Follow-up</h3>
+											<div className="grid gap-4 sm:grid-cols-2">
+												{physioData.nextFollowUpDate && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Date</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+															{physioData.nextFollowUpDate}
+														</div>
 													</div>
-												</div>
-											)}
+												)}
+												{physioData.nextFollowUpTime && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Time</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+															{physioData.nextFollowUpTime}
+														</div>
+													</div>
+												)}
+											</div>
 										</div>
 									)}
 											</div>
@@ -8430,11 +8489,30 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								<i className="fas fa-download mr-2" aria-hidden="true" />
 								Download PDF
 							</button>
+							{!viewingVersionIsStrengthConditioning && (versionHistory ?? []).some(v => v.id === viewingVersionId) && (
+								<button
+									type="button"
+									onClick={() => {
+										const version = (versionHistory ?? []).find(v => v.id === viewingVersionId);
+										if (version) {
+											handleEditVersion(version);
+											setViewingVersionData(null);
+											setViewingVersionIsStrengthConditioning(false);
+											setViewingVersionId(null);
+										}
+									}}
+									className="inline-flex items-center rounded-lg border border-amber-600 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 transition hover:bg-amber-100 focus-visible:outline-none"
+								>
+									<i className="fas fa-edit mr-2" aria-hidden="true" />
+									Edit
+								</button>
+							)}
 							<button
 								type="button"
 								onClick={() => {
 									setViewingVersionData(null);
 									setViewingVersionIsStrengthConditioning(false);
+									setViewingVersionId(null);
 								}}
 								className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition"
 							>
