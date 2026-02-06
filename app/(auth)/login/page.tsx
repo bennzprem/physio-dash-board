@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import Image from 'next/image';
+import styles from './login.module.css';
 
 type AllowedRole = 'SuperAdmin' | 'Admin' | 'FrontDesk' | 'ClinicalTeam';
 
@@ -16,6 +16,46 @@ const ROLE_ROUTES: Record<AllowedRole, string> = {
 	FrontDesk: '/frontdesk',
 	ClinicalTeam: '/clinical-team',
 };
+
+function EnvelopeIcon() {
+	return (
+		<span className={styles.inputIcon}>
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+				<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+				<polyline points="22,6 12,13 2,6" />
+			</svg>
+		</span>
+	);
+}
+
+function LockIcon() {
+	return (
+		<span className={styles.inputIcon}>
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+				<rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+				<path d="M7 11V7a5 5 0 0 1 10 0v4" />
+			</svg>
+		</span>
+	);
+}
+
+function EyeIcon() {
+	return (
+		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+			<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+			<circle cx="12" cy="12" r="3" />
+		</svg>
+	);
+}
+
+function EyeSlashIcon() {
+	return (
+		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+			<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+			<line x1="1" y1="1" x2="23" y2="23" />
+		</svg>
+	);
+}
 
 export default function LoginPage() {
 	const [showPassword, setShowPassword] = useState(false);
@@ -44,11 +84,9 @@ export default function LoginPage() {
 		setLoading(true);
 
 		try {
-			// Step 1: Authenticate with Firebase Auth
 			const userCredential = await signInWithEmailAndPassword(auth as any, trimmedEmail, trimmedPassword);
 			const uid = userCredential.user.uid;
 
-			// Step 2: Fetch user document from Firestore using UID
 			const userDocRef = doc(db as any, 'users', uid);
 			const userSnap = await getDoc(userDocRef);
 
@@ -61,13 +99,11 @@ export default function LoginPage() {
 			const userData = userSnap.data();
 			const rawRole = userData.role as string | undefined;
 
-			// Normalize role to match expected format (case-insensitive matching)
 			let role: AllowedRole | undefined;
 			if (rawRole) {
 				const normalizedRole = String(rawRole).trim();
 				const lowerRole = normalizedRole.toLowerCase();
-				
-				// Map common variations to expected roles
+
 				if (lowerRole === 'superadmin' || lowerRole === 'super admin' || lowerRole === 'super-admin') {
 					role = 'SuperAdmin';
 				} else if (lowerRole === 'admin') {
@@ -83,31 +119,26 @@ export default function LoginPage() {
 
 			const status = userData.status as 'Active' | 'Inactive' | undefined;
 
-			// Step 3: Check if account is active
 			if (status !== 'Active' || userData.deleted === true) {
 				setError('Your account is inactive. Please contact your administrator.');
 				setLoading(false);
 				return;
 			}
 
-			// Step 4: Check if role is valid and has a dashboard
 			if (!role || !(role in ROLE_ROUTES)) {
-				console.error('Invalid role:', rawRole, 'Normalized:', role);
 				setError('Your role does not have dashboard access. Please contact your administrator.');
 				setLoading(false);
 				return;
 			}
 
-			// Step 5: Redirect to appropriate dashboard
 			const dashboardPath = ROLE_ROUTES[role];
 			router.push(dashboardPath);
-		} catch (error: any) {
-			console.error('Login error:', error);
+		} catch (err: any) {
+			console.error('Login error:', err);
 			setLoading(false);
 
-			// Handle specific Firebase Auth errors
-			const errorCode = error?.code || error?.error?.code || '';
-			const errorMessage = error?.message || error?.error?.message || 'Unknown error';
+			const errorCode = err?.code || err?.error?.code || '';
+			const errorMessage = err?.message || err?.error?.message || 'Unknown error';
 
 			if (errorCode === 'auth/invalid-credential' || errorCode === 'auth/wrong-password' || errorMessage.includes('invalid-credential')) {
 				setError('Invalid email or password. Please check your credentials and try again.');
@@ -122,161 +153,161 @@ export default function LoginPage() {
 			} else if (errorCode === 'auth/network-request-failed' || errorMessage.includes('network')) {
 				setError('Network error. Please check your internet connection and try again.');
 			} else {
-				setError(`Unable to sign in. Please check your credentials or contact your administrator.`);
+				setError('Unable to sign in. Please check your credentials or contact your administrator.');
 			}
 		}
 	};
 
 	return (
-		<div className="min-h-screen flex flex-col lg:flex-row">
-			{/* Left Side - Image */}
-			<div className="hidden lg:flex lg:w-1/2 relative bg-gradient-to-br from-purple-50 to-purple-100">
-				<div className="relative w-full h-full flex items-center justify-center p-12">
-					<Image
-						src="/login-illustration.png"
-						alt="Login Illustration"
-						fill
-						className="object-contain"
-						priority
-					/>
+		<div className={styles.container}>
+			{/* Left Side - Login Form */}
+			<div className={styles.leftSide}>
+				<div className={styles.logo}>
+					<div className={styles.logoIcon}>CSS</div>
+					<div className={styles.logoText}>Centre for Sports Science</div>
 				</div>
-			</div>
 
-			{/* Right Side - Login Form */}
-			<div className="flex-1 flex flex-col p-6 sm:p-8 lg:p-12 xl:p-16 bg-white">
-				{/* Title at Top */}
-				<div className="text-center mb-6 lg:mb-8">
-					<h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-purple-600 to-purple-800 bg-clip-text text-transparent">Center of Sports Science</h1>
-				</div>
-				
-				{/* Centered Form Container */}
-				<div className="flex-1 flex items-center justify-center">
-					<div className="w-full max-w-md">
-						<form onSubmit={handleSubmit} className="space-y-5">
-							{/* Header */}
-							<div className="text-center mb-8">
-								<h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">Welcome Back</h2>
-								<p className="text-base text-gray-600">Sign in to continue to your dashboard</p>
+				<div className={styles.formContainer}>
+					<h1>Welcome Back!</h1>
+					<p className={styles.subtitle}>
+						Sign in to access your dashboard and continue managing your clinical workflows.
+					</p>
+
+					<form onSubmit={handleSubmit}>
+						<div className={styles.formGroup}>
+							<label htmlFor="email">Email</label>
+							<div className={styles.inputWrapper}>
+								<EnvelopeIcon />
+								<input
+									type="email"
+									id="email"
+									placeholder="Enter your email"
+									value={formState.email}
+									onChange={e => setFormState(prev => ({ ...prev, email: e.target.value }))}
+									disabled={loading}
+									required
+								/>
 							</div>
-
-						{/* Email Field */}
-						<div>
-							<label htmlFor="email" className="block text-sm font-semibold text-gray-800 mb-2.5">
-								Email Address
-							</label>
-							<input
-								type="email"
-								id="email"
-								required
-								value={formState.email}
-								onChange={event => setFormState(current => ({ ...current, email: event.target.value }))}
-								disabled={loading}
-								className="w-full px-4 py-3.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 disabled:bg-gray-50 disabled:cursor-not-allowed text-gray-900 placeholder:text-gray-400"
-								placeholder="your.email@example.com"
-							/>
 						</div>
 
-						{/* Password Field */}
-						<div>
-							<label htmlFor="password" className="block text-sm font-semibold text-gray-800 mb-2.5">
-								Password
-							</label>
-							<div className="relative">
+						<div className={styles.formGroup}>
+							<label htmlFor="password">Password</label>
+							<div className={`${styles.inputWrapper} ${styles.passwordWrapper}`}>
+								<LockIcon />
 								<input
 									type={showPassword ? 'text' : 'password'}
 									id="password"
-									required
-									value={formState.password}
-									onChange={event => setFormState(current => ({ ...current, password: event.target.value }))}
-									disabled={loading}
-									className="w-full px-4 py-3.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 disabled:bg-gray-50 disabled:cursor-not-allowed text-gray-900 pr-12 placeholder:text-gray-400"
 									placeholder="Enter your password"
+									value={formState.password}
+									onChange={e => setFormState(prev => ({ ...prev, password: e.target.value }))}
+									disabled={loading}
+									required
 								/>
 								<button
 									type="button"
+									className={styles.togglePassword}
 									onClick={() => setShowPassword(prev => !prev)}
-									className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors duration-200 focus:outline-none"
 									disabled={loading}
 									aria-label={showPassword ? 'Hide password' : 'Show password'}
 								>
-									{showPassword ? (
-										<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0L9.88 9.88" />
-										</svg>
-									) : (
-										<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-										</svg>
-									)}
+									{showPassword ? <EyeSlashIcon /> : <EyeIcon />}
 								</button>
+							</div>
+							<div className={styles.forgotPassword}>
+								<Link href="/forgot-password">Forgot Password?</Link>
 							</div>
 						</div>
 
-						{/* Remember Me & Forgot Password */}
-						<div className="flex items-center justify-between pt-1">
-							<label className="flex items-center gap-2.5 cursor-pointer group">
-								<input
-									type="checkbox"
-									className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 cursor-pointer transition-all"
-								/>
-								<span className="text-sm text-gray-700 group-hover:text-gray-900 transition-colors">Remember me</span>
-							</label>
-							<Link href="/forgot-password" className="text-sm text-purple-600 hover:text-purple-700 font-medium transition-colors duration-200">
-								Forgot Password?
-							</Link>
-						</div>
-
-						{/* Error Message */}
 						{error && (
-							<div className="p-4 bg-red-50 border border-red-200 rounded-xl animate-in fade-in slide-in-from-top-1 duration-300">
-								<p className="text-sm text-red-800 flex items-start gap-2.5">
-									<svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+							<div className={styles.errorBox}>
+								<p>
+									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }} aria-hidden>
+										<circle cx="12" cy="12" r="10" />
+										<line x1="12" y1="8" x2="12" y2="12" />
+										<line x1="12" y1="16" x2="12.01" y2="16" />
 									</svg>
 									{error}
 								</p>
 							</div>
 						)}
 
-						{/* Login Button */}
-						<button
-							type="submit"
-							disabled={loading}
-							className="w-full bg-gradient-to-r from-purple-600 to-purple-700 text-white py-3.5 rounded-xl font-semibold hover:from-purple-700 hover:to-purple-800 active:scale-[0.98] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-lg shadow-purple-500/30 hover:shadow-xl hover:shadow-purple-500/40 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-						>
+						<button type="submit" className={styles.signInBtn} disabled={loading}>
 							{loading ? (
-								<span className="flex items-center justify-center gap-2">
-									<svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-										<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-										<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+								<span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+									<svg className={styles.spin} width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden style={{ display: 'inline-block' }}>
+										<circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" opacity={0.25} />
+										<path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" opacity={0.75} />
 									</svg>
 									Signing in...
 								</span>
 							) : (
-								'Login'
+								'Sign In'
 							)}
 						</button>
-
-						{/* Sign Up Link */}
-						<p className="text-center text-sm text-gray-600 pt-2">
-							Don't have an account?{' '}
-							<span className="text-purple-600 font-semibold cursor-pointer hover:text-purple-700 hover:underline transition-all duration-200">
-								Sign up
-							</span>
-						</p>
 					</form>
+
+					<div className={styles.divider}>OR</div>
+
+					<button type="button" className={styles.socialBtn} disabled={loading}>
+						<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+							<path d="M19.8055 10.2292C19.8055 9.55556 19.7499 8.87499 19.6305 8.20833H10.2V12.0208H15.6012C15.3751 13.2292 14.6764 14.2917 13.6597 15C14.4792 15.5639 15.4167 15.9583 16.4166 16.1458C18.5832 14.2083 19.8055 11.3958 19.8055 10.2292Z" fill="#4285F4" />
+							<path d="M10.2 20C12.7541 20 14.8874 19.1042 16.4166 16.1458L13.6597 15C12.8319 15.5347 11.7916 15.8542 10.2 15.8542C7.73325 15.8542 5.65825 13.9028 4.92075 11.375H2.05408V13.5139C3.61575 16.625 6.72908 20 10.2 20Z" fill="#34A853" />
+							<path d="M4.92075 11.375C4.50825 10.2292 4.50825 8.77778 4.92075 7.625V5.48611H2.05408C0.745083 8.08333 0.745083 11.9167 2.05408 14.5139L4.92075 11.375Z" fill="#FBBC04" />
+							<path d="M10.2 4.14583C11.8624 4.11806 13.4652 4.73611 14.6624 5.875L17.0749 3.45833C14.7874 1.29167 11.786 0.0763889 10.2 0.104167C6.72908 0.104167 3.61575 3.375 2.05408 5.48611L4.92075 7.625C5.65825 5.09722 7.73325 4.14583 10.2 4.14583Z" fill="#EA4335" />
+						</svg>
+						Continue with Google
+					</button>
+
+					<button type="button" className={styles.socialBtn} disabled={loading}>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+							<path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
+						</svg>
+						Continue with Apple
+					</button>
+
+					<div className={styles.signupLink}>
+						Don&apos;t have an account? <Link href="#">Sign Up</Link>
+					</div>
 				</div>
 			</div>
-<<<<<<< HEAD
-=======
 
-			{/* Copyright Notice - Bottom Left */}
-			<div className="absolute bottom-4 left-4 lg:left-8 text-white text-sm">
-				<p>© {new Date().getFullYear()} Centre for Sports Science. All rights reserved.</p>
+			{/* Right Side - Hero Section */}
+			<div className={styles.rightSide}>
+				<div className={styles.heroContent}>
+					<h2 className={styles.heroTitle}>
+						Streamline patient care with your clinical dashboard
+					</h2>
+
+					<div className={styles.testimonial}>
+						<div className={styles.quote}>
+							The Centre for Sports Science dashboard has transformed how we track patient progress. Clear, reliable, and built for clinicians.
+						</div>
+						<div className={styles.author}>
+							<div className={styles.authorImg}>MC</div>
+							<div className={styles.authorInfo}>
+								<h4>Michael Carter</h4>
+								<p>Lead Physiotherapist</p>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div className={styles.teamsSection}>
+					<div className={styles.teamsTitle}>TRUSTED BY CLINICS</div>
+					<div className={styles.companyLogos}>
+						<div className={styles.companyLogo}>Clinic A</div>
+						<div className={styles.companyLogo}>Clinic B</div>
+						<div className={styles.companyLogo}>Clinic C</div>
+						<div className={styles.companyLogo}>Clinic D</div>
+						<div className={styles.companyLogo}>Clinic E</div>
+						<div className={styles.companyLogo}>Clinic F</div>
+					</div>
+				</div>
+
+				<div className={styles.copyright}>
+					© {new Date().getFullYear()} Centre for Sports Science. All rights reserved.
+				</div>
 			</div>
->>>>>>> 82e6bc314219a88a0ea482484406a3511ebaa543
 		</div>
-	</div>
 	);
 }

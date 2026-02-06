@@ -31,10 +31,7 @@
     "file-saver": "^2.0.5",
     "firebase": "^12.6.0",
     "firebase-admin": "^12.7.0",
-<<<<<<< HEAD
-=======
     "googleapis": "^171.0.0",
->>>>>>> 82e6bc314219a88a0ea482484406a3511ebaa543
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.2",
     "next": "^16.0.8",
@@ -57,11 +54,7 @@
     "cross-env": "^10.1.0",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.0.8",
-<<<<<<< HEAD
     "firebase-tools": "^15.5.1",
-=======
-    "firebase-tools": "^15.4.0",
->>>>>>> 82e6bc314219a88a0ea482484406a3511ebaa543
     "tailwindcss": "^4",
     "typescript": "^5"
   }
