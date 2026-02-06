@@ -92,6 +92,7 @@ export default function Reports() {
 		data: Partial<PatientRecordFull>;
 	}>>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
+	const [selectedVersion, setSelectedVersion] = useState<typeof versionHistory[0] | null>(null);
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | null>(null);
 	const [showCrispReportModal, setShowCrispReportModal] = useState(false);
 	const [selectedSections, setSelectedSections] = useState<ReportSection[]>([
@@ -236,14 +237,15 @@ export default function Reports() {
 		if (!selectedPatientId) return null;
 		const patient = patients.find(p => p.patientId === selectedPatientId || p.id === selectedPatientId);
 		if (!patient) return null;
-		
-		// If viewing a specific version, merge the version data with the patient data
+		// If viewing a specific version, use selectedVersion state (never first in list)
+		if (selectedVersion) {
+			return { ...patient, ...selectedVersion.data } as PatientRecord;
+		}
 		if (viewingVersionData) {
 			return { ...patient, ...viewingVersionData } as PatientRecord;
 		}
-		
 		return patient;
-	}, [patients, selectedPatientId, viewingVersionData]);
+	}, [patients, selectedPatientId, selectedVersion, viewingVersionData]);
 
 	const handleView = (patientId: string) => {
 		if (!patientId) {
@@ -254,6 +256,7 @@ export default function Reports() {
 		setShowModal(true);
 		setSavedMessage(false);
 		setShowVersionHistory(false);
+		setSelectedVersion(null);
 		setViewingVersionData(null); // Reset version data when viewing current report
 	};
 
@@ -299,24 +302,32 @@ export default function Reports() {
 
 	const handleViewVersionHistory = async () => {
 		setShowVersionHistory(true);
+		setSelectedVersion(null);
 		setViewingVersionData(null);
 		await loadVersionHistory();
 	};
 
-	const handleViewVersion = (version: typeof versionHistory[0]) => {
-		// Set the selected version's data so the main view shows this version (not the first)
-		setViewingVersionData(version.data);
-		setShowVersionHistory(false);
-		if (!showModal) {
-			setShowModal(true);
+	// View by row index so the clicked row's version is always shown (index = which row was clicked)
+	const handleViewVersionByIndex = (index: number) => {
+		const list = versionHistory ?? [];
+		const version = list[index];
+		if (version) {
+			setSelectedVersion(version);
+			setViewingVersionData(version.data);
+			setShowVersionHistory(false);
+			if (!showModal) setShowModal(true);
 		}
 	};
 
-	const handleEditVersion = (version: typeof versionHistory[0]) => {
-		if (!selectedPatient?.patientId) return;
+	// Edit: use version id from the clicked button so the exact version opens for edit (same fix as clinical Report Versions)
+	const handleEditVersionClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const versionId = e.currentTarget.getAttribute('data-version-id');
+		if (!versionId || !selectedPatient?.patientId) return;
 		setShowVersionHistory(false);
 		setShowModal(false);
-		router.push(`/clinical-team/edit-report?patientId=${encodeURIComponent(selectedPatient.patientId)}&versionId=${encodeURIComponent(version.id)}`);
+		router.push(`/clinical-team/edit-report?patientId=${encodeURIComponent(selectedPatient.patientId)}&versionId=${encodeURIComponent(versionId)}`);
 	};
 
 	const handleViewStrengthConditioning = async (patientId: string) => {
@@ -883,9 +894,9 @@ export default function Reports() {
 								<div className="mb-6 flex items-start justify-between border-b border-slate-200 pb-4">
 									<div>
 										<h3 className="text-xl font-bold text-sky-600">Physiotherapy Report</h3>
-										{viewingVersionData && (
+										{(selectedVersion || viewingVersionData) && (
 											<p className="text-sm text-slate-500 mt-1">
-												Viewing historical version - This is a read-only view
+												Viewing historical version{selectedVersion ? ` #${selectedVersion.version}` : ''} - This is a read-only view
 											</p>
 										)}
 									</div>
@@ -1488,10 +1499,10 @@ export default function Reports() {
 				</div>
 			)}
 
-			{/* Version History Modal */}
+			{/* Version History Modal - z-[100] so it sits above report modal and button clicks are received */}
 			{showVersionHistory && selectedPatient && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-					<div className="flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+				<div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 px-4 py-6">
+					<div className="flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
 						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
 							<h2 className="text-lg font-semibold text-slate-900">
 								Report Versions - {selectedPatient.name} ({selectedPatient.patientId})
@@ -1518,7 +1529,7 @@ export default function Reports() {
 								</div>
 							) : (
 								<div className="space-y-4">
-									{(versionHistory ?? []).map((version) => (
+									{(versionHistory ?? []).map((version, index) => (
 										<div
 											key={version.id}
 											className="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition"
@@ -1544,10 +1555,12 @@ export default function Reports() {
 												<div className="ml-4 flex gap-2">
 													<button
 														type="button"
+														data-version-index={index}
 														onClick={(e) => {
 															e.preventDefault();
 															e.stopPropagation();
-															handleViewVersion(version);
+															const idx = e.currentTarget.getAttribute('data-version-index');
+															if (idx !== null && idx !== '') handleViewVersionByIndex(parseInt(idx, 10));
 														}}
 														className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
 													>
@@ -1556,11 +1569,8 @@ export default function Reports() {
 													</button>
 													<button
 														type="button"
-														onClick={(e) => {
-															e.preventDefault();
-															e.stopPropagation();
-															handleEditVersion(version);
-														}}
+														data-version-id={version.id}
+														onClick={handleEditVersionClick}
 														className="inline-flex items-center rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 focus-visible:outline-none"
 														title="Edit this version"
 													>

@@ -57,6 +57,49 @@ const PAYMENT_OPTIONS: Array<{ value: PaymentTypeOption; label: string }> = [
 	{ value: 'without', label: 'Without Concession' },
 ];
 
+const VERSION_DOC_METADATA_KEYS = new Set(['patientId', 'patientName', 'version', 'reportType', 'createdBy', 'createdById', 'createdAt', 'sessionNumber', 'restoredFrom']);
+
+/** Get report payload from a reportVersions doc: use reportData, or legacy top-level fields */
+function getReportDataFromVersionDoc(data: Record<string, unknown> | undefined): Record<string, unknown> {
+	if (!data) return {};
+	const fromReportData = (data.reportData as Record<string, unknown>) || {};
+	if (Object.keys(fromReportData).length >= 5) return fromReportData;
+	const topLevel: Record<string, unknown> = {};
+	for (const key of Object.keys(data)) {
+		if (VERSION_DOC_METADATA_KEYS.has(key)) continue;
+		topLevel[key] = data[key];
+	}
+	return Object.keys(topLevel).length > Object.keys(fromReportData).length ? { ...fromReportData, ...topLevel } : fromReportData;
+}
+
+/** Normalize report data from Firestore: convert Timestamps to ISO strings, deep-clone for form */
+function normalizeReportDataFromFirestore(obj: Record<string, unknown>): Record<string, unknown> {
+	if (!obj || typeof obj !== 'object') return obj as Record<string, unknown>;
+	const out: Record<string, unknown> = {};
+	for (const key of Object.keys(obj)) {
+		const value = obj[key];
+		if (value === undefined) continue;
+		if (value === null) { out[key] = null; continue; }
+		if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate: () => Date }).toDate === 'function') {
+			out[key] = (value as { toDate: () => Date }).toDate().toISOString().split('T')[0];
+			continue;
+		}
+		if (Array.isArray(value)) {
+			out[key] = value.map((item) => {
+				if (item !== null && typeof item === 'object' && !Array.isArray(item)) return normalizeReportDataFromFirestore(item as Record<string, unknown>);
+				return item;
+			});
+			continue;
+		}
+		if (typeof value === 'object') {
+			out[key] = normalizeReportDataFromFirestore(value as Record<string, unknown>);
+			continue;
+		}
+		out[key] = value;
+	}
+	return out;
+}
+
 // Pricing Menu Structure
 const PROFESSIONAL_PACKAGES: PackageOption[] = [
 	// Strength & Conditioning
@@ -1392,85 +1435,10 @@ export default function EditReport() {
 				updatedAt: serverTimestamp(),
 			};
 
-			// Create report snapshot before updating
-			// Get current report data from selectedPatient to create a snapshot
-			const currentReportData: Partial<PatientRecordFull> = {
-				history: selectedPatient.history || (selectedPatient.presentHistory || '') + (selectedPatient.pastHistory ? '\n' + selectedPatient.pastHistory : ''),
-				med_xray: selectedPatient.med_xray,
-				med_mri: selectedPatient.med_mri,
-				med_report: selectedPatient.med_report,
-				med_ct: selectedPatient.med_ct,
-				surgicalHistory: selectedPatient.surgicalHistory,
-				per_smoking: selectedPatient.per_smoking,
-				per_drinking: selectedPatient.per_drinking,
-				per_alcohol: selectedPatient.per_alcohol,
-				per_drugs: selectedPatient.per_drugs,
-				drugsText: selectedPatient.drugsText,
-				sleepCycle: selectedPatient.sleepCycle,
-				hydration: selectedPatient.hydration,
-				nutrition: selectedPatient.nutrition,
-				siteSide: selectedPatient.siteSide,
-				onset: selectedPatient.onset,
-				duration: selectedPatient.duration,
-				natureOfInjury: selectedPatient.natureOfInjury,
-				typeOfPain: selectedPatient.typeOfPain,
-				vasScale: selectedPatient.vasScale,
-				aggravatingFactor: selectedPatient.aggravatingFactor,
-				relievingFactor: selectedPatient.relievingFactor,
-				rom: selectedPatient.rom,
-				treatmentProvided: selectedPatient.treatmentProvided,
-				progressNotes: selectedPatient.progressNotes,
-				physioName: selectedPatient.physioName,
-				physioId: selectedPatient.physioId,
-				dateOfConsultation: selectedPatient.dateOfConsultation,
-				referredBy: selectedPatient.referredBy,
-				chiefComplaint: selectedPatient.chiefComplaint,
-				onsetType: selectedPatient.onsetType,
-				mechanismOfInjury: selectedPatient.mechanismOfInjury,
-				painType: selectedPatient.painType,
-				painIntensity: selectedPatient.painIntensity,
-				clinicalDiagnosis: selectedPatient.clinicalDiagnosis,
-				treatmentPlan: selectedPatient.treatmentPlan,
-				followUpVisits: selectedPatient.followUpVisits,
-				currentPainStatus: selectedPatient.currentPainStatus,
-				currentRom: selectedPatient.currentRom,
-				currentStrength: selectedPatient.currentStrength,
-				currentFunctionalAbility: selectedPatient.currentFunctionalAbility,
-				complianceWithHEP: selectedPatient.complianceWithHEP,
-				recommendations: selectedPatient.recommendations,
-				physiotherapistRemarks: selectedPatient.physiotherapistRemarks,
-				built: selectedPatient.built,
-				posture: selectedPatient.posture,
-				gaitAnalysis: selectedPatient.gaitAnalysis,
-				mobilityAids: selectedPatient.mobilityAids,
-				localObservation: selectedPatient.localObservation,
-				swelling: selectedPatient.swelling,
-				muscleWasting: selectedPatient.muscleWasting,
-				postureManualNotes: selectedPatient.postureManualNotes,
-				postureFileName: selectedPatient.postureFileName,
-				postureFileData: selectedPatient.postureFileData,
-				gaitManualNotes: selectedPatient.gaitManualNotes,
-				gaitFileName: selectedPatient.gaitFileName,
-				gaitFileData: selectedPatient.gaitFileData,
-				tenderness: selectedPatient.tenderness,
-				warmth: selectedPatient.warmth,
-				scar: selectedPatient.scar,
-				crepitus: selectedPatient.crepitus,
-				odema: selectedPatient.odema,
-				mmt: selectedPatient.mmt,
-				specialTest: selectedPatient.specialTest,
-				differentialDiagnosis: selectedPatient.differentialDiagnosis,
-				finalDiagnosis: selectedPatient.finalDiagnosis,
-				shortTermGoals: selectedPatient.shortTermGoals,
-				longTermGoals: selectedPatient.longTermGoals,
-				rehabProtocol: selectedPatient.rehabProtocol,
-				advice: selectedPatient.advice,
-				managementRemarks: selectedPatient.managementRemarks,
-				nextFollowUpDate: selectedPatient.nextFollowUpDate,
-				nextFollowUpTime: selectedPatient.nextFollowUpTime,
-				totalSessionsRequired: selectedPatient.totalSessionsRequired,
-				remainingSessions: selectedPatient.remainingSessions,
-			};
+			// Version snapshot: use the same report payload we're saving (form data) so Edit shows saved data for existing report versions
+			const versionReportData = { ...reportData };
+			delete (versionReportData as Record<string, unknown>).updatedAt;
+			const currentReportData = versionReportData as Partial<PatientRecordFull>;
 
 			// Check if there's any existing report data to save as previous report
 			const hasReportData = Object.values(currentReportData).some(val => 
@@ -1616,6 +1584,8 @@ export default function EditReport() {
 
 			setSavedMessage(true);
 			setTimeout(() => setSavedMessage(false), 3000);
+			// Refresh version list so Report History shows the new save
+			await loadVersionHistory();
 		} catch (error) {
 			console.error('Failed to save report', error);
 			alert('Failed to save report. Please try again.');
@@ -1635,15 +1605,15 @@ export default function EditReport() {
 				orderBy('version', 'desc')
 			);
 			const versionsSnapshot = await getDocs(versionsQuery);
-			const versions = versionsSnapshot.docs.map(doc => {
-					const data = doc.data();
+			const versions = versionsSnapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
 					const createdAt = (data.createdAt as Timestamp | undefined)?.toDate?.();
 					return {
-						id: doc.id,
+						id: docSnap.id,
 						version: data.version as number,
 						createdAt: createdAt ? createdAt.toISOString() : new Date().toISOString(),
 						createdBy: (data.createdBy as string) || 'Unknown',
-						data: (data.reportData as Partial<PatientRecordFull>) || {},
+						data: getReportDataFromVersionDoc(data) as Partial<PatientRecordFull>,
 					};
 				});
 			setVersionHistory(versions);
@@ -2613,6 +2583,48 @@ export default function EditReport() {
 		await loadVersionHistory();
 	};
 
+	// View the clicked version (pass version object so the correct row is always used)
+	const handleViewVersion = (version: typeof versionHistory[0]) => {
+		setViewingVersion(version);
+		setShowVersionHistory(false);
+		// Fetch full version doc so View Full Report displays all saved fields
+		getDoc(doc(db, 'reportVersions', version.id))
+			.then((versionSnap) => {
+				if (!versionSnap.exists()) return;
+				const data = versionSnap.data() as Record<string, unknown> | undefined;
+				const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
+				const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
+				const merged = selectedPatient ? { ...selectedPatient, ...normalized } : normalized;
+				setViewingVersion((prev) => prev && prev.id === version.id ? { ...prev, data: merged } : prev);
+			})
+			.catch((err) => console.error('Failed to load version for view:', err));
+	};
+
+	// Edit: load the clicked version into the form (fetch full doc, normalize for form, merge with patient for existing report versions)
+	const handleEditVersion = (version: typeof versionHistory[0]) => {
+		setShowVersionHistory(false);
+		setViewingVersion(null);
+		const fromList = selectedPatient && version?.data
+			? { ...selectedPatient, ...version.data }
+			: (version?.data as Partial<PatientRecordFull>) || {};
+		setFormData(fromList as Partial<PatientRecordFull>);
+
+		getDoc(doc(db, 'reportVersions', version.id))
+			.then((versionSnap) => {
+				if (!versionSnap.exists()) return;
+				const data = versionSnap.data() as Record<string, unknown> | undefined;
+				const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
+				const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
+				const merged = selectedPatient
+					? { ...selectedPatient, ...normalized }
+					: normalized;
+				setFormData(merged);
+			})
+			.catch((err) => {
+				console.error('Failed to load version for edit:', err);
+			});
+	};
+
 	const handleDeleteVersion = async (version: typeof versionHistory[0]) => {
 		if (!confirm(`Are you sure you want to delete Report #${version.version}? This action cannot be undone.`)) {
 			return;
@@ -2622,8 +2634,10 @@ export default function EditReport() {
 			const versionRef = doc(db, 'reportVersions', version.id);
 			await deleteDoc(versionRef);
 			
-			// Reload report history
+			// Reload report history so list is fresh
 			await loadVersionHistory();
+			// Clear view modal so it doesn't show stale/deleted data
+			setViewingVersion(null);
 			
 			alert(`Report #${version.version} has been deleted successfully.`);
 		} catch (error) {
@@ -2749,12 +2763,21 @@ export default function EditReport() {
 				});
 			}
 
-			// Load the version data into the form
-			setFormData(version.data);
-			
+			// Load the version data into the form (fetch full doc and normalize for existing report versions)
+			const versionSnap = await getDoc(doc(db, 'reportVersions', version.id));
+			const restoredPayload = versionSnap.exists()
+				? (() => {
+						const data = versionSnap.data() as Record<string, unknown> | undefined;
+						const raw = getReportDataFromVersionDoc(data) as Record<string, unknown>;
+						const normalized = normalizeReportDataFromFirestore(raw) as Partial<PatientRecordFull>;
+						return selectedPatient ? { ...selectedPatient, ...normalized } : normalized;
+					})()
+				: (selectedPatient ? { ...selectedPatient, ...version.data } : version.data) as Partial<PatientRecordFull>;
+			setFormData(restoredPayload as Partial<PatientRecordFull>);
+
 			// Update the patient document with restored data
 			const reportData: Record<string, any> = {
-				...version.data,
+				...restoredPayload,
 				updatedAt: serverTimestamp(),
 			};
 			await updateDoc(patientRef, reportData);
@@ -3227,9 +3250,8 @@ export default function EditReport() {
 																type="button"
 															onClick={(e) => {
 																e.stopPropagation();
-																	console.log('Report button clicked for patient:', patient.patientId);
-																	handleOpenReportModal(patient.patientId);
-																}}
+																handleOpenReportModal(patient.patientId);
+															}}
 															className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-sky-500 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none"
 															>
 																<i className="fas fa-file-medical text-xs" aria-hidden="true" />
@@ -3544,7 +3566,6 @@ export default function EditReport() {
 																							type="button"
 																							onClick={(e) => {
 																								e.stopPropagation();
-																								console.log('Report button clicked for appointment:', appointment.id, 'patient:', patient.patientId);
 																								handleOpenReportModal(patient.patientId);
 																							}}
 																							className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-sky-500 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none"
@@ -5470,10 +5491,10 @@ export default function EditReport() {
 				</div>
 			)}
 
-			{/* Report History Modal */}
+			{/* Report History Modal - z-[100] so button clicks are received */}
 			{showVersionHistory && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 px-4 py-6">
-					<div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[95vh] overflow-hidden flex flex-col">
+				<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50 px-4 py-6">
+					<div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[95vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
 						<div className="flex items-center justify-between p-6 border-b border-slate-200">
 							<h2 className="text-xl font-semibold text-slate-900">
 								Report History - {selectedPatient?.name} ({selectedPatient?.patientId})
@@ -5500,7 +5521,7 @@ export default function EditReport() {
 								</div>
 							) : (
 								<div className="space-y-4">
-									{(versionHistory ?? []).map((version) => (
+									{(versionHistory ?? []).map((version, index) => (
 										<div
 											key={version.id}
 											className="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition"
@@ -5535,32 +5556,11 @@ export default function EditReport() {
 											<div className="flex gap-2">
 												<button
 													type="button"
-													onClick={(e) => {
-														e.preventDefault();
-														e.stopPropagation();
-														setViewingVersion(version);
-														setShowVersionHistory(false);
-													}}
+													onClick={() => handleViewVersion(version)}
 													className="px-4 py-2 text-sm font-medium text-sky-600 bg-sky-50 border border-sky-200 rounded-md hover:bg-sky-100 transition"
 												>
 													<i className="fas fa-eye mr-2" />
 													View Full Report
-												</button>
-												<button
-													type="button"
-													onClick={(e) => {
-														e.preventDefault();
-														e.stopPropagation();
-														setShowVersionHistory(false);
-														setViewingVersion(null);
-														const reportData = version.data && typeof version.data === 'object' ? version.data : {};
-														setFormData(reportData as Partial<PatientRecordFull>);
-													}}
-													className="px-4 py-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-md hover:bg-emerald-100 transition"
-													title="Edit this version"
-												>
-													<i className="fas fa-edit mr-2" />
-													Edit
 												</button>
 											</div>
 										</div>
@@ -5581,9 +5581,9 @@ export default function EditReport() {
 				</div>
 			)}
 
-			{/* View Report Modal */}
+			{/* View Report Modal - key by version id so modal remounts when version changes (no stale data) */}
 			{viewingVersion && selectedPatient && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 px-4 py-6">
+				<div key={viewingVersion.id} className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 px-4 py-6">
 					<div className="bg-white rounded-lg shadow-xl max-w-6xl w-full mx-4 max-h-[95vh] overflow-hidden flex flex-col">
 						<div className="flex items-center justify-between p-6 border-b border-slate-200">
 							<h2 className="text-xl font-semibold text-slate-900">

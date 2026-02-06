@@ -225,6 +225,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 	const [showVersionHistory, setShowVersionHistory] = useState(false);
 	const [versionHistory, setVersionHistory] = useState<VersionHistoryItem[]>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
+	const [selectedVersion, setSelectedVersion] = useState<VersionHistoryItem | null>(null);
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | null>(null);
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 	
@@ -251,6 +252,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 		if (!isOpen) {
 			setReportPatientData(null);
 			setStrengthConditioningData(null);
+			setSelectedVersion(null);
 			setViewingVersionData(null);
 			setActiveReportTab(initialTab);
 			if (strengthConditioningUnsubscribeRef.current) {
@@ -605,17 +607,24 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 		setExpandedVersionId(expandedVersionId === versionId ? null : versionId);
 	};
 
-	// View full report: open the selected version in the main report view (so the correct version is shown, not the first)
+	// View full report: set the selected version first, then show it in the main report view (never use versions[0])
 	const handleViewFullReport = (version: VersionHistoryItem) => {
+		setSelectedVersion(version);
 		const versionData = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
 		setViewingVersionData(versionData);
 		setShowVersionHistory(false);
 		setExpandedVersionId(null);
 	};
 
-	// Edit version: invoke parent handler with the correct version so edit opens with the right version ID
-	const handleEditVersion = (version: VersionHistoryItem) => {
-		if (onEditVersion) {
+	// Edit version: read version id from the clicked button so the exact version is passed (same fix as clinical Report Versions)
+	const handleEditVersionClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const versionId = e.currentTarget.getAttribute('data-version-id');
+		if (!versionId || !onEditVersion) return;
+		const list = versionHistory ?? [];
+		const version = list.find(v => v.id === versionId);
+		if (version) {
 			onEditVersion(version);
 			setShowVersionHistory(false);
 		}
@@ -662,6 +671,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 	};
 
 	const handleClose = () => {
+		setSelectedVersion(null);
 		setViewingVersionData(null);
 		if (strengthConditioningUnsubscribeRef.current) {
 			strengthConditioningUnsubscribeRef.current();
@@ -727,16 +737,22 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 						) : reportPatientData ? (
 							<div className="section-card">
 								{(() => {
-									const displayData = viewingVersionData ? { ...reportPatientData, ...viewingVersionData } : reportPatientData;
+									// Read from selectedVersion state (never versions[0]) so the correct version is shown
+									const displayData = selectedVersion
+										? { ...reportPatientData, ...selectedVersion.data }
+										: viewingVersionData
+											? { ...reportPatientData, ...viewingVersionData }
+											: reportPatientData;
 									return (
 										<>
 											<div className="mb-6 flex items-start justify-between border-b border-slate-200 pb-4">
 												<div className="flex-1">
 													<div className="flex items-center gap-3">
-														{viewingVersionData && (
+														{(selectedVersion || viewingVersionData) && (
 															<button
 																type="button"
 																onClick={() => {
+																	setSelectedVersion(null);
 																	setViewingVersionData(null);
 																	setShowVersionHistory(true);
 																}}
@@ -748,9 +764,9 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 														)}
 														<h3 className="text-xl font-bold text-sky-600">Physiotherapy Report</h3>
 													</div>
-													{viewingVersionData && (
+													{(selectedVersion || viewingVersionData) && (
 														<p className="text-sm text-slate-500 mt-1">
-															Viewing historical version - This is a read-only view
+															Viewing historical version{selectedVersion ? ` #${selectedVersion.version}` : ''} - This is a read-only view
 														</p>
 													)}
 												</div>
@@ -1877,10 +1893,10 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 				</div>
 			)}
 
-			{/* Version History Modal */}
+			{/* Version History Modal - z-[100] so it sits above main modal (z-50) and receives clicks */}
 			{showVersionHistory && reportPatientData && (
-				<div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-					<div className="flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+				<div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 px-4 py-6">
+					<div className="flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
 						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
 							<h2 className="text-lg font-semibold text-slate-900">
 								Report Versions - {reportPatientData.name} ({reportPatientData.patientId})
@@ -1910,7 +1926,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 								</div>
 							) : (
 								<div className="space-y-4">
-									{(versionHistory ?? []).map((version) => {
+									{(versionHistory ?? []).map((version, index) => {
 										const isExpanded = expandedVersionId === version.id;
 										const versionData = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
 										return (
@@ -1937,10 +1953,15 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 														<div className="ml-4 flex gap-2">
 															<button
 																type="button"
+																data-version-index={index}
 																onClick={(e) => {
 																	e.preventDefault();
 																	e.stopPropagation();
-																	handleViewFullReport(version);
+																	const idx = e.currentTarget.getAttribute('data-version-index');
+																	if (idx !== null && idx !== '') {
+																		const v = (versionHistory ?? [])[parseInt(idx, 10)];
+																		if (v) handleViewFullReport(v);
+																	}
 																}}
 																className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
 															>
@@ -1950,11 +1971,8 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 															{onEditVersion && (
 																<button
 																	type="button"
-																	onClick={(e) => {
-																		e.preventDefault();
-																		e.stopPropagation();
-																		handleEditVersion(version);
-																	}}
+																	data-version-id={version.id}
+																	onClick={handleEditVersionClick}
 																	className="inline-flex items-center rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 focus-visible:outline-none"
 																	title="Edit this version"
 																>
