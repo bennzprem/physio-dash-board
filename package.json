@@ -34,6 +34,7 @@
     "googleapis": "^171.0.0",
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.2",
+    "lucide-react": "^0.563.0",
     "next": "^16.0.8",
     "openai": "^6.16.0",
     "papaparse": "^5.5.3",
