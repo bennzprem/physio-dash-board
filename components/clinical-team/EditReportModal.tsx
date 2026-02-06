@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { collection, doc, query, where, getDocs, onSnapshot, orderBy, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, writeBatch, type Timestamp, type QuerySnapshot } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, getDoc, onSnapshot, orderBy, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, writeBatch, type Timestamp, type QuerySnapshot } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
@@ -480,9 +480,11 @@ interface EditReportModalProps {
 	initialTab?: 'report' | 'strength-conditioning' | 'psychology';
 	onClose: () => void;
 	editable?: boolean; // If true, fields are editable; if false, read-only (for frontdesk)
+	/** When opening from frontdesk "Edit" link with a versionId, load this report version into the form */
+	initialVersionId?: string | null;
 }
 
-export default function EditReportModal({ isOpen, patientId, initialTab = 'report', onClose, editable = true }: EditReportModalProps) {
+export default function EditReportModal({ isOpen, patientId, initialTab = 'report', onClose, editable = true, initialVersionId }: EditReportModalProps) {
 	const { user } = useAuth();
 	const [activeReportTab, setActiveReportTab] = useState<'report' | 'strength-conditioning' | 'psychology'>(initialTab as 'report' | 'strength-conditioning' | 'psychology');
 	const [reportPatientData, setReportPatientData] = useState<any>(null);
@@ -723,6 +725,38 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setActiveReportTab(tabToSet);
 		}
 	}, [isOpen, initialTab]);
+
+	// When opened from frontdesk "Edit" with initialVersionId, load that report version into the form
+	const initialVersionLoadedRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (!isOpen || !patientId || !initialVersionId || !reportPatientData) return;
+		if (initialVersionLoadedRef.current === initialVersionId) return;
+
+		const loadInitialVersion = async () => {
+			try {
+				const versionRef = doc(db, 'reportVersions', initialVersionId);
+				const versionSnap = await getDoc(versionRef);
+				if (versionSnap.exists()) {
+					const data = versionSnap.data();
+					const reportData = (data?.reportData as Partial<PatientRecordFull>) || {};
+					if (typeof reportData === 'object' && Object.keys(reportData).length > 0) {
+						setFormData(reportData);
+						setActiveReportTab('report');
+						initialVersionLoadedRef.current = initialVersionId;
+					}
+				}
+			} catch (err) {
+				console.error('Failed to load initial report version:', err);
+			}
+		};
+
+		loadInitialVersion();
+	}, [isOpen, patientId, initialVersionId, reportPatientData]);
+
+	// Reset initial version ref when modal closes so next open with versionId can load again
+	useEffect(() => {
+		if (!isOpen) initialVersionLoadedRef.current = null;
+	}, [isOpen]);
 
 		// Reset state when modal closes
 		useEffect(() => {
@@ -2346,6 +2380,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					gender: reportPatientData.gender || '',
 					phone: reportPatientData.phone || '',
 					email: reportPatientData.email || '',
+					totalSessionsRequired: reportPatientData.totalSessionsRequired,
+					remainingSessions: reportPatientData.remainingSessions,
 				},
 				formData: strengthConditioningFormData as StrengthConditioningData,
 				uploadedPdfUrl: uploadedPdfUrl || strengthConditioningFormData.uploadedPdfUrl || null,
@@ -2817,6 +2853,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						gender: reportPatientData.gender || '',
 						phone: reportPatientData.phone || '',
 						email: reportPatientData.email || '',
+						totalSessionsRequired: reportPatientData.totalSessionsRequired,
+						remainingSessions: reportPatientData.remainingSessions,
 					},
 					formData: strengthConditioningFormData as StrengthConditioningData,
 				}, { forPrint: true });
@@ -4973,6 +5011,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 												<label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
 												<p className="text-sm font-medium text-slate-900">{reportPatientData.email || '—'}</p>
 											</div>
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Total Sessions Required</label>
+												<p className="text-sm font-medium text-slate-900">{typeof reportPatientData.totalSessionsRequired === 'number' ? reportPatientData.totalSessionsRequired : '—'}</p>
+											</div>
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Remaining Sessions</label>
+												<p className="text-sm font-medium text-slate-900">{typeof reportPatientData.remainingSessions === 'number' ? reportPatientData.remainingSessions : '—'}</p>
+											</div>
 										</div>
 									</div>
 
@@ -6724,27 +6770,26 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 														<div className="ml-4 flex gap-2">
 															<button
 																type="button"
-																onClick={() => {
+																onClick={(e) => {
+																	e.preventDefault();
+																	e.stopPropagation();
+																	// Ensure the selected row's version is shown, not the first in the list
 																	if (version.isPsychology) {
-																		// Handle psychology version viewing
 																		setViewingVersionIsPsychology(true);
 																		setViewingVersionIsStrengthConditioning(false);
 																		setViewingVersionData(null);
-																		// Ensure we're using the reportData from the version
-																		// version.data should already contain the reportData from the mapping
 																		const psychologyData = version.data && typeof version.data === 'object' && Object.keys(version.data).length > 0 
 																			? version.data 
 																			: {};
 																		setViewingPsychologyVersionData(psychologyData);
 																		setActiveReportTab('psychology');
-																		// Close version history modal to show the report
 																		setShowVersionHistory(false);
 																	} else {
-																		// Handle physiotherapy or strength & conditioning version viewing
 																		setViewingVersionIsStrengthConditioning(version.isStrengthConditioning || false);
 																		setViewingVersionIsPsychology(false);
 																		setViewingPsychologyVersionData(null);
 																		setViewingVersionData(versionData);
+																		setShowVersionHistory(false);
 																	}
 																}}
 																className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
@@ -6770,6 +6815,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																					gender: reportPatientData.gender || '',
 																					phone: reportPatientData.phone || '',
 																					email: reportPatientData.email || '',
+																					totalSessionsRequired: reportPatientData.totalSessionsRequired,
+																					remainingSessions: reportPatientData.remainingSessions,
 																				},
 																				formData: psychologyData as PsychologyReportPDFData['formData'],
 																			});
@@ -6787,6 +6834,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																					gender: reportPatientData.gender || '',
 																					phone: reportPatientData.phone || '',
 																					email: reportPatientData.email || '',
+																					totalSessionsRequired: reportPatientData.totalSessionsRequired,
+																					remainingSessions: reportPatientData.remainingSessions,
 																				},
 																				formData: versionData as StrengthConditioningData,
 																			});
@@ -6874,7 +6923,9 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 															</button>
 															<button
 																type="button"
-																onClick={() => {
+																onClick={(e) => {
+																	e.preventDefault();
+																	e.stopPropagation();
 																	// Load version data into form for editing
 																	if (version.isPsychology) {
 																		// Handle psychology version editing
@@ -6909,15 +6960,17 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																		// Update key to force component re-render with new data
 																		setPsychologyFormDataKey(prev => prev + 1);
 																	} else if (version.isStrengthConditioning || activeReportTab === 'strength-conditioning') {
-																		setStrengthConditioningFormData(version.data as StrengthConditioningData);
+																		setShowVersionHistory(false);
+																		setViewingVersionData(null);
+																		setStrengthConditioningFormData((version.data || {}) as StrengthConditioningData);
 																		setActiveReportTab('strength-conditioning');
-																		setShowVersionHistory(false);
-																		setViewingVersionData(null);
 																	} else {
-																		setFormData(version.data as Partial<PatientRecordFull>);
-																		setActiveReportTab('report');
+																		// Physiotherapy: close modal first, then load version into form
 																		setShowVersionHistory(false);
 																		setViewingVersionData(null);
+																		const reportData = version.data && typeof version.data === 'object' ? version.data : {};
+																		setFormData(reportData as Partial<PatientRecordFull>);
+																		setActiveReportTab('report');
 																	}
 																}}
 																className="inline-flex items-center rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 focus-visible:outline-none"
@@ -8288,6 +8341,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 													gender: reportPatientData.gender || '',
 													phone: reportPatientData.phone || '',
 													email: reportPatientData.email || '',
+													totalSessionsRequired: reportPatientData.totalSessionsRequired,
+													remainingSessions: reportPatientData.remainingSessions,
 												},
 												formData: versionData as StrengthConditioningData,
 											});

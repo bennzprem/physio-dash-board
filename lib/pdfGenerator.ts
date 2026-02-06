@@ -932,6 +932,8 @@ export interface StrengthConditioningPDFData {
 		gender?: string;
 		phone?: string;
 		email?: string;
+		totalSessionsRequired?: number;
+		remainingSessions?: number;
 	};
 	formData: StrengthConditioningData;
 	uploadedPdfUrl?: string | null;
@@ -975,6 +977,8 @@ export async function generateStrengthConditioningPDF(
 			['Gender', data.patient.gender || ''],
 			['Phone', data.patient.phone || ''],
 			['Email', data.patient.email || ''],
+			['Total Sessions Required', data.patient.totalSessionsRequired != null ? String(data.patient.totalSessionsRequired) : ''],
+			['Remaining Sessions', data.patient.remainingSessions != null ? String(data.patient.remainingSessions) : ''],
 		];
 
 		autoTable(doc, {
@@ -1513,6 +1517,8 @@ export interface PsychologyReportPDFData {
 		gender?: string;
 		phone?: string;
 		email?: string;
+		totalSessionsRequired?: number;
+		remainingSessions?: number;
 	};
 	formData: {
 		// Demographics
@@ -1681,6 +1687,8 @@ export async function generatePsychologyPDF(
 			['Gender', data.patient.gender || ''],
 			['Phone', data.patient.phone || ''],
 			['Email', data.patient.email || ''],
+			['Total Sessions Required', data.patient.totalSessionsRequired != null ? String(data.patient.totalSessionsRequired) : ''],
+			['Remaining Sessions', data.patient.remainingSessions != null ? String(data.patient.remainingSessions) : ''],
 		];
 
 		autoTable(doc, {

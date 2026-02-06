@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { collection, doc, query, where, orderBy, getDocs, onSnapshot, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import PageHeader from '@/components/PageHeader';
@@ -76,6 +77,7 @@ function getPersonalHistoryText(p: PatientRecord): string {
 }
 
 export default function Reports() {
+	const router = useRouter();
 	const [patients, setPatients] = useState<PatientRecord[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
@@ -302,14 +304,19 @@ export default function Reports() {
 	};
 
 	const handleViewVersion = (version: typeof versionHistory[0]) => {
-		// Set the version data to view
+		// Set the selected version's data so the main view shows this version (not the first)
 		setViewingVersionData(version.data);
-		// Close version history modal
 		setShowVersionHistory(false);
-		// Ensure main modal is open
 		if (!showModal) {
 			setShowModal(true);
 		}
+	};
+
+	const handleEditVersion = (version: typeof versionHistory[0]) => {
+		if (!selectedPatient?.patientId) return;
+		setShowVersionHistory(false);
+		setShowModal(false);
+		router.push(`/clinical-team/edit-report?patientId=${encodeURIComponent(selectedPatient.patientId)}&versionId=${encodeURIComponent(version.id)}`);
 	};
 
 	const handleViewStrengthConditioning = async (patientId: string) => {
@@ -438,6 +445,8 @@ export default function Reports() {
 					gender: selectedPatient.gender,
 					phone: selectedPatient.phone,
 					email: selectedPatient.email,
+					totalSessionsRequired: selectedPatient.totalSessionsRequired,
+					remainingSessions: selectedPatient.remainingSessions,
 				},
 				formData: strengthConditioningData,
 			}, { forPrint: true });
@@ -458,6 +467,8 @@ export default function Reports() {
 					gender: selectedPatient.gender,
 					phone: selectedPatient.phone,
 					email: selectedPatient.email,
+					totalSessionsRequired: selectedPatient.totalSessionsRequired,
+					remainingSessions: selectedPatient.remainingSessions,
 				},
 				formData: strengthConditioningData,
 			}, { forPrint: false });
@@ -1530,14 +1541,31 @@ export default function Reports() {
 														<p>Version ID: {version.id}</p>
 													</div>
 												</div>
-												<div className="ml-4">
+												<div className="ml-4 flex gap-2">
 													<button
 														type="button"
-														onClick={() => handleViewVersion(version)}
+														onClick={(e) => {
+															e.preventDefault();
+															e.stopPropagation();
+															handleViewVersion(version);
+														}}
 														className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
 													>
 														<i className="fas fa-eye mr-1.5" aria-hidden="true" />
-														View Report
+														View Full Report
+													</button>
+													<button
+														type="button"
+														onClick={(e) => {
+															e.preventDefault();
+															e.stopPropagation();
+															handleEditVersion(version);
+														}}
+														className="inline-flex items-center rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 focus-visible:outline-none"
+														title="Edit this version"
+													>
+														<i className="fas fa-edit mr-1.5" aria-hidden="true" />
+														Edit
 													</button>
 												</div>
 											</div>

@@ -501,6 +501,18 @@ export default function PsychologyReport({ patientData, formData, onChange, edit
 							<p className="text-sm text-slate-900">{localData.stateCity || '—'}</p>
 						)}
 					</div>
+					<div>
+						<label className="block text-sm font-medium text-slate-700 mb-1">Total Sessions Required</label>
+						<p className="text-sm text-slate-900 bg-slate-50 border border-slate-300 rounded-md px-3 py-2">
+							{typeof patientData?.totalSessionsRequired === 'number' ? patientData.totalSessionsRequired : '—'}
+						</p>
+					</div>
+					<div>
+						<label className="block text-sm font-medium text-slate-700 mb-1">Remaining Sessions</label>
+						<p className="text-sm text-slate-900 bg-slate-50 border border-slate-300 rounded-md px-3 py-2">
+							{typeof patientData?.remainingSessions === 'number' ? patientData.remainingSessions : '—'}
+						</p>
+					</div>
 				</div>
 			</div>
 

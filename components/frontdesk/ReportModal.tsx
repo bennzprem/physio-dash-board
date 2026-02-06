@@ -194,14 +194,24 @@ function renderMmtView(mmtData: Record<string, any> | undefined) {
 	);
 }
 
+type VersionHistoryItem = {
+	id: string;
+	version: number;
+	createdAt: string;
+	createdBy: string;
+	data: Partial<PatientRecordFull>;
+};
+
 interface ReportModalProps {
 	isOpen: boolean;
 	patientId: string | null;
 	initialTab?: 'report' | 'strength-conditioning';
 	onClose: () => void;
+	/** Called when user clicks Edit on a report version. Receives the selected version so the parent can open the edit flow with the correct version ID. */
+	onEditVersion?: (version: VersionHistoryItem) => void;
 }
 
-export default function ReportModal({ isOpen, patientId, initialTab = 'report', onClose }: ReportModalProps) {
+export default function ReportModal({ isOpen, patientId, initialTab = 'report', onClose, onEditVersion }: ReportModalProps) {
 	const [activeReportTab, setActiveReportTab] = useState<'report' | 'strength-conditioning'>(initialTab);
 	const [reportPatientData, setReportPatientData] = useState<any>(null);
 	const [strengthConditioningData, setStrengthConditioningData] = useState<any>(null);
@@ -213,13 +223,7 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 	
 	// Version history state
 	const [showVersionHistory, setShowVersionHistory] = useState(false);
-	const [versionHistory, setVersionHistory] = useState<Array<{
-		id: string;
-		version: number;
-		createdAt: string;
-		createdBy: string;
-		data: Partial<PatientRecordFull>;
-	}>>([]);
+	const [versionHistory, setVersionHistory] = useState<VersionHistoryItem[]>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | null>(null);
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
@@ -508,6 +512,8 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 					gender: reportPatientData.gender || '',
 					phone: reportPatientData.phone || '',
 					email: reportPatientData.email || '',
+					totalSessionsRequired: reportPatientData.totalSessionsRequired,
+					remainingSessions: reportPatientData.remainingSessions,
 				},
 				formData: strengthConditioningData as StrengthConditioningData,
 			});
@@ -543,6 +549,8 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 						gender: reportPatientData.gender || '',
 						phone: reportPatientData.phone || '',
 						email: reportPatientData.email || '',
+						totalSessionsRequired: reportPatientData.totalSessionsRequired,
+						remainingSessions: reportPatientData.remainingSessions,
 					},
 					formData: strengthConditioningData as StrengthConditioningData,
 				}, { forPrint: true });
@@ -592,9 +600,25 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 		await loadVersionHistory();
 	};
 
-	// Toggle expanded version
+	// Toggle expanded version (inline expand/collapse)
 	const toggleVersionExpansion = (versionId: string) => {
 		setExpandedVersionId(expandedVersionId === versionId ? null : versionId);
+	};
+
+	// View full report: open the selected version in the main report view (so the correct version is shown, not the first)
+	const handleViewFullReport = (version: VersionHistoryItem) => {
+		const versionData = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
+		setViewingVersionData(versionData);
+		setShowVersionHistory(false);
+		setExpandedVersionId(null);
+	};
+
+	// Edit version: invoke parent handler with the correct version so edit opens with the right version ID
+	const handleEditVersion = (version: VersionHistoryItem) => {
+		if (onEditVersion) {
+			onEditVersion(version);
+			setShowVersionHistory(false);
+		}
 	};
 
 	// Crisp report handlers
@@ -1471,6 +1495,14 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 											<span className="text-xs text-slate-500">Email:</span>
 											<p className="text-sm font-medium text-slate-900">{reportPatientData?.email || '—'}</p>
 										</div>
+										<div>
+											<span className="text-xs text-slate-500">Total Sessions Required:</span>
+											<p className="text-sm font-medium text-slate-900">{typeof reportPatientData?.totalSessionsRequired === 'number' ? reportPatientData.totalSessionsRequired : '—'}</p>
+										</div>
+										<div>
+											<span className="text-xs text-slate-500">Remaining Sessions:</span>
+											<p className="text-sm font-medium text-slate-900">{typeof reportPatientData?.remainingSessions === 'number' ? reportPatientData.remainingSessions : '—'}</p>
+										</div>
 									</div>
 									{strengthConditioningData.therapistName && (
 										<div className="mt-3">
@@ -1902,14 +1934,41 @@ export default function ReportModal({ isOpen, patientId, initialTab = 'report', 
 																{new Date(version.createdAt).toLocaleString()}
 															</p>
 														</div>
-														<div className="ml-4">
+														<div className="ml-4 flex gap-2">
+															<button
+																type="button"
+																onClick={(e) => {
+																	e.preventDefault();
+																	e.stopPropagation();
+																	handleViewFullReport(version);
+																}}
+																className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
+															>
+																<i className="fas fa-eye mr-1.5" aria-hidden="true" />
+																View Full Report
+															</button>
+															{onEditVersion && (
+																<button
+																	type="button"
+																	onClick={(e) => {
+																		e.preventDefault();
+																		e.stopPropagation();
+																		handleEditVersion(version);
+																	}}
+																	className="inline-flex items-center rounded-lg border border-emerald-600 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 focus-visible:outline-none"
+																	title="Edit this version"
+																>
+																	<i className="fas fa-edit mr-1.5" aria-hidden="true" />
+																	Edit
+																</button>
+															)}
 															<button
 																type="button"
 																onClick={() => toggleVersionExpansion(version.id)}
-																className="inline-flex items-center rounded-lg border border-sky-600 px-3 py-1.5 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 focus-visible:outline-none"
+																className="inline-flex items-center rounded-lg border border-slate-400 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-none"
 															>
 																<i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5`} aria-hidden="true" />
-																{isExpanded ? 'Hide Report' : 'Show Full Report'}
+																{isExpanded ? 'Hide' : 'Expand'}
 															</button>
 														</div>
 													</div>
