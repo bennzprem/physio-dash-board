@@ -257,11 +257,11 @@ export default function LoginPage() {
 						</svg>
 					</div>
 					
-					<h2 className="mb-6 max-w-lg text-4xl font-bold leading-tight tracking-tight">
-						Streamline patient care with your clinical dashboard
+					<h2 className="mb-8 text-6xl font-bold tracking-tight text-white">
+						CareAxis
 					</h2>
-					<p className="max-w-md text-lg text-blue-100/70">
-						A unified platform for sports science professionals to track performance, manage recovery, and drive clinical excellence.
+					<p className="max-w-lg text-lg leading-relaxed text-blue-100/80">
+						An intelligent platform designed to streamline patient services, clinical reporting, and financial management.
 					</p>
 				</div>
 
