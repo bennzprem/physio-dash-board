@@ -728,6 +728,10 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const viewingVersionFetchedDataIdRef = useRef<string | null>(null); // Version id that viewingVersionFetchedData belongs to — avoid showing another report's data
 	// Fetched report data keyed by version id — single source for follow-up view so we never show another report's treatment
 	const fetchedDataByVersionIdRef = useRef<Record<string, Partial<PatientRecordFull>>>({});
+	// Strength & Conditioning: fetched version data by id so View Full Report shows correct report, not primary
+	const fetchedSCDataByVersionIdRef = useRef<Record<string, StrengthConditioningData>>({});
+	// Psychology: fetched version data by id so View Full Report shows correct report, not primary
+	const fetchedPsychologyDataByVersionIdRef = useRef<Record<string, any>>({});
 	const [isEditingLoadedPhysioVersion, setIsEditingLoadedPhysioVersion] = useState(false); // True when editing a loaded version → show full primary report form
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 	const [hasPsychologyVersions, setHasPsychologyVersions] = useState(false);
@@ -3370,16 +3374,42 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setViewingVersionIsPsychology(true);
 			setViewingVersionIsStrengthConditioning(false);
 			setViewingVersionData(null);
-			const psychologyData = version.data && typeof version.data === 'object' && Object.keys(version.data).length > 0 ? version.data : {};
-			setViewingPsychologyVersionData(psychologyData);
+			setViewingPsychologyVersionData(null); // show loading until fetch returns; use version doc data only
 			setActiveReportTab('psychology');
 			setShowVersionHistory(false);
+			const versionIdForFetch = version.id;
+			getDoc(doc(db, 'psychologyReportVersions', versionIdForFetch))
+				.then((snap) => {
+					if (!snap.exists()) return;
+					if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
+					const data = (snap.data()?.reportData as Record<string, unknown>) || {};
+					fetchedPsychologyDataByVersionIdRef.current[versionIdForFetch] = data;
+					setViewingPsychologyVersionData(data);
+				})
+				.catch((err) => {
+					console.error('Failed to load psychology version for view:', err);
+					const fallback = version.data && typeof version.data === 'object' ? version.data : {};
+					setViewingPsychologyVersionData(fallback);
+				});
 		} else if (version.isStrengthConditioning) {
 			setViewingVersionIsStrengthConditioning(true);
 			setViewingVersionIsPsychology(false);
 			setViewingPsychologyVersionData(null);
-			setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
+			setViewingVersionData(null); // show loading until fetch returns; use version doc data only
 			setShowVersionHistory(false);
+			const versionIdForFetch = version.id;
+			getDoc(doc(db, 'strengthConditioningReportVersions', versionIdForFetch))
+				.then((snap) => {
+					if (!snap.exists()) return;
+					if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
+					const data = (snap.data()?.reportData as StrengthConditioningData) || {};
+					fetchedSCDataByVersionIdRef.current[versionIdForFetch] = data;
+					setViewingVersionData(data as Partial<PatientRecordFull>);
+				})
+				.catch((err) => {
+					console.error('Failed to load strength conditioning version for view:', err);
+					setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
+				});
 		} else {
 			// Physiotherapy: do NOT use list data — only set viewingVersionData/viewingVersionFetchedData when getDoc returns
 			setViewingVersionIsStrengthConditioning(false);
@@ -7219,7 +7249,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					));
 
 				return (
-					<div key={viewingVersionId ?? 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionFetchedData(null); setViewingVersionId(null); viewingVersionIdRequestedRef.current = null; viewingVersionForEditRef.current = null; viewingVersionIdForEditRef.current = null; viewingVersionFetchedDataIdRef.current = null; fetchedDataByVersionIdRef.current = {}; } }}>
+					<div key={viewingVersionId ?? 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionFetchedData(null); setViewingVersionId(null); setViewingVersionIsStrengthConditioning(false); setViewingVersionIsPsychology(false); viewingVersionIdRequestedRef.current = null; viewingVersionForEditRef.current = null; viewingVersionIdForEditRef.current = null; viewingVersionFetchedDataIdRef.current = null; fetchedDataByVersionIdRef.current = {}; fetchedSCDataByVersionIdRef.current = {}; fetchedPsychologyDataByVersionIdRef.current = {}; } }}>
 						<div className="bg-white rounded-lg shadow-xl max-w-6xl w-full h-[95vh] max-h-[95vh] flex flex-col overflow-hidden">
 							<div className="flex items-center justify-between p-6 border-b border-slate-200 flex-shrink-0 bg-white">
 							<h2 className="text-xl font-semibold text-slate-900">
@@ -7232,11 +7262,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									setViewingVersionFetchedData(null);
 									setViewingVersionId(null);
 									setViewingVersionIsStrengthConditioning(false);
+									setViewingVersionIsPsychology(false);
 									viewingVersionIdRequestedRef.current = null;
 									viewingVersionForEditRef.current = null;
 									viewingVersionIdForEditRef.current = null;
 									viewingVersionFetchedDataIdRef.current = null;
 									fetchedDataByVersionIdRef.current = {};
+									fetchedSCDataByVersionIdRef.current = {};
+									fetchedPsychologyDataByVersionIdRef.current = {};
 								}}
 								className="text-slate-400 hover:text-slate-600 transition"
 								aria-label="Close"
@@ -7249,7 +7282,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								{(() => {
 									// Physio: wait for getDoc so Treatment/Follow-up show this version's data (not Report#1)
 									const hasFetchedForThisVersion = viewingVersionId && fetchedDataByVersionIdRef.current[viewingVersionId];
-									const physioLoading = viewingVersionId && !hasFetchedForThisVersion && !viewingVersionData;
+									const physioLoading = viewingVersionId && !hasFetchedForThisVersion && !viewingVersionData && !viewingVersionIsStrengthConditioning;
 									if (physioLoading) {
 										return (
 											<div className="flex flex-col items-center justify-center py-16 text-slate-600">
@@ -7258,7 +7291,21 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</div>
 										);
 									}
-									if (!viewingVersionData && !viewingVersionFetchedData) return null;
+									// Strength & Conditioning: wait for getDoc so we show this version's data, not primary
+									if (viewingVersionIsStrengthConditioning && viewingVersionId && !fetchedSCDataByVersionIdRef.current[viewingVersionId] && !viewingVersionData) {
+										return (
+											<div className="flex flex-col items-center justify-center py-16 text-slate-600">
+												<i className="fas fa-spinner fa-spin text-3xl mb-4" aria-hidden="true" />
+												<p>Loading report…</p>
+											</div>
+										);
+									}
+									// Use fetched SC data by version id when available so we never show another report's data
+									const scDataForView = viewingVersionIsStrengthConditioning && viewingVersionId
+										? (fetchedSCDataByVersionIdRef.current[viewingVersionId] ?? viewingVersionData)
+										: viewingVersionData;
+									const dataForDisplay = isSCReport ? (scDataForView ?? viewingVersionData) : viewingVersionData;
+									if (!scDataForView && !viewingVersionFetchedData) return null;
 									if (isSCReport) {
 										return (
 											// Strength and Conditioning Report View
@@ -7287,67 +7334,67 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 
 										{/* Assessment Date */}
-										{(viewingVersionData as any).assessmentDate && (
+										{(dataForDisplay as any).assessmentDate && (
 											<div>
 												<label className="block text-xs font-medium text-slate-500 mb-1">Assessment Date</label>
 												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-													{(viewingVersionData as any).assessmentDate}
+													{(dataForDisplay as any).assessmentDate}
 												</div>
 											</div>
 										)}
 
 										{/* Therapist Name */}
-										{(viewingVersionData as any).therapistName && (
+										{(dataForDisplay as any).therapistName && (
 											<div>
 												<label className="block text-xs font-medium text-slate-500 mb-1">Therapist Name</label>
 												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-													{(viewingVersionData as any).therapistName}
+													{(dataForDisplay as any).therapistName}
 												</div>
 											</div>
 										)}
 
 										{/* Athlete Profile */}
-										{((viewingVersionData as any).sports || (viewingVersionData as any).trainingAge || (viewingVersionData as any).competitionLevel || (viewingVersionData as any).injuryHistory || (viewingVersionData as any).dominantSide) && (
+										{((dataForDisplay as any).sports || (dataForDisplay as any).trainingAge || (dataForDisplay as any).competitionLevel || (dataForDisplay as any).injuryHistory || (dataForDisplay as any).dominantSide) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Athlete Profile</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-													{(viewingVersionData as any).sports && (
+													{(dataForDisplay as any).sports && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Sports</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sports}
+																{(dataForDisplay as any).sports}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).trainingAge && (
+													{(dataForDisplay as any).trainingAge && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Training Age (years)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).trainingAge}
+																{(dataForDisplay as any).trainingAge}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).competitionLevel && (
+													{(dataForDisplay as any).competitionLevel && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Competition Level</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).competitionLevel}
+																{(dataForDisplay as any).competitionLevel}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).injuryHistory && (
+													{(dataForDisplay as any).injuryHistory && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Injury History</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-																{(viewingVersionData as any).injuryHistory}
+																{(dataForDisplay as any).injuryHistory}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).dominantSide && (
+													{(dataForDisplay as any).dominantSide && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Dominant Side</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).dominantSide}
+																{(dataForDisplay as any).dominantSide}
 															</div>
 														</div>
 													)}
@@ -7356,24 +7403,24 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Periodization */}
-										{((viewingVersionData as any).seasonPhase || ((viewingVersionData as any).matchDates && Array.isArray((viewingVersionData as any).matchDates) && (viewingVersionData as any).matchDates.length > 0)) && (
+										{((dataForDisplay as any).seasonPhase || ((dataForDisplay as any).matchDates && Array.isArray((dataForDisplay as any).matchDates) && (dataForDisplay as any).matchDates.length > 0)) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Periodization</h3>
 												<div className="grid gap-4 sm:grid-cols-2">
-													{(viewingVersionData as any).seasonPhase && (
+													{(dataForDisplay as any).seasonPhase && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Season Phase</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).seasonPhase}
+																{(dataForDisplay as any).seasonPhase}
 															</div>
 														</div>
 													)}
-													{((viewingVersionData as any).matchDates && Array.isArray((viewingVersionData as any).matchDates) && (viewingVersionData as any).matchDates.length > 0) && (
+													{((dataForDisplay as any).matchDates && Array.isArray((dataForDisplay as any).matchDates) && (dataForDisplay as any).matchDates.length > 0) && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">List of Matches</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
 																<ul className="list-disc list-inside space-y-1">
-																	{(viewingVersionData as any).matchDates.map((date: string, idx: number) => (
+																	{(dataForDisplay as any).matchDates.map((date: string, idx: number) => (
 																		<li key={idx}>{date}</li>
 																	))}
 																</ul>
@@ -7385,39 +7432,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Skill Training */}
-										{((viewingVersionData as any).skillType || (viewingVersionData as any).skillDuration || (viewingVersionData as any).skillRPEPlanned || (viewingVersionData as any).skillPRPEPerceived) && (
+										{((dataForDisplay as any).skillType || (dataForDisplay as any).skillDuration || (dataForDisplay as any).skillRPEPlanned || (dataForDisplay as any).skillPRPEPerceived) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Skill Training</h3>
 												<div className="grid gap-4 sm:grid-cols-2">
-													{(viewingVersionData as any).skillType && (
+													{(dataForDisplay as any).skillType && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).skillType}
+																{(dataForDisplay as any).skillType}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).skillDuration && (
+													{(dataForDisplay as any).skillDuration && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Duration</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).skillDuration}
+																{(dataForDisplay as any).skillDuration}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).skillRPEPlanned && (
+													{(dataForDisplay as any).skillRPEPlanned && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">RPE Planned</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).skillRPEPlanned}
+																{(dataForDisplay as any).skillRPEPlanned}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).skillPRPEPerceived && (
+													{(dataForDisplay as any).skillPRPEPerceived && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">PRPE Perceived</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).skillPRPEPerceived}
+																{(dataForDisplay as any).skillPRPEPerceived}
 															</div>
 														</div>
 													)}
@@ -7426,39 +7473,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Strength & Conditioning */}
-										{((viewingVersionData as any).scType || (viewingVersionData as any).scDuration || (viewingVersionData as any).scRPEPlanned || (viewingVersionData as any).scPRPEPerceived) && (
+										{((dataForDisplay as any).scType || (dataForDisplay as any).scDuration || (dataForDisplay as any).scRPEPlanned || (dataForDisplay as any).scPRPEPerceived) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Strength & Conditioning</h3>
 												<div className="grid gap-4 sm:grid-cols-2">
-													{(viewingVersionData as any).scType && (
+													{(dataForDisplay as any).scType && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scType}
+																{(dataForDisplay as any).scType}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).scDuration && (
+													{(dataForDisplay as any).scDuration && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Duration</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scDuration}
+																{(dataForDisplay as any).scDuration}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).scRPEPlanned && (
+													{(dataForDisplay as any).scRPEPlanned && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">RPE Planned</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scRPEPlanned}
+																{(dataForDisplay as any).scRPEPlanned}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).scPRPEPerceived && (
+													{(dataForDisplay as any).scPRPEPerceived && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">PRPE Perceived</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scPRPEPerceived}
+																{(dataForDisplay as any).scPRPEPerceived}
 															</div>
 														</div>
 													)}
@@ -7467,17 +7514,17 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Total Duration and Daily Workload */}
-										{((viewingVersionData as any).skillDuration || (viewingVersionData as any).scDuration || (viewingVersionData as any).scRPEPlanned) && (() => {
-											const skillDur = typeof (viewingVersionData as any).skillDuration === 'number' 
-												? (viewingVersionData as any).skillDuration 
-												: parseFloat(String((viewingVersionData as any).skillDuration || 0)) || 0;
-											const scDur = typeof (viewingVersionData as any).scDuration === 'number' 
-												? (viewingVersionData as any).scDuration 
-												: parseFloat(String((viewingVersionData as any).scDuration || 0)) || 0;
+										{((dataForDisplay as any).skillDuration || (dataForDisplay as any).scDuration || (dataForDisplay as any).scRPEPlanned) && (() => {
+											const skillDur = typeof (dataForDisplay as any).skillDuration === 'number' 
+												? (dataForDisplay as any).skillDuration 
+												: parseFloat(String((dataForDisplay as any).skillDuration || 0)) || 0;
+											const scDur = typeof (dataForDisplay as any).scDuration === 'number' 
+												? (dataForDisplay as any).scDuration 
+												: parseFloat(String((dataForDisplay as any).scDuration || 0)) || 0;
 											const totalDuration = skillDur + scDur;
-											const rpe = typeof (viewingVersionData as any).scRPEPlanned === 'number' 
-												? (viewingVersionData as any).scRPEPlanned 
-												: parseFloat(String((viewingVersionData as any).scRPEPlanned || 0)) || 0;
+											const rpe = typeof (dataForDisplay as any).scRPEPlanned === 'number' 
+												? (dataForDisplay as any).scRPEPlanned 
+												: parseFloat(String((dataForDisplay as any).scRPEPlanned || 0)) || 0;
 											const dailyWorkload = totalDuration > 0 && rpe > 0 ? rpe * totalDuration : 0;
 											
 											return (
@@ -7504,7 +7551,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										})()}
 
 										{/* Exercise Log */}
-										{((viewingVersionData as any).exercises && Array.isArray((viewingVersionData as any).exercises) && (viewingVersionData as any).exercises.length > 0) && (
+										{((dataForDisplay as any).exercises && Array.isArray((dataForDisplay as any).exercises) && (dataForDisplay as any).exercises.length > 0) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Exercise Log</h3>
 												<div className="overflow-x-auto">
@@ -7521,7 +7568,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 															</tr>
 														</thead>
 														<tbody className="bg-white divide-y divide-slate-200">
-															{(viewingVersionData as any).exercises.map((exercise: any, idx: number) => (
+															{(dataForDisplay as any).exercises.map((exercise: any, idx: number) => (
 																<tr key={idx}>
 																	<td className="px-3 py-2 text-xs text-slate-700">{exercise.exerciseName || '—'}</td>
 																	<td className="px-3 py-2 text-xs text-slate-700">{exercise.sets || '—'}</td>
@@ -7539,47 +7586,47 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Wellness Score */}
-										{((viewingVersionData as any).sleepDuration || (viewingVersionData as any).sleepQuality || (viewingVersionData as any).stressLevel || (viewingVersionData as any).muscleSoreness || (viewingVersionData as any).moodState) && (
+										{((dataForDisplay as any).sleepDuration || (dataForDisplay as any).sleepQuality || (dataForDisplay as any).stressLevel || (dataForDisplay as any).muscleSoreness || (dataForDisplay as any).moodState) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Wellness Score</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-													{(viewingVersionData as any).sleepDuration && (
+													{(dataForDisplay as any).sleepDuration && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Sleep Duration (hours)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sleepDuration}
+																{(dataForDisplay as any).sleepDuration}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).sleepQuality && (
+													{(dataForDisplay as any).sleepQuality && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Sleep Quality (1-10)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sleepQuality}
+																{(dataForDisplay as any).sleepQuality}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).stressLevel && (
+													{(dataForDisplay as any).stressLevel && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Stress Level (1-10)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).stressLevel}
+																{(dataForDisplay as any).stressLevel}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).muscleSoreness && (
+													{(dataForDisplay as any).muscleSoreness && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Muscle Soreness (1-10)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).muscleSoreness}
+																{(dataForDisplay as any).muscleSoreness}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).moodState && (
+													{(dataForDisplay as any).moodState && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Mood State</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).moodState}
+																{(dataForDisplay as any).moodState}
 															</div>
 														</div>
 													)}
@@ -7588,39 +7635,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* ACWR */}
-										{((viewingVersionData as any).dailyWorkload || (viewingVersionData as any).acuteWorkload || (viewingVersionData as any).chronicWorkload || (viewingVersionData as any).acwrRatio) && (
+										{((dataForDisplay as any).dailyWorkload || (dataForDisplay as any).acuteWorkload || (dataForDisplay as any).chronicWorkload || (dataForDisplay as any).acwrRatio) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">ACWR (Acute:Chronic Workload Ratio)</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-													{(viewingVersionData as any).dailyWorkload && (
+													{(dataForDisplay as any).dailyWorkload && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Daily Workload (A.U.)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).dailyWorkload}
+																{(dataForDisplay as any).dailyWorkload}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).acuteWorkload && (
+													{(dataForDisplay as any).acuteWorkload && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Acute Workload (7 days)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).acuteWorkload}
+																{(dataForDisplay as any).acuteWorkload}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).chronicWorkload && (
+													{(dataForDisplay as any).chronicWorkload && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Chronic Workload (28 days avg)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).chronicWorkload}
+																{(dataForDisplay as any).chronicWorkload}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).acwrRatio && (
+													{(dataForDisplay as any).acwrRatio && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">ACWR Ratio</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).acwrRatio}
+																{(dataForDisplay as any).acwrRatio}
 															</div>
 														</div>
 													)}
@@ -7629,279 +7676,279 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Functional Movement Screen */}
-										{((viewingVersionData as any).scapularDyskinesiaTest || (viewingVersionData as any).upperLimbFlexibilityRight || (viewingVersionData as any).fmsScore) && (
+										{((dataForDisplay as any).scapularDyskinesiaTest || (dataForDisplay as any).upperLimbFlexibilityRight || (dataForDisplay as any).fmsScore) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Functional Movement Screen</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-													{(viewingVersionData as any).scapularDyskinesiaTest && (
+													{(dataForDisplay as any).scapularDyskinesiaTest && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Scapular Dyskinesia Test</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scapularDyskinesiaTest}
+																{(dataForDisplay as any).scapularDyskinesiaTest}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).upperLimbFlexibilityRight && (
+													{(dataForDisplay as any).upperLimbFlexibilityRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Upper Limb Flexibility (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).upperLimbFlexibilityRight}
+																{(dataForDisplay as any).upperLimbFlexibilityRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).upperLimbFlexibilityLeft && (
+													{(dataForDisplay as any).upperLimbFlexibilityLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Upper Limb Flexibility (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).upperLimbFlexibilityLeft}
+																{(dataForDisplay as any).upperLimbFlexibilityLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).shoulderInternalRotationRight && (
+													{(dataForDisplay as any).shoulderInternalRotationRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Shoulder Internal Rotation (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).shoulderInternalRotationRight}
+																{(dataForDisplay as any).shoulderInternalRotationRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).shoulderInternalRotationLeft && (
+													{(dataForDisplay as any).shoulderInternalRotationLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Shoulder Internal Rotation (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).shoulderInternalRotationLeft}
+																{(dataForDisplay as any).shoulderInternalRotationLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).shoulderExternalRotationRight && (
+													{(dataForDisplay as any).shoulderExternalRotationRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Shoulder External Rotation (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).shoulderExternalRotationRight}
+																{(dataForDisplay as any).shoulderExternalRotationRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).shoulderExternalRotationLeft && (
+													{(dataForDisplay as any).shoulderExternalRotationLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Shoulder External Rotation (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).shoulderExternalRotationLeft}
+																{(dataForDisplay as any).shoulderExternalRotationLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).thoracicRotation && (
+													{(dataForDisplay as any).thoracicRotation && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Thoracic Rotation</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).thoracicRotation}
+																{(dataForDisplay as any).thoracicRotation}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).sitAndReachTest && (
+													{(dataForDisplay as any).sitAndReachTest && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Sit and Reach Test</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sitAndReachTest}
+																{(dataForDisplay as any).sitAndReachTest}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).singleLegSquatRight && (
+													{(dataForDisplay as any).singleLegSquatRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Single Leg Squat (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).singleLegSquatRight}
+																{(dataForDisplay as any).singleLegSquatRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).singleLegSquatLeft && (
+													{(dataForDisplay as any).singleLegSquatLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Single Leg Squat (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).singleLegSquatLeft}
+																{(dataForDisplay as any).singleLegSquatLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).weightBearingLungeTestRight && (
+													{(dataForDisplay as any).weightBearingLungeTestRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Weight Bearing Lunge Test (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).weightBearingLungeTestRight}
+																{(dataForDisplay as any).weightBearingLungeTestRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).weightBearingLungeTestLeft && (
+													{(dataForDisplay as any).weightBearingLungeTestLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Weight Bearing Lunge Test (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).weightBearingLungeTestLeft}
+																{(dataForDisplay as any).weightBearingLungeTestLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hamstringsFlexibilityRight && (
+													{(dataForDisplay as any).hamstringsFlexibilityRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hamstrings Flexibility (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hamstringsFlexibilityRight}
+																{(dataForDisplay as any).hamstringsFlexibilityRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hamstringsFlexibilityLeft && (
+													{(dataForDisplay as any).hamstringsFlexibilityLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hamstrings Flexibility (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hamstringsFlexibilityLeft}
+																{(dataForDisplay as any).hamstringsFlexibilityLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).quadricepsFlexibilityRight && (
+													{(dataForDisplay as any).quadricepsFlexibilityRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Quadriceps Flexibility (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).quadricepsFlexibilityRight}
+																{(dataForDisplay as any).quadricepsFlexibilityRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).quadricepsFlexibilityLeft && (
+													{(dataForDisplay as any).quadricepsFlexibilityLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Quadriceps Flexibility (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).quadricepsFlexibilityLeft}
+																{(dataForDisplay as any).quadricepsFlexibilityLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipExternalRotationRight && (
+													{(dataForDisplay as any).hipExternalRotationRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip External Rotation (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipExternalRotationRight}
+																{(dataForDisplay as any).hipExternalRotationRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipExternalRotationLeft && (
+													{(dataForDisplay as any).hipExternalRotationLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip External Rotation (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipExternalRotationLeft}
+																{(dataForDisplay as any).hipExternalRotationLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipInternalRotationRight && (
+													{(dataForDisplay as any).hipInternalRotationRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip Internal Rotation (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipInternalRotationRight}
+																{(dataForDisplay as any).hipInternalRotationRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipInternalRotationLeft && (
+													{(dataForDisplay as any).hipInternalRotationLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip Internal Rotation (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipInternalRotationLeft}
+																{(dataForDisplay as any).hipInternalRotationLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipExtensionRight && (
+													{(dataForDisplay as any).hipExtensionRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip Extension (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipExtensionRight}
+																{(dataForDisplay as any).hipExtensionRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipExtensionLeft && (
+													{(dataForDisplay as any).hipExtensionLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip Extension (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipExtensionLeft}
+																{(dataForDisplay as any).hipExtensionLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).activeSLRRight && (
+													{(dataForDisplay as any).activeSLRRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Active SLR (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).activeSLRRight}
+																{(dataForDisplay as any).activeSLRRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).activeSLRLeft && (
+													{(dataForDisplay as any).activeSLRLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Active SLR (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).activeSLRLeft}
+																{(dataForDisplay as any).activeSLRLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).pronePlank && (
+													{(dataForDisplay as any).pronePlank && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Prone Plank</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).pronePlank}
+																{(dataForDisplay as any).pronePlank}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).sidePlankRight && (
+													{(dataForDisplay as any).sidePlankRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Side Plank (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sidePlankRight}
+																{(dataForDisplay as any).sidePlankRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).sidePlankLeft && (
+													{(dataForDisplay as any).sidePlankLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Side Plank (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sidePlankLeft}
+																{(dataForDisplay as any).sidePlankLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).storkStandingBalanceTestRight && (
+													{(dataForDisplay as any).storkStandingBalanceTestRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Stork Standing Balance Test (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).storkStandingBalanceTestRight}
+																{(dataForDisplay as any).storkStandingBalanceTestRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).storkStandingBalanceTestLeft && (
+													{(dataForDisplay as any).storkStandingBalanceTestLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Stork Standing Balance Test (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).storkStandingBalanceTestLeft}
+																{(dataForDisplay as any).storkStandingBalanceTestLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).deepSquat && (
+													{(dataForDisplay as any).deepSquat && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Deep Squat</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).deepSquat}
+																{(dataForDisplay as any).deepSquat}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).pushup && (
+													{(dataForDisplay as any).pushup && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Push-up</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).pushup}
+																{(dataForDisplay as any).pushup}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).fmsScore && (
+													{(dataForDisplay as any).fmsScore && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">FMS Score</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).fmsScore}
+																{(dataForDisplay as any).fmsScore}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).totalFmsScore && (
+													{(dataForDisplay as any).totalFmsScore && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Total FMS Score</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).totalFmsScore}
+																{(dataForDisplay as any).totalFmsScore}
 															</div>
 														</div>
 													)}
@@ -7910,11 +7957,11 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Summary */}
-										{(viewingVersionData as any).summary && (
+										{(dataForDisplay as any).summary && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Summary</h3>
 												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-													{(viewingVersionData as any).summary}
+													{(dataForDisplay as any).summary}
 												</div>
 											</div>
 										)}
@@ -8434,18 +8481,24 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							<button
 								type="button"
 								onClick={async () => {
-									if (!viewingVersionData) return;
+									// Use fetched SC data by version id when available (same as modal content)
+									const dataForPDF = viewingVersionIsStrengthConditioning && viewingVersionId
+										? (fetchedSCDataByVersionIdRef.current[viewingVersionId] ?? viewingVersionData)
+										: viewingVersionData;
+									if (!dataForPDF) return;
 									try {
-										const versionData = reportPatientData ? { ...reportPatientData, ...viewingVersionData } : viewingVersionData;
+										const versionData = reportPatientData ? { ...reportPatientData, ...dataForPDF } : dataForPDF;
 										
 										// Check if this is a Strength and Conditioning report
-										const isSCReport = viewingVersionIsStrengthConditioning ||
-											'sports' in viewingVersionData ||
-											'trainingAge' in viewingVersionData ||
-											'competitionLevel' in viewingVersionData ||
-											'scRPEPlanned' in viewingVersionData;
+										const isSCReportPdf = viewingVersionIsStrengthConditioning ||
+											(dataForPDF && (
+												'sports' in dataForPDF ||
+												'trainingAge' in dataForPDF ||
+												'competitionLevel' in dataForPDF ||
+												'scRPEPlanned' in dataForPDF
+											));
 										
-										if (isSCReport) {
+										if (isSCReportPdf) {
 											// Generate Strength and Conditioning PDF
 											await generateStrengthConditioningPDF({
 												patient: {
@@ -8475,7 +8528,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								<i className="fas fa-download mr-2" aria-hidden="true" />
 								Download PDF
 							</button>
-							{!viewingVersionIsStrengthConditioning && (versionHistory ?? []).some(v => v.id === viewingVersionId) && (
+							{((!viewingVersionIsStrengthConditioning && !viewingVersionIsPsychology && (versionHistory ?? []).some(v => v.id === viewingVersionId)) || (viewingVersionIsStrengthConditioning && viewingVersionForEditRef.current) || (viewingVersionIsPsychology && viewingVersionForEditRef.current)) && (
 								<button
 									type="button"
 									onClick={() => {
@@ -8488,12 +8541,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											setViewingVersionData(null);
 											setViewingVersionFetchedData(null);
 											setViewingVersionIsStrengthConditioning(false);
+											setViewingVersionIsPsychology(false);
 											setViewingVersionId(null);
 											viewingVersionIdRequestedRef.current = null;
 											viewingVersionForEditRef.current = null;
 											viewingVersionIdForEditRef.current = null;
 											viewingVersionFetchedDataIdRef.current = null;
 											fetchedDataByVersionIdRef.current = {};
+											fetchedSCDataByVersionIdRef.current = {};
+											fetchedPsychologyDataByVersionIdRef.current = {};
 										}
 									}}
 									className="inline-flex items-center rounded-lg border border-amber-600 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 transition hover:bg-amber-100 focus-visible:outline-none"
@@ -8508,12 +8564,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									setViewingVersionData(null);
 									setViewingVersionFetchedData(null);
 									setViewingVersionIsStrengthConditioning(false);
+									setViewingVersionIsPsychology(false);
 									setViewingVersionId(null);
 									viewingVersionIdRequestedRef.current = null;
 									viewingVersionForEditRef.current = null;
 									viewingVersionIdForEditRef.current = null;
 									viewingVersionFetchedDataIdRef.current = null;
 									fetchedDataByVersionIdRef.current = {};
+									fetchedSCDataByVersionIdRef.current = {};
+									fetchedPsychologyDataByVersionIdRef.current = {};
 								}}
 								className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition"
 							>
