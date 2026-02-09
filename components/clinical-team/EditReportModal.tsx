@@ -173,7 +173,7 @@ function removeUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
 
 const VERSION_DOC_METADATA_KEYS = new Set(['patientId', 'patientName', 'version', 'reportType', 'createdBy', 'createdById', 'createdAt', 'sessionNumber', 'restoredFrom']);
 
-/** Get report payload from a reportVersions doc: use reportData, or legacy top-level fields (e.g. Report #1) */
+/** Get report payload from a reportVersions doc: use reportData, or legacy top-level fields. reportData always wins so follow-up treatment is from this version, not primary. */
 function getReportDataFromVersionDoc(data: Record<string, unknown> | undefined): Record<string, unknown> {
 	if (!data) return {};
 	const fromReportData = (data.reportData as Record<string, unknown>) || {};
@@ -183,7 +183,8 @@ function getReportDataFromVersionDoc(data: Record<string, unknown> | undefined):
 		if (VERSION_DOC_METADATA_KEYS.has(key)) continue;
 		topLevel[key] = data[key];
 	}
-	return Object.keys(topLevel).length > Object.keys(fromReportData).length ? { ...fromReportData, ...topLevel } : fromReportData;
+	// Prefer reportData over topLevel so treatment/followUpAssessment are from this version's reportData, not legacy top-level
+	return Object.keys(topLevel).length > Object.keys(fromReportData).length ? { ...topLevel, ...fromReportData } : fromReportData;
 }
 
 /** Normalize report data from Firestore: convert Timestamps to ISO strings, deep-clone so form gets plain values */
@@ -2785,6 +2786,10 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			const versionReportData = { ...reportData };
 			delete (versionReportData as Record<string, unknown>).updatedAt;
 			const currentReportData = versionReportData as Partial<PatientRecordFull>;
+			// For follow-up reports (version 2+), always force treatment/followUpAssessment from current form so View Full Report shows what the user entered, not primary report
+			currentReportData.treatment = formData.treatment ?? formData.treatmentProvided ?? '';
+			currentReportData.treatmentProvided = formData.treatmentProvided ?? formData.treatment ?? '';
+			currentReportData.followUpAssessment = formData.followUpAssessment ?? '';
 
 			const hasReportData = Object.values(currentReportData).some(val => 
 				val !== undefined && val !== null && val !== '' && 
