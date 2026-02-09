@@ -92,6 +92,9 @@ export default function StrengthConditioningReport() {
 				if (patientId) {
 					const found = mapped.find(p => p.patientId === patientId || p.id === patientId);
 					if (found) {
+						// #region agent log
+						fetch('http://127.0.0.1:7242/ingest/69ba52a1-d8d6-4497-bccb-9830640e4ec5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StrengthConditioningReport.tsx:95',message:'Auto-selecting patient from patients onSnapshot',data:{patientId:found.id,patientName:found.name},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+						// #endregion
 						setSelectedPatient(found);
 					}
 				}
@@ -144,6 +147,9 @@ export default function StrengthConditioningReport() {
 
 	// Load existing strength and conditioning data
 	useEffect(() => {
+		// #region agent log
+		fetch('http://127.0.0.1:7242/ingest/69ba52a1-d8d6-4497-bccb-9830640e4ec5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StrengthConditioningReport.tsx:146',message:'useEffect triggered for loading report data',data:{hasSelectedPatient:!!selectedPatient?.id,patientId:selectedPatient?.id},timestamp:Date.now(),hypothesisId:'H1,H3'})}).catch(()=>{});
+		// #endregion
 		if (!selectedPatient?.id) {
 			setFormData({});
 			setLoading(false);
@@ -156,6 +162,9 @@ export default function StrengthConditioningReport() {
 		const unsubscribe = onSnapshot(
 			docRef,
 			snapshot => {
+				// #region agent log
+				fetch('http://127.0.0.1:7242/ingest/69ba52a1-d8d6-4497-bccb-9830640e4ec5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StrengthConditioningReport.tsx:158',message:'onSnapshot callback - data received',data:{exists:snapshot.exists(),hasData:snapshot.exists()?Object.keys(snapshot.data()||{}).length:0,sampleFields:snapshot.exists()?{therapistName:snapshot.data()?.therapistName,summary:snapshot.data()?.summary?.substring(0,50)}:null},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+				// #endregion
 				if (snapshot.exists()) {
 					const data = snapshot.data() as StrengthConditioningData;
 					setFormData(data);
@@ -182,10 +191,16 @@ export default function StrengthConditioningReport() {
 	}, [selectedPatient?.id, user?.displayName, user?.email, clinicalTeamMembers]);
 
 	const handleFieldChange = (field: keyof StrengthConditioningData, value: string) => {
+		// #region agent log
+		fetch('http://127.0.0.1:7242/ingest/69ba52a1-d8d6-4497-bccb-9830640e4ec5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StrengthConditioningReport.tsx:184',message:'Field changed by user',data:{field:field,valueLength:value?.length||0},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+		// #endregion
 		setFormData(prev => ({ ...prev, [field]: value }));
 	};
 
 	const handleSave = async () => {
+		// #region agent log
+		fetch('http://127.0.0.1:7242/ingest/69ba52a1-d8d6-4497-bccb-9830640e4ec5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StrengthConditioningReport.tsx:188',message:'handleSave called - BEFORE save',data:{patientId:selectedPatient?.id,formDataKeys:Object.keys(formData),sampleData:{therapistName:formData.therapistName,summary:formData.summary?.substring(0,50),deepSquat:formData.deepSquat}},timestamp:Date.now(),hypothesisId:'H4,H5'})}).catch(()=>{});
+		// #endregion
 		if (!selectedPatient?.id) {
 			alert('Please select a patient first');
 			return;
@@ -223,11 +238,20 @@ export default function StrengthConditioningReport() {
 				updatedAt: new Date().toISOString(),
 				updatedBy: user?.email || user?.displayName || 'Unknown',
 			});
+			// #region agent log
+			fetch('http://127.0.0.1:7242/ingest/69ba52a1-d8d6-4497-bccb-9830640e4ec5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StrengthConditioningReport.tsx:226',message:'About to call setDoc',data:{dataToSaveKeys:Object.keys(dataToSave),sampleDataToSave:{therapistName:dataToSave.therapistName,summary:dataToSave.summary?.substring(0,50),totalFields:Object.keys(dataToSave).length}},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+			// #endregion
 			await setDoc(docRef, dataToSave, { merge: true });
+			// #region agent log
+			fetch('http://127.0.0.1:7242/ingest/69ba52a1-d8d6-4497-bccb-9830640e4ec5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StrengthConditioningReport.tsx:228',message:'setDoc completed successfully',data:{patientId:selectedPatient?.id},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+			// #endregion
 
 			setSavedMessage(true);
 			setTimeout(() => setSavedMessage(false), 3000);
 		} catch (error) {
+			// #region agent log
+			fetch('http://127.0.0.1:7242/ingest/69ba52a1-d8d6-4497-bccb-9830640e4ec5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StrengthConditioningReport.tsx:232',message:'Save failed with error',data:{error:String(error)},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+			// #endregion
 			console.error('Failed to save strength and conditioning report', error);
 			alert('Failed to save report. Please try again.');
 		} finally {
