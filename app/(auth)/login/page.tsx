@@ -7,7 +7,31 @@ import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+
+const iconClass = 'h-5 w-5';
+const iconClassSm = 'h-4 w-4';
+
+const MailIcon = ({ className = iconClass }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+);
+const LockIcon = ({ className = iconClass }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+);
+const EyeIcon = ({ className = iconClass }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+);
+const EyeOffIcon = ({ className = iconClass }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+);
+const ArrowRightIcon = ({ className = iconClassSm }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+);
+const AlertCircleIcon = ({ className = iconClass }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+);
+const Loader2Icon = ({ className = iconClassSm }: { className?: string }) => (
+	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+);
 
 type AllowedRole = 'SuperAdmin' | 'Admin' | 'FrontDesk' | 'ClinicalTeam';
 
@@ -154,7 +178,7 @@ export default function LoginPage() {
 							</label>
 							<div className="relative">
 								<div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-									<Mail className="h-5 w-5 text-slate-400" />
+									<MailIcon className="h-5 w-5 text-slate-400" />
 								</div>
 								<input
 									type="email"
@@ -181,7 +205,7 @@ export default function LoginPage() {
 							</div>
 							<div className="relative">
 								<div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-									<Lock className="h-5 w-5 text-slate-400" />
+									<LockIcon className="h-5 w-5 text-slate-400" />
 								</div>
 								<input
 									type={showPassword ? "text" : "password"}
@@ -200,7 +224,7 @@ export default function LoginPage() {
 									disabled={loading}
 									aria-label={showPassword ? 'Hide password' : 'Show password'}
 								>
-									{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+									{showPassword ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
 								</button>
 							</div>
 						</div>
@@ -208,7 +232,7 @@ export default function LoginPage() {
 						{/* Error Message */}
 						{error && (
 							<div className="flex items-start gap-3 rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-800">
-								<AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+								<AlertCircleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
 								<p>{error}</p>
 							</div>
 						)}
@@ -220,13 +244,13 @@ export default function LoginPage() {
 						>
 							{loading ? (
 								<>
-									<Loader2 className="h-4 w-4 animate-spin" />
+									<Loader2Icon className="h-4 w-4 animate-spin" />
 									Signing in...
 								</>
 							) : (
 								<>
 									Sign In to Dashboard
-									<ArrowRight className="h-4 w-4" />
+									<ArrowRightIcon className="h-4 w-4" />
 								</>
 							)}
 						</button>
