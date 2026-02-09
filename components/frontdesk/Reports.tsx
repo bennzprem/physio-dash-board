@@ -132,8 +132,9 @@ export default function Reports() {
 						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
 						status: data.status ? String(data.status) : undefined,
 						complaints: data.complaints ? String(data.complaints) : undefined,
-						presentHistory: data.presentHistory ? String(data.presentHistory) : undefined,
-						pastHistory: data.pastHistory ? String(data.pastHistory) : undefined,
+						presentHistory: data.presentHistory !== undefined && data.presentHistory !== null ? String(data.presentHistory) : undefined,
+						pastHistory: data.pastHistory !== undefined && data.pastHistory !== null ? String(data.pastHistory) : undefined,
+						history: data.history !== undefined && data.history !== null ? String(data.history) : undefined,
 						med_xray: data.med_xray ? Boolean(data.med_xray) : undefined,
 						med_mri: data.med_mri ? Boolean(data.med_mri) : undefined,
 						med_report: data.med_report ? Boolean(data.med_report) : undefined,
@@ -155,8 +156,9 @@ export default function Reports() {
 						vasScale: data.vasScale ? String(data.vasScale) : undefined,
 						aggravatingFactor: data.aggravatingFactor ? String(data.aggravatingFactor) : undefined,
 						relievingFactor: data.relievingFactor ? String(data.relievingFactor) : undefined,
-						rom: data.rom as Record<string, any> | undefined,
-						treatmentProvided: data.treatmentProvided ? String(data.treatmentProvided) : undefined,
+						rom: (data.rom && typeof data.rom === 'object' ? data.rom : undefined) as Record<string, any> | undefined,
+						treatmentProvided: data.treatmentProvided !== undefined && data.treatmentProvided !== null ? String(data.treatmentProvided) : undefined,
+						treatment: data.treatment !== undefined && data.treatment !== null ? String(data.treatment) : undefined,
 						progressNotes: data.progressNotes ? String(data.progressNotes) : undefined,
 						physioName: data.physioName ? String(data.physioName) : undefined,
 						physioId: data.physioId ? String(data.physioId) : undefined,
@@ -168,8 +170,8 @@ export default function Reports() {
 						painType: data.painType ? String(data.painType) : undefined,
 						painIntensity: data.painIntensity ? String(data.painIntensity) : undefined,
 						clinicalDiagnosis: data.clinicalDiagnosis ? String(data.clinicalDiagnosis) : undefined,
-						treatmentPlan: data.treatmentPlan as Array<{ therapy: string; frequency: string; remarks: string }> | undefined,
-						followUpVisits: data.followUpVisits as Array<{ visitDate: string; painLevel: string; findings: string }> | undefined,
+						treatmentPlan: Array.isArray(data.treatmentPlan) ? (data.treatmentPlan as Array<{ therapy: string; frequency: string; remarks: string }>) : undefined,
+						followUpVisits: Array.isArray(data.followUpVisits) ? (data.followUpVisits as Array<{ visitDate: string; painLevel: string; findings: string }>) : undefined,
 						currentPainStatus: data.currentPainStatus ? String(data.currentPainStatus) : undefined,
 						currentRom: data.currentRom ? String(data.currentRom) : undefined,
 						currentStrength: data.currentStrength ? String(data.currentStrength) : undefined,
@@ -195,7 +197,7 @@ export default function Reports() {
 						scar: data.scar ? String(data.scar) : undefined,
 						crepitus: data.crepitus ? String(data.crepitus) : undefined,
 						odema: data.odema ? String(data.odema) : undefined,
-						mmt: data.mmt as Record<string, any> | undefined,
+						mmt: (data.mmt && typeof data.mmt === 'object' ? data.mmt : undefined) as Record<string, any> | undefined,
 						specialTest: data.specialTest ? String(data.specialTest) : undefined,
 						differentialDiagnosis: data.differentialDiagnosis ? String(data.differentialDiagnosis) : undefined,
 						finalDiagnosis: data.finalDiagnosis ? String(data.finalDiagnosis) : undefined,
@@ -1341,7 +1343,7 @@ export default function Reports() {
 								<div className="mt-6">
 									<p className="text-sm font-semibold text-sky-600">Treatment Provided</p>
 									<textarea
-										value={selectedPatient.treatmentProvided || ''}
+										value={(selectedPatient as any).treatment || selectedPatient.treatmentProvided || ''}
 										readOnly
 										rows={3}
 										className="mt-2 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
