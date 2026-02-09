@@ -7,6 +7,9 @@ import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+<<<<<<< HEAD
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
+=======
 
 const iconClass = 'h-5 w-5';
 const iconClassSm = 'h-4 w-4';
@@ -32,6 +35,7 @@ const AlertCircleIcon = ({ className = iconClass }: { className?: string }) => (
 const Loader2Icon = ({ className = iconClassSm }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
 );
+>>>>>>> 3ff247e59b3fba2a6fbbdb41978cabb2b53ffc8b
 
 type AllowedRole = 'SuperAdmin' | 'Admin' | 'FrontDesk' | 'ClinicalTeam';
 
@@ -144,7 +148,23 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="flex min-h-screen bg-white font-sans text-slate-900">
+		<div className="flex min-h-screen bg-white font-sans text-slate-900 relative">
+			{/* Loading Overlay */}
+			{loading && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-white/95 backdrop-blur-sm">
+					<div className="flex flex-col items-center gap-6">
+						<div className="loaderRectangle">
+							<div></div>
+							<div></div>
+							<div></div>
+							<div></div>
+							<div></div>
+						</div>
+						<p className="text-lg font-medium text-slate-600">Authenticating credentials...</p>
+					</div>
+				</div>
+			)}
+
 			{/* Left Side: Login Form */}
 			<div className="flex w-full flex-col justify-between p-8 md:w-1/2 lg:p-16 xl:p-24">
 				{/* Logo */}
@@ -242,6 +262,10 @@ export default function LoginPage() {
 							className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-sm font-semibold text-white shadow-xl shadow-blue-200 transition-all hover:bg-blue-700 hover:shadow-blue-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
 							disabled={loading}
 						>
+<<<<<<< HEAD
+							Sign In to Dashboard
+							<ArrowRight className="h-4 w-4" />
+=======
 							{loading ? (
 								<>
 									<Loader2Icon className="h-4 w-4 animate-spin" />
@@ -253,6 +277,7 @@ export default function LoginPage() {
 									<ArrowRightIcon className="h-4 w-4" />
 								</>
 							)}
+>>>>>>> 3ff247e59b3fba2a6fbbdb41978cabb2b53ffc8b
 						</button>
 					</form>
 				</div>
