@@ -562,6 +562,7 @@ export default function EditReport() {
 	}>>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
 	const [viewingVersion, setViewingVersion] = useState<typeof versionHistory[0] | null>(null);
+	const viewingVersionIdRequestedRef = useRef<string | null>(null); // Version id we're loading for View Full Report (avoids stale getDoc overwriting with wrong version)
 	const [showCrispReportModal, setShowCrispReportModal] = useState(false);
 	const [showAllPatients, setShowAllPatients] = useState(false);
 	const [selectedSections, setSelectedSections] = useState<ReportSection[]>([
@@ -2585,12 +2586,16 @@ export default function EditReport() {
 
 	// View the clicked version (pass version object so the correct row is always used)
 	const handleViewVersion = (version: typeof versionHistory[0]) => {
+		viewingVersionIdRequestedRef.current = version.id; // ignore stale getDoc responses for other versions
 		setViewingVersion(version);
 		setShowVersionHistory(false);
 		// Fetch full version doc so View Full Report displays all saved fields
-		getDoc(doc(db, 'reportVersions', version.id))
+		const versionIdForFetch = version.id;
+		getDoc(doc(db, 'reportVersions', versionIdForFetch))
 			.then((versionSnap) => {
 				if (!versionSnap.exists()) return;
+				// Only apply fetched data if this is still the version the user is viewing (avoids Report#2 opening with Report#1 data when getDoc order varies)
+				if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
 				const data = versionSnap.data() as Record<string, unknown> | undefined;
 				const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
 				const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
@@ -2598,7 +2603,7 @@ export default function EditReport() {
 				const merged: Partial<PatientRecordFull> = selectedPatient
 					? { ...normalized, name: selectedPatient.name ?? normalized.name, patientId: selectedPatient.patientId ?? normalized.patientId, dob: selectedPatient.dob ?? normalized.dob }
 					: normalized;
-				setViewingVersion((prev) => prev && prev.id === version.id ? { ...prev, data: merged } : prev);
+				setViewingVersion((prev) => prev && prev.id === versionIdForFetch ? { ...prev, data: merged } : prev);
 			})
 			.catch((err) => console.error('Failed to load version for view:', err));
 	};
@@ -2607,6 +2612,7 @@ export default function EditReport() {
 	const handleEditVersion = (version: typeof versionHistory[0]) => {
 		setShowVersionHistory(false);
 		setViewingVersion(null);
+		viewingVersionIdRequestedRef.current = null;
 		const fromList = selectedPatient && version?.data
 			? { ...selectedPatient, ...version.data }
 			: (version?.data as Partial<PatientRecordFull>) || {};
@@ -2641,6 +2647,7 @@ export default function EditReport() {
 			await loadVersionHistory();
 			// Clear view modal so it doesn't show stale/deleted data
 			setViewingVersion(null);
+			viewingVersionIdRequestedRef.current = null;
 			
 			alert(`Report #${version.version} has been deleted successfully.`);
 		} catch (error) {
@@ -4194,27 +4201,37 @@ export default function EditReport() {
 		if (!selectedPatient) return null;
 		const age = selectedPatient.dob ? new Date().getFullYear() - new Date(selectedPatient.dob).getFullYear() : undefined;
 
+		const fd = formData as Record<string, unknown>;
 		return {
-			patientName: selectedPatient.name,
-			patientId: selectedPatient.patientId,
-			referredBy: selectedPatient.assignedDoctor || formData.referredBy || '',
+			patientName: selectedPatient.name ?? '',
+			patientId: selectedPatient.patientId ?? '',
+			referredBy: selectedPatient.assignedDoctor || (fd.referredBy as string) || '',
 			age: age ? String(age) : '',
 			gender: selectedPatient.gender || '',
-			dateOfConsultation: formData.dateOfConsultation || new Date().toISOString().split('T')[0],
+			dob: selectedPatient.dob ?? '',
+			dateOfConsultation: (fd.dateOfConsultation as string) || new Date().toISOString().split('T')[0],
 			contact: selectedPatient.phone || '',
 			email: selectedPatient.email || '',
 			totalSessionsRequired: formData.totalSessionsRequired ?? selectedPatient.totalSessionsRequired,
 			remainingSessions: formData.remainingSessions ?? selectedPatient.remainingSessions,
-			history: formData.history || '',
+			history: (fd.history as string) || '',
+			historyOfPresentIllness: (fd.historyOfPresentIllness as string) || (fd.history as string) || '',
+			presentHistory: (fd.presentHistory as string) || '',
+			pastHistory: (fd.pastHistory as string) || '',
 			surgicalHistory: formData.surgicalHistory || '',
 			medicalHistory: getMedicalHistoryText(selectedPatient),
+			pastMedicalHistory: (fd.pastMedicalHistory as string) || getMedicalHistoryText(selectedPatient) || '',
+			relevantHistory: (fd.relevantHistory as string) || '',
 			sleepCycle: formData.sleepCycle || '',
 			hydration: formData.hydration || '4',
 			nutrition: formData.nutrition || '',
-			chiefComplaint: formData.chiefComplaint || formData.complaints || '',
+			chiefComplaint: formData.chiefComplaint || (fd.complaints as string) || '',
+			complaints: (fd.complaints as string) || '',
 			duration: formData.duration || '',
 			mechanismOfInjury: formData.mechanismOfInjury || '',
-			painType: formData.painType || '',
+			painType: formData.painType || (fd.typeOfPain as string) || '',
+			typeOfPain: (fd.typeOfPain as string) || '',
+			painLocation: (fd.painLocation as string) || formData.siteSide || '',
 			painIntensity: formData.painIntensity || formData.vasScale || '',
 			aggravatingFactor: formData.aggravatingFactor || '',
 			relievingFactor: formData.relievingFactor || '',
@@ -4228,18 +4245,31 @@ export default function EditReport() {
 			posture: formData.posture || '',
 			postureManualNotes: formData.postureManualNotes || '',
 			postureFileName: formData.postureFileName || '',
+			gait: (fd.gait as string) || '',
 			gaitAnalysis: formData.gaitAnalysis || '',
 			gaitManualNotes: formData.gaitManualNotes || '',
 			gaitFileName: formData.gaitFileName || '',
 			mobilityAids: formData.mobilityAids || '',
 			localObservation: formData.localObservation || '',
+			localObservation1: (fd.localObservation1 as string) || formData.localObservation || '',
+			localObservation2: (fd.localObservation2 as string) || '',
+			localObservation3: (fd.localObservation3 as string) || '',
+			localObservation4: (fd.localObservation4 as string) || '',
 			swelling: formData.swelling || '',
 			muscleWasting: formData.muscleWasting || '',
 			tenderness: formData.tenderness || '',
+			tenderness1: (fd.tenderness1 as string) || formData.tenderness || '',
+			tenderness2: (fd.tenderness2 as string) || '',
 			warmth: formData.warmth || '',
+			temperature: (fd.temperature as string) || formData.warmth || '',
 			scar: formData.scar || '',
 			crepitus: formData.crepitus || '',
 			odema: formData.odema || '',
+			adimaEdema: (fd.adimaEdema as string) || formData.odema || '',
+			otherSignsOfInflammation: (fd.otherSignsOfInflammation as string) || '',
+			jointPlayMovement: (fd.jointPlayMovement as string) || '',
+			accessoryJointMovement: (fd.accessoryJointMovement as string) || '',
+			examinationAdditionalNotes: (fd.examinationAdditionalNotes as string) || '',
 			followUpVisits: formData.followUpVisits || [],
 			currentPainStatus: formData.currentPainStatus || '',
 			currentRom: formData.currentRom || '',
@@ -4247,11 +4277,54 @@ export default function EditReport() {
 			currentFunctionalAbility: formData.currentFunctionalAbility || '',
 			complianceWithHEP: formData.complianceWithHEP || '',
 			specialTest: formData.specialTest || '',
+			differentialDiagnosis: (fd.differentialDiagnosis as string) || (fd.clinicalDiagnosis as string) || '',
+			clinicalDiagnosis: (fd.clinicalDiagnosis as string) || '',
+			assessmentOfInvestigation: (fd.assessmentOfInvestigation as string) || '',
 			finalDiagnosis: formData.finalDiagnosis || '',
+			investigationXray: (fd.investigationXray as boolean) || (fd.med_xray as boolean) || false,
+			investigationMRI: (fd.investigationMRI as boolean) || (fd.med_mri as boolean) || false,
+			investigationCTScan: (fd.investigationCTScan as boolean) || false,
+			investigationBlood: (fd.investigationBlood as boolean) || false,
+			investigationOthers: (fd.investigationOthers as boolean) || false,
+			med_xray: formData.med_xray || false,
+			med_mri: formData.med_mri || false,
+			med_ct: formData.med_ct || false,
 			shortTermGoals: formData.shortTermGoals || '',
 			longTermGoals: formData.longTermGoals || '',
-			rehabProtocol: formData.rehabProtocol || '',
+			treatment: formData.treatment || formData.treatmentProvided || '',
+			treatmentProvided: formData.treatmentProvided || '',
 			advice: formData.advice || '',
+			homeAdvice: (fd.homeAdvice as string) || formData.advice || '',
+			patientEducationCondition: !!(fd.patientEducationCondition ?? fd.patientEducation_condition),
+			patientEducationGoals: !!(fd.patientEducationGoals ?? fd.patientEducation_goals),
+			patientEducationAdvantages: !!(fd.patientEducationAdvantages ?? fd.patientEducation_advantages),
+			patientEducationOthers: !!(fd.patientEducationOthers ?? fd.patientEducation_others),
+			patientEducationOthersText: (fd.patientEducationOthersText as string) || '',
+			shortTermGoalReducePain: !!(fd.shortTermGoalReducePain ?? fd.shortTermGoal_reducePain),
+			shortTermGoalImproveROM: !!(fd.shortTermGoalImproveROM ?? fd.shortTermGoal_improveROM),
+			shortTermGoalImproveStrength: !!(fd.shortTermGoalImproveStrength ?? fd.shortTermGoal_improveStrength),
+			shortTermGoalOthers: !!(fd.shortTermGoalOthers ?? fd.shortTermGoal_others),
+			shortTermGoalOthersText: (fd.shortTermGoalOthersText as string) || '',
+			treatmentCryotherapy: !!(fd.treatmentCryotherapy ?? fd.treatment_cryotherapy),
+			treatmentIFT: !!(fd.treatmentIFT ?? fd.treatment_IFT),
+			treatmentTENS: !!(fd.treatmentTENS ?? fd.treatment_TENS),
+			treatmentLaser: !!(fd.treatmentLaser ?? fd.treatment_laser),
+			treatmentSWT: !!(fd.treatmentSWT ?? fd.treatment_SWT),
+			treatmentHotTherapy: !!(fd.treatmentHotTherapy ?? fd.treatment_hotTherapy),
+			treatmentManualTherapy: !!(fd.treatmentManualTherapy ?? fd.treatment_manualTherapy),
+			treatmentSoftTissueManipulation: !!(fd.treatmentSoftTissueManipulation ?? fd.treatment_softTissueManipulation),
+			treatmentDryNeedling: !!(fd.treatmentDryNeedling ?? fd.treatment_dryNeedling),
+			treatmentCuppingTherapy: !!(fd.treatmentCuppingTherapy ?? fd.treatment_cuppingTherapy),
+			treatmentOthers: !!(fd.treatmentOthers ?? fd.treatment_others),
+			treatmentOthersText: (fd.treatmentOthersText as string) || '',
+			longTermGoalReducePain: !!(fd.longTermGoalReducePain ?? fd.longTermGoal_reducePain),
+			longTermGoalImproveROM: !!(fd.longTermGoalImproveROM ?? fd.longTermGoal_improveROM),
+			longTermGoalImproveStrength: !!(fd.longTermGoalImproveStrength ?? fd.longTermGoal_improveStrength),
+			longTermGoalImproveStability: !!(fd.longTermGoalImproveStability ?? fd.longTermGoal_improveStability),
+			longTermGoalRTP: !!(fd.longTermGoalRTP ?? fd.longTermGoal_rtp),
+			longTermGoalOthers: !!(fd.longTermGoalOthers ?? fd.longTermGoal_others),
+			longTermGoalOthersText: (fd.longTermGoalOthersText as string) || '',
+			rehabProtocol: formData.rehabProtocol || '',
 			managementRemarks: formData.managementRemarks || '',
 			nextFollowUpDate: formData.nextFollowUpDate || '',
 			nextFollowUpTime: formData.nextFollowUpTime || '',
@@ -5594,7 +5667,7 @@ export default function EditReport() {
 							</h2>
 							<button
 								type="button"
-								onClick={() => setViewingVersion(null)}
+								onClick={() => { setViewingVersion(null); viewingVersionIdRequestedRef.current = null; }}
 								className="text-slate-400 hover:text-slate-600 transition"
 								aria-label="Close"
 							>
@@ -5622,10 +5695,39 @@ export default function EditReport() {
 										}
 										return String(val);
 									};
+									// Report #2 (follow-up): show only Follow-up Assessment and Treatment sections
+									const isFollowUpReport = viewingVersion.version >= 2;
+									if (isFollowUpReport) {
+										return (
+											<>
+												<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
+													<strong>Follow-up report (Report #{viewingVersion.version})</strong> — Follow-up Assessment · Treatment
+												</div>
+												<div className="mb-8 border-b border-slate-200 pb-6">
+													<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap min-h-[80px]">
+														{has('followUpAssessment') ? String(get('followUpAssessment')) : '—'}
+													</div>
+												</div>
+												<div className="mb-8">
+													<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Treatment</h3>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap min-h-[80px]">
+														{has('treatment', 'treatmentProvided') ? String(get('treatment', 'treatmentProvided')) : '—'}
+													</div>
+													{(d.completionOfOneSession === true || d.completionOfOneSession === 'true') && (
+														<div className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+															<i className="fas fa-check-circle text-sky-600" aria-hidden="true" />
+															<span>Completion of one session</span>
+														</div>
+													)}
+												</div>
+											</>
+										);
+									}
 									return (
 										<>
 								<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
-									<strong>Sections:</strong> Patient Information · Report Date · Assessment · 1. Subjective Assessment · 2. Pain Assessment · 3. Medical History · 4. Objective Assessment (Observation) · 5. Objective Assessment (Palpation) · 6. On Examination (ROM/MMT) · 7. Diagnosis & Investigation · 8. Physiotherapy Management · Physiotherapist Signature — <em>scroll down to view all</em>
+									<strong>Sections:</strong> Patient Information · Report Date · Assessment · 1–8 · Follow-up Assessment · Follow-Up Visits · Physiotherapist Signature — <em>scroll down to view all</em>
 								</div>
 								{/* 1. Patient Information */}
 								<div className="mb-8 border-b border-slate-200 pb-6">
@@ -5801,6 +5903,47 @@ export default function EditReport() {
 									);
 								})()}
 
+								{/* Follow-up Assessment (for follow-up visit reports e.g. Report #2+) */}
+								{has('followUpAssessment') && (
+								<div className="mb-8">
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+									<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('followUpAssessment'))}</div>
+								</div>
+								)}
+
+								{/* Follow-Up Visits (for follow-up reports with visit history) */}
+								{Array.isArray(d.followUpVisits) && d.followUpVisits.length > 0 && (
+								<div className="mb-8">
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-Up Visits</h3>
+									<div className="space-y-4">
+										{(d.followUpVisits as Array<{ visitDate?: string; painLevel?: string; findings?: string }>).map((visit, idx) => (
+											<div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+												<div className="grid gap-3 sm:grid-cols-3 text-sm">
+													{visit.visitDate != null && visit.visitDate !== '' && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Visit Date</label>
+															<div className="text-slate-800">{String(visit.visitDate)}</div>
+														</div>
+													)}
+													{visit.painLevel != null && visit.painLevel !== '' && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Pain Level</label>
+															<div className="text-slate-800">{String(visit.painLevel)}</div>
+														</div>
+													)}
+													{visit.findings != null && visit.findings !== '' && (
+														<div className="sm:col-span-3">
+															<label className="block text-xs font-medium text-slate-500 mb-1">Findings</label>
+															<div className="text-slate-800 whitespace-pre-wrap">{String(visit.findings)}</div>
+														</div>
+													)}
+												</div>
+											</div>
+										))}
+									</div>
+								</div>
+								)}
+
 								{has('physioName') && (
 								<div>
 									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapist Signature</h3>
@@ -5815,7 +5958,7 @@ export default function EditReport() {
 						<div className="flex items-center justify-end p-6 border-t border-slate-200">
 							<button
 								type="button"
-								onClick={() => setViewingVersion(null)}
+								onClick={() => { setViewingVersion(null); viewingVersionIdRequestedRef.current = null; }}
 								className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition"
 							>
 								Close

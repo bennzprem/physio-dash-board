@@ -6,26 +6,36 @@ export interface PatientReportData {
 	referredBy?: string;
 	age?: string;
 	gender?: string;
+	dob?: string;
 	dateOfConsultation?: string;
 	contact?: string;
 	email?: string;
 	// Session tracking
 	totalSessionsRequired?: number;
 	remainingSessions?: number;
+	// Current Primary Report fields (with legacy fallbacks)
 	history?: string;
+	historyOfPresentIllness?: string;
+	presentHistory?: string;
+	pastHistory?: string;
 	medicalHistory?: string;
+	pastMedicalHistory?: string;
 	surgicalHistory?: string;
+	relevantHistory?: string;
 	sleepCycle?: string;
 	hydration?: string;
 	nutrition?: string;
 	chiefComplaint?: string;
+	complaints?: string;
 	duration?: string;
 	mechanismOfInjury?: string;
 	painIntensity?: string;
 	painType?: string;
+	typeOfPain?: string;
+	painLocation?: string;
+	siteSide?: string;
 	aggravatingFactor?: string;
 	relievingFactor?: string;
-	siteSide?: string;
 	onset?: string;
 	natureOfInjury?: string;
 	vasScale?: string;
@@ -35,29 +45,83 @@ export interface PatientReportData {
 	posture?: string;
 	postureManualNotes?: string;
 	postureFileName?: string;
+	gait?: string;
 	gaitAnalysis?: string;
 	gaitManualNotes?: string;
 	gaitFileName?: string;
 	mobilityAids?: string;
 	localObservation?: string;
+	localObservation1?: string;
+	localObservation2?: string;
+	localObservation3?: string;
+	localObservation4?: string;
 	swelling?: string;
 	muscleWasting?: string;
 	tenderness?: string;
+	tenderness1?: string;
+	tenderness2?: string;
 	warmth?: string;
+	temperature?: string;
 	scar?: string;
 	crepitus?: string;
 	odema?: string;
+	adimaEdema?: string;
+	otherSignsOfInflammation?: string;
+	jointPlayMovement?: string;
+	accessoryJointMovement?: string;
+	examinationAdditionalNotes?: string;
 	specialTest?: string;
 	differentialDiagnosis?: string;
+	clinicalDiagnosis?: string;
+	assessmentOfInvestigation?: string;
 	finalDiagnosis?: string;
+	investigationXray?: boolean;
+	investigationMRI?: boolean;
+	investigationCTScan?: boolean;
+	investigationBlood?: boolean;
+	investigationOthers?: boolean;
+	med_xray?: boolean;
+	med_mri?: boolean;
+	med_ct?: boolean;
 	shortTermGoals?: string;
 	longTermGoals?: string;
 	treatment?: string;
 	treatmentProvided?: string;
 	advice?: string;
+	homeAdvice?: string;
+	patientEducationCondition?: boolean;
+	patientEducationGoals?: boolean;
+	patientEducationAdvantages?: boolean;
+	patientEducationOthers?: boolean;
+	patientEducationOthersText?: string;
+	shortTermGoalReducePain?: boolean;
+	shortTermGoalImproveROM?: boolean;
+	shortTermGoalImproveStrength?: boolean;
+	shortTermGoalOthers?: boolean;
+	shortTermGoalOthersText?: string;
+	treatmentCryotherapy?: boolean;
+	treatmentIFT?: boolean;
+	treatmentTENS?: boolean;
+	treatmentLaser?: boolean;
+	treatmentSWT?: boolean;
+	treatmentHotTherapy?: boolean;
+	treatmentManualTherapy?: boolean;
+	treatmentSoftTissueManipulation?: boolean;
+	treatmentDryNeedling?: boolean;
+	treatmentCuppingTherapy?: boolean;
+	treatmentOthers?: boolean;
+	treatmentOthersText?: string;
+	longTermGoalReducePain?: boolean;
+	longTermGoalImproveROM?: boolean;
+	longTermGoalImproveStrength?: boolean;
+	longTermGoalImproveStability?: boolean;
+	longTermGoalRTP?: boolean;
+	longTermGoalOthers?: boolean;
+	longTermGoalOthersText?: string;
 	managementRemarks?: string;
 	nextFollowUpDate?: string;
 	nextFollowUpTime?: string;
+	followUpAssessment?: string;
 	followUpVisits?: Array<{ visitDate: string; painLevel: string; findings: string }>;
 	currentPainStatus?: string;
 	currentRom?: string;
@@ -134,16 +198,16 @@ const buildCurrentStatus = (data: PatientReportData) => {
 
 const baseStyles = {
 	fontSize: 9,
-	cellPadding: 1.5,
+	cellPadding: 1,
 	lineWidth: 0.1,
-	minCellHeight: 5,
+	minCellHeight: 4,
 };
 
 const headStyles = {
 	fillColor: [7, 89, 133] as [number, number, number],
 	fontSize: 10,
 	halign: 'left' as const,
-	cellPadding: 1.5,
+	cellPadding: 1,
 	textColor: [255, 255, 255] as [number, number, number],
 };
 
@@ -168,6 +232,7 @@ export type ReportSection =
 	| 'mmt'
 	| 'advancedAssessment'
 	| 'physiotherapyManagement'
+	| 'followUpAssessment'
 	| 'followUpVisits'
 	| 'currentStatus'
 	| 'nextFollowUp'
@@ -208,7 +273,7 @@ export async function generatePhysiotherapyReportPDF(
 		// Admin changes have FIRST priority - use configured values or fall back to defaults
 		const headerSettings = {
 			mainTitle: headerConfig?.mainTitle || defaultConfig.mainTitle || 'CENTRE FOR SPORTS SCIENCE',
-			subtitle: headerConfig?.subtitle || defaultConfig.subtitle || 'PHYSIOTHERAPY CONSULTATION & FOLLOW-UP REPORT',
+			subtitle: headerConfig?.subtitle || defaultConfig.subtitle || 'PHYSIOTHERAPY CONSULTATION REPORT',
 			contactInfo: headerConfig?.contactInfo || defaultConfig.contactInfo || '',
 			associationText: headerConfig?.associationText || defaultConfig.associationText || '',
 			govermentOrder: headerConfig?.govermentOrder || defaultConfig.govermentOrder || '',
@@ -230,45 +295,46 @@ export async function generatePhysiotherapyReportPDF(
 	// Track which pages have footers to avoid duplicates
 	const pagesWithFooter = new Set<number>();
 	
-	// Set up footer callback for all pages
+	const footerY = pageHeight - 8; // Position footer 8mm from bottom
+
+	// Set up footer callback (used during table draws; totalPages may be wrong until final pass)
 	const addFooter = (pageData: any) => {
-		// Get page number from pageData (from autoTable) or from doc internal
 		let pageNumber: number;
 		let totalPages: number;
-		
 		if (pageData && pageData.pageNumber !== undefined) {
-			// From autoTable callback
 			pageNumber = pageData.pageNumber;
 			totalPages = pageData.pageCount || (doc as any).internal.getNumberOfPages();
 		} else {
-			// Manual page addition - use internal API
 			pageNumber = (doc as any).internal.getCurrentPageInfo().pageNumber;
 			totalPages = (doc as any).internal.getNumberOfPages();
 		}
-		
-		// Skip if footer already added to this page
-		if (pagesWithFooter.has(pageNumber)) {
-			return;
-		}
+		if (pagesWithFooter.has(pageNumber)) return;
 		pagesWithFooter.add(pageNumber);
-		
-		const footerY = pageHeight - 8; // Position footer 8mm from bottom
-		
-		// Add footer line
 		doc.setDrawColor(200, 200, 200);
 		doc.setLineWidth(0.1);
 		doc.line(pageMargin, footerY - 2, pageWidth - pageMargin, footerY - 2);
-		
-		// Add page number
 		doc.setFontSize(8);
 		doc.setFont('helvetica', 'normal');
 		doc.setTextColor(100, 100, 100);
-		doc.text(
-			`Page ${pageNumber} of ${totalPages}`,
-			pageCenterX,
-			footerY,
-			{ align: 'center' }
-		);
+		doc.text(`Page ${pageNumber} of ${totalPages}`, pageCenterX, footerY, { align: 'center' });
+	};
+
+	// Redraw all footers with correct total (fixes "Page 1 of 1" when doc has multiple pages)
+	const redrawAllFooters = () => {
+		const totalPages = (doc as any).internal.getNumberOfPages();
+		for (let i = 1; i <= totalPages; i++) {
+			(doc as any).setPage(i);
+			doc.setDrawColor(255, 255, 255);
+			doc.setFillColor(255, 255, 255);
+			doc.rect(pageMargin, footerY - 4, pageWidth - 2 * pageMargin, 12, 'F');
+			doc.setDrawColor(200, 200, 200);
+			doc.setLineWidth(0.1);
+			doc.line(pageMargin, footerY - 2, pageWidth - pageMargin, footerY - 2);
+			doc.setFontSize(8);
+			doc.setFont('helvetica', 'normal');
+			doc.setTextColor(100, 100, 100);
+			doc.text(`Page ${i} of ${totalPages}`, pageCenterX, footerY, { align: 'center' });
+		}
 	};
 
 	// All elements (logo, text, logo) aligned in single row at same height
@@ -445,39 +511,36 @@ export async function generatePhysiotherapyReportPDF(
 	doc.line(12, y, 198, y);
 	y += 3;
 
-	// Helper function to check if we need a new page before adding a table
-	const checkPageBreak = (requiredSpace: number = 30) => {
+	// Helper function to check if we need a new page before adding a table (only break when needed to avoid empty space)
+	const checkPageBreak = (requiredSpace: number = 25) => {
 		const availableSpace = pageHeight - y - footerHeight - pageMargin;
 		if (availableSpace < requiredSpace) {
 			doc.addPage();
-			y = pageMargin + 20; // Start new page with some top margin
+			y = pageMargin + 6; // Compact top margin on new page to reduce empty space
 		}
 	};
 
-	// Build patient information body
-	const patientInfoBody: string[][] = [
-		['Patient Name', data.patientName],
-	];
-	
-	// Add Type of Organization right after Patient Name if available
-	if (data.patientType) {
-		patientInfoBody.push(['Type of Organization', data.patientType]);
-	}
-	
-	// Add remaining patient information
-	patientInfoBody.push(
-		['Patient ID', data.patientId],
-		['Referred By / Doctor', data.referredBy || ''],
-		['Age / Gender', `${data.age || ''} / ${data.gender || ''}`],
-		['Date of Consultation', data.dateOfConsultation || ''],
-		['Contact / Email', `${data.contact || ''} / ${data.email || ''}`],
-	);
-	
-	// Add session information
-	patientInfoBody.push(
-		['Total Sessions Required', data.totalSessionsRequired != null ? String(data.totalSessionsRequired) : ''],
-		['Remaining Sessions', data.remainingSessions != null ? String(data.remainingSessions) : '']
-	);
+	// Current Primary Report: get value with legacy fallbacks (empty = skip row when building body arrays)
+	const getVal = (...keys: (keyof PatientReportData)[]): string => {
+		const d = data as unknown as Record<string, unknown>;
+		for (const k of keys) {
+			const v = d[k as string];
+			if (v !== undefined && v !== null && v !== '') return String(v);
+		}
+		return '';
+	};
+	const hasVal = (...keys: (keyof PatientReportData)[]) => getVal(...keys) !== '';
+
+	// Build patient information body — current format: Name, Type of Organization, Patient ID, DOB, Report Date, Total/Remaining Sessions (no Referred By here)
+	const patientInfoBody: string[][] = [['Patient Name', data.patientName]];
+	if (data.patientType) patientInfoBody.push(['Type of Organization', data.patientType]);
+	patientInfoBody.push(['Patient ID', data.patientId]);
+	if (data.dob) patientInfoBody.push(['Date of Birth', data.dob]);
+	else if (data.age || data.gender) patientInfoBody.push(['Age / Gender', `${data.age || ''} / ${data.gender || ''}`.trim()]);
+	if (data.dateOfConsultation) patientInfoBody.push(['Report Date', data.dateOfConsultation]);
+	if (data.contact || data.email) patientInfoBody.push(['Contact / Email', `${data.contact || ''} / ${data.email || ''}`.trim()]);
+	if (data.totalSessionsRequired != null) patientInfoBody.push(['Total Sessions Required', String(data.totalSessionsRequired)]);
+	if (data.remainingSessions != null) patientInfoBody.push(['Remaining Sessions', String(data.remainingSessions)]);
 
 	if (includeSection('patientInformation')) {
 		autoTable(doc, {
@@ -488,218 +551,309 @@ export async function generatePhysiotherapyReportPDF(
 			headStyles,
 			styles: baseStyles,
 			columnStyles: { 0: { cellWidth: 60 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
 			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 3;
+		y = (doc as any).lastAutoTable.finalY + 1;
 	}
 
+	// Assessment — Referred by, Chief complaints (current format)
 	if (includeSection('assessmentOverview')) {
-		const historyText = data.history || ((data as any).presentHistory || '') + ((data as any).pastHistory ? '\n' + (data as any).pastHistory : '');
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['ASSESSMENT OVERVIEW', '']],
-			body: [
-				['History', normalizePdfText(historyText)],
-				['Medical History', normalizePdfText(data.medicalHistory)],
-				['Surgical History', normalizePdfText(data.surgicalHistory)],
-				['Sleep Cycle', data.sleepCycle || ''],
-				['Hydration', getHydrationDescriptor(data.hydration)],
-				['Nutrition', data.nutrition || ''],
-			],
-			headStyles,
-			styles: baseStyles,
-			columnStyles: { 0: { cellWidth: 60 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+		const assessmentRows: string[][] = [];
+		if (hasVal('referredBy')) assessmentRows.push(['Referred by', getVal('referredBy')]);
+		if (hasVal('chiefComplaint', 'complaints')) assessmentRows.push(['Chief complaints', normalizePdfText(getVal('chiefComplaint', 'complaints'))]);
+		if (assessmentRows.length) {
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['ASSESSMENT', '']],
+				body: assessmentRows,
+				headStyles,
+				styles: baseStyles,
+				columnStyles: { 0: { cellWidth: 60 } },
+			margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
 			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 3;
+		y = (doc as any).lastAutoTable.finalY + 1;
+	}
+		// 1. Subjective Assessment (HOPI)
+		const hopi = getVal('historyOfPresentIllness', 'history') || (getVal('presentHistory') + (getVal('pastHistory') ? '\n' + getVal('pastHistory') : '')).trim();
+		if (hopi) {
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['1. SUBJECTIVE ASSESSMENT', '']],
+				body: [['History of Present Illness (HOPI)', normalizePdfText(hopi)]],
+				headStyles,
+				styles: { ...baseStyles, overflow: 'linebreak' },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto', overflow: 'linebreak' } },
+				margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
+		});
+			y = (doc as any).lastAutoTable.finalY + 1;
+		}
+		// 3. Medical History (current format)
+		const medRows: string[][] = [];
+		if (hasVal('pastMedicalHistory', 'medicalHistory')) medRows.push(['Past Medical History', normalizePdfText(getVal('pastMedicalHistory', 'medicalHistory'))]);
+		if (hasVal('surgicalHistory')) medRows.push(['Past Surgical History', normalizePdfText(getVal('surgicalHistory'))]);
+		if (hasVal('relevantHistory')) medRows.push(['Relevant History', normalizePdfText(getVal('relevantHistory'))]);
+		if (medRows.length) {
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['3. MEDICAL HISTORY', '']],
+				body: medRows,
+				headStyles,
+				styles: baseStyles,
+				columnStyles: { 0: { cellWidth: 60 } },
+				margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				didDrawPage: addFooter,
+			});
+			y = (doc as any).lastAutoTable.finalY + 1;
+		}
 	}
 
 	if (includeSection('painAssessment')) {
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['PAIN ASSESSMENT', '']],
-			body: [
-				['Site and Side', data.siteSide || ''],
-				['Onset', data.onset || ''],
-				['Duration', data.duration || ''],
-				['Nature of Injury', normalizePdfText(data.natureOfInjury)],
-				['Pain Type', data.painType || ''],
-				['Pain Intensity', data.painIntensity || ''],
-				['VAS Scale', getVasDescriptor(data.vasScale)],
-				['Aggravating Factors', normalizePdfText(data.aggravatingFactor)],
-				['Relieving Factors', normalizePdfText(data.relievingFactor)],
-				['Mechanism of Injury', normalizePdfText(data.mechanismOfInjury)],
-			],
-			headStyles,
-			styles: baseStyles,
-			columnStyles: { 0: { cellWidth: 60 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 3;
+		const painRows: string[][] = [];
+		if (hasVal('painLocation', 'siteSide')) painRows.push(['Pain Mapping (Location)', getVal('painLocation', 'siteSide')]);
+		if (hasVal('painType', 'typeOfPain')) painRows.push(['Type of Pain', getVal('painType', 'typeOfPain')]);
+		if (hasVal('vasScale')) painRows.push(['VAS Scale', `${getVal('vasScale')}/10`]);
+		if (hasVal('aggravatingFactor')) painRows.push(['Aggravating Factors', normalizePdfText(getVal('aggravatingFactor'))]);
+		if (hasVal('relievingFactor')) painRows.push(['Relieving Factors', normalizePdfText(getVal('relievingFactor'))]);
+		if (painRows.length) {
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['2. PAIN ASSESSMENT', '']],
+				body: painRows,
+				headStyles,
+				styles: baseStyles,
+				columnStyles: { 0: { cellWidth: 60 } },
+				margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				didDrawPage: addFooter,
+			});
+			y = (doc as any).lastAutoTable.finalY + 1;
+		}
 	}
 
+	// 4. Objective Assessment - Observation
 	if (includeSection('onObservation')) {
-		checkPageBreak(40); // Ensure enough space for the table
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['ON OBSERVATION', '']],
-			body: [
-				['Built', data.built || ''],
-				['Posture', normalizePdfText(`${data.posture || ''}${data.postureManualNotes ? ` | Notes: ${data.postureManualNotes}` : ''}`)],
-				['Kinetisense Upload', data.postureFileName || '—'],
-				['GAIT Analysis', normalizePdfText(`${data.gaitAnalysis || ''}${data.gaitManualNotes ? ` | Notes: ${data.gaitManualNotes}` : ''}`)],
-				['OptaGAIT Upload', data.gaitFileName || '—'],
-				['Mobility Aids', data.mobilityAids || ''],
-				['Local Observation', normalizePdfText(data.localObservation)],
-				['Swelling', data.swelling || ''],
-				['Muscle Wasting', data.muscleWasting || ''],
-			],
-			headStyles,
-			styles: {
-				...baseStyles,
-				overflow: 'linebreak',
-				cellWidth: 'wrap',
-			},
-			columnStyles: { 
-				0: { cellWidth: 60 },
-				1: { cellWidth: 'auto', overflow: 'linebreak' },
-			},
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 3;
+		checkPageBreak(25);
+		const obsRows: string[][] = [];
+		const loc1 = getVal('localObservation1', 'localObservation');
+		const loc2 = getVal('localObservation2');
+		const loc3 = getVal('localObservation3');
+		const loc4 = getVal('localObservation4');
+		if (loc1) obsRows.push(['Local Observation 1', normalizePdfText(loc1)]);
+		if (loc2) obsRows.push(['Local Observation 2', normalizePdfText(loc2)]);
+		if (loc3) obsRows.push(['Local Observation 3', normalizePdfText(loc3)]);
+		if (loc4) obsRows.push(['Local Observation 4', normalizePdfText(loc4)]);
+		if (hasVal('posture')) obsRows.push(['Posture', normalizePdfText(getVal('posture') + (data.postureManualNotes ? ` | ${data.postureManualNotes}` : ''))]);
+		if (hasVal('gait', 'gaitAnalysis')) obsRows.push(['Gait', normalizePdfText(getVal('gait', 'gaitAnalysis') + (data.gaitManualNotes ? ` | ${data.gaitManualNotes}` : ''))]);
+		if (obsRows.length) {
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['4. OBJECTIVE ASSESSMENT - OBSERVATION', '']],
+				body: obsRows,
+				headStyles,
+				styles: { ...baseStyles, overflow: 'linebreak' },
+				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto', overflow: 'linebreak' } },
+				margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				didDrawPage: addFooter,
+			});
+			y = (doc as any).lastAutoTable.finalY + 1;
+		}
 	}
 
+	// 5. Objective Assessment - Palpation
 	if (includeSection('onPalpation')) {
-		checkPageBreak(30);
-		autoTable(doc, {
-			startY: y,
-			theme: 'grid',
-			head: [['ON PALPATION', '']],
-			body: [
-				['Tenderness', data.tenderness || ''],
-				['Warmth', data.warmth || ''],
-				['Scar', data.scar || ''],
-				['Crepitus', data.crepitus || ''],
-				['Odema', data.odema || ''],
-			],
-			headStyles,
-			styles: {
-				...baseStyles,
-				overflow: 'linebreak',
-			},
-			columnStyles: { 
-				0: { cellWidth: 60 },
-				1: { cellWidth: 'auto', overflow: 'linebreak' },
-			},
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 3;
+		checkPageBreak(25);
+		const palpRows: string[][] = [];
+		if (hasVal('tenderness1', 'tenderness')) palpRows.push(['Tenderness 1', normalizePdfText(getVal('tenderness1', 'tenderness'))]);
+		if (hasVal('tenderness2')) palpRows.push(['Tenderness 2', normalizePdfText(getVal('tenderness2'))]);
+		if (hasVal('temperature', 'warmth')) palpRows.push(['Temperature', getVal('temperature', 'warmth')]);
+		if (hasVal('adimaEdema', 'odema')) palpRows.push(['ADIMA / Edema', normalizePdfText(getVal('adimaEdema', 'odema'))]);
+		if (hasVal('otherSignsOfInflammation')) palpRows.push(['Other Signs of Inflammation', normalizePdfText(getVal('otherSignsOfInflammation'))]);
+		if (palpRows.length) {
+			autoTable(doc, {
+				startY: y,
+				theme: 'grid',
+				head: [['5. OBJECTIVE ASSESSMENT - PALPATION', '']],
+				body: palpRows,
+				headStyles,
+				styles: baseStyles,
+				columnStyles: { 0: { cellWidth: 60 } },
+				margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				didDrawPage: addFooter,
+			});
+			y = (doc as any).lastAutoTable.finalY + 1;
+		}
 	}
 
+	// 6. On Examination — ROM, Joint Play, Accessory, Notes, MMT
 	if (includeSection('rom')) {
 		const romRows = formatJointData(data.rom);
 		if (romRows.length) {
 			autoTable(doc, {
 				startY: y,
 				theme: 'grid',
-				head: [['ON EXAMINATION — ROM (i)', 'Details']],
+				head: [['6. ON EXAMINATION — (i) Range of Motion Assessment', 'Details']],
 				body: romRows,
 				headStyles,
 				styles: baseStyles,
 				columnStyles: { 0: { cellWidth: 60 } },
-				margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-				didDrawPage: addFooter,
-			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+				margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
+		});
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 	}
-
+	const examExtraRows: string[][] = [];
+	if (hasVal('jointPlayMovement')) examExtraRows.push(['Joint Play Movement', normalizePdfText(getVal('jointPlayMovement'))]);
+	if (hasVal('accessoryJointMovement')) examExtraRows.push(['Accessory Joint Movement', normalizePdfText(getVal('accessoryJointMovement'))]);
+	if (hasVal('examinationAdditionalNotes')) examExtraRows.push(['Additional Notes', normalizePdfText(getVal('examinationAdditionalNotes'))]);
+	if (examExtraRows.length && (includeSection('rom') || includeSection('mmt'))) {
+		autoTable(doc, {
+			startY: y,
+			theme: 'grid',
+			head: [['6. ON EXAMINATION (continued)', '']],
+			body: examExtraRows,
+			headStyles,
+			styles: baseStyles,
+			columnStyles: { 0: { cellWidth: 60 } },
+			margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
+		});
+		y = (doc as any).lastAutoTable.finalY + 1;
+	}
 	if (includeSection('mmt')) {
 		const mmtRows = formatJointData(data.mmt);
 		if (mmtRows.length) {
 			autoTable(doc, {
 				startY: y,
 				theme: 'grid',
-				head: [['ON EXAMINATION — Manual Muscle Testing (ii)', 'Details']],
+				head: [['6. ON EXAMINATION — (ii) Manual Muscle Testing', 'Details']],
 				body: mmtRows,
 				headStyles,
 				styles: baseStyles,
 				columnStyles: { 0: { cellWidth: 80 } },
-				margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
 				didDrawPage: addFooter,
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 	}
 
+	// 7. Diagnosis & Investigation — render once; show head only on first page to avoid duplicate headers when table spans pages
 	if (includeSection('advancedAssessment')) {
-		const advancedRows: string[][] = [];
-		if (data.specialTest) advancedRows.push(['Special Tests', normalizePdfText(data.specialTest)]);
-		if (data.differentialDiagnosis) advancedRows.push(['Differential Diagnosis', normalizePdfText(data.differentialDiagnosis)]);
-		if (data.finalDiagnosis) advancedRows.push(['Diagnosis', normalizePdfText(data.finalDiagnosis)]);
-		if (advancedRows.length) {
+		const diagRows: string[][] = [];
+		if (hasVal('specialTest')) diagRows.push(['Special Tests', normalizePdfText(getVal('specialTest'))]);
+		if (hasVal('differentialDiagnosis', 'clinicalDiagnosis')) diagRows.push(['Differential Diagnosis', normalizePdfText(getVal('differentialDiagnosis', 'clinicalDiagnosis'))]);
+		const invList = [(data as any).investigationXray && 'X-ray', (data as any).investigationMRI && 'MRI', (data as any).investigationCTScan && 'CT-Scan', (data as any).investigationBlood && 'Blood', (data as any).investigationOthers && 'Others', data.med_xray && 'X-RAY', data.med_mri && 'MRI', data.med_ct && 'CT'].filter(Boolean) as string[];
+		if (invList.length) diagRows.push(['Investigations', invList.join(', ')]);
+		if (hasVal('assessmentOfInvestigation')) diagRows.push(['Assessment of Investigation', normalizePdfText(getVal('assessmentOfInvestigation'))]);
+		if (hasVal('finalDiagnosis')) diagRows.push(['Final Diagnosis', normalizePdfText(getVal('finalDiagnosis'))]);
+		if (diagRows.length) {
 			autoTable(doc, {
 				startY: y,
 				theme: 'grid',
-				head: [['ADVANCED ASSESSMENT', '']],
-				body: advancedRows,
+				head: [['7. DIAGNOSIS & INVESTIGATION', '']],
+				body: diagRows,
+				showHead: 'firstPage',
 				headStyles,
 				styles: baseStyles,
 				columnStyles: { 0: { cellWidth: 60 } },
-				margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+				margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
 				didDrawPage: addFooter,
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 	}
 
-	if (includeSection('physiotherapyManagement') || includeSection('currentStatus') || includeSection('nextFollowUp') || includeSection('signature')) {
-		doc.addPage();
-		y = 12;
+	// Only add a new page before Management if there isn't enough room (avoids large empty space on previous page)
+	if (includeSection('physiotherapyManagement') || includeSection('nextFollowUp') || includeSection('signature')) {
+		checkPageBreak(25);
 	}
 
+	// 8. Physiotherapy Management — always include all 6 fields when section is selected (value or "—" if empty)
 	if (includeSection('physiotherapyManagement')) {
-		const managementRows: string[][] = [];
-		if (data.shortTermGoals) managementRows.push(['i) Short Term Goals', normalizePdfText(data.shortTermGoals)]);
-		if (data.longTermGoals) managementRows.push(['ii) Long Term Goals', normalizePdfText(data.longTermGoals)]);
-		if (data.treatment || data.treatmentProvided) managementRows.push(['iii) Treatment', normalizePdfText(data.treatment || data.treatmentProvided || '')]);
-		if (data.advice) managementRows.push(['iv) Advice', normalizePdfText(data.advice)]);
-		if (managementRows.length) {
-			autoTable(doc, {
-				startY: y,
-				theme: 'grid',
-				head: [['PHYSIOTHERAPY MANAGEMENT', '']],
-				body: managementRows,
-				headStyles,
-				styles: baseStyles,
-				columnStyles: { 0: { cellWidth: 60 } },
-				margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-				didDrawPage: addFooter,
-			});
-			y = (doc as any).lastAutoTable.finalY + 3;
-		}
-	}
-
-	if (includeSection('currentStatus')) {
+		const d = data as unknown as Record<string, unknown>;
+		const peParts = [d.patientEducationCondition && 'Explained the condition', d.patientEducationGoals && 'Explained goals', d.patientEducationAdvantages && 'Explained advantages/complications', d.patientEducationOthers && `Others: ${d.patientEducationOthersText || ''}`].filter(Boolean) as string[];
+		const peVal = peParts.length ? peParts.join('; ') : getVal('advice') || '—';
+		const stParts = [d.shortTermGoalReducePain && 'Reduce pain', d.shortTermGoalImproveROM && 'Improve ROM', d.shortTermGoalImproveStrength && 'Improve & Maintain Strength', d.shortTermGoalOthers && `Others: ${d.shortTermGoalOthersText || ''}`].filter(Boolean) as string[];
+		const stVal = stParts.length ? stParts.join('; ') : getVal('shortTermGoals') || '—';
+		const tgParts = [d.treatmentCryotherapy && 'Cryotherapy', d.treatmentIFT && 'IFT', d.treatmentTENS && 'TENS', d.treatmentLaser && 'Laser', d.treatmentSWT && 'SWT', d.treatmentHotTherapy && 'Hot Therapy', d.treatmentManualTherapy && 'Manual Therapy', d.treatmentSoftTissueManipulation && 'Soft Tissue Manipulation', d.treatmentDryNeedling && 'Dry Needling', d.treatmentCuppingTherapy && 'Cupping', d.treatmentOthers && `Others: ${d.treatmentOthersText || ''}`].filter(Boolean) as string[];
+		const tgVal = tgParts.length ? tgParts.join(', ') : '—';
+		const treatmentVal = getVal('treatment', 'treatmentProvided') || '—';
+		const ltParts = [d.longTermGoalReducePain && 'Reduce pain & Maintain pain-free movement', d.longTermGoalImproveROM && 'Improve & Maintain ROM', d.longTermGoalImproveStrength && 'Improve & Maintain Strength', d.longTermGoalImproveStability && 'Improve stability', d.longTermGoalRTP && 'RTP plan', d.longTermGoalOthers && `Others: ${d.longTermGoalOthersText || ''}`].filter(Boolean) as string[];
+		const ltVal = ltParts.length ? ltParts.join('; ') : getVal('longTermGoals') || '—';
+		const homeVal = getVal('homeAdvice', 'advice') || '—';
+		const body: string[][] = [
+			['Patient Education', normalizePdfText(peVal)],
+			['Short Term Goals', normalizePdfText(stVal)],
+			['Treatment Given', tgVal],
+			['Treatment', normalizePdfText(treatmentVal)],
+			['Long Term Goals', normalizePdfText(ltVal)],
+			['Home Advice', normalizePdfText(homeVal)],
+		];
 		autoTable(doc, {
 			startY: y,
 			theme: 'grid',
-			head: [['CURRENT STATUS']],
-			body: [[buildCurrentStatus(data)]],
+			head: [['8. PHYSIOTHERAPY MANAGEMENT', '']],
+			body,
+			showHead: 'firstPage',
 			headStyles,
 			styles: baseStyles,
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			columnStyles: { 0: { cellWidth: 60 } },
+			margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
 			didDrawPage: addFooter,
 		});
-		y = (doc as any).lastAutoTable.finalY + 3;
+		y = (doc as any).lastAutoTable.finalY + 1;
+	}
+
+	// CURRENT STATUS section removed from PDF (per current report format)
+
+	// Follow-up Assessment (for follow-up visit reports)
+	if (includeSection('followUpAssessment') && data.followUpAssessment && String(data.followUpAssessment).trim() !== '') {
+		checkPageBreak(20);
+		autoTable(doc, {
+			startY: y,
+			theme: 'grid',
+			head: [['FOLLOW-UP ASSESSMENT', '']],
+			body: [['Assessment', normalizePdfText(data.followUpAssessment)]],
+			headStyles,
+			styles: { ...baseStyles, overflow: 'linebreak' },
+			columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto', overflow: 'linebreak' } },
+			margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
+		});
+		y = (doc as any).lastAutoTable.finalY + 1;
+	}
+
+	// Follow-Up Visits (for follow-up reports with visit history)
+	if (includeSection('followUpVisits') && data.followUpVisits && data.followUpVisits.length > 0) {
+		checkPageBreak(25);
+		const visitRows: string[][] = [['Visit Date', 'Pain Level', 'Findings']];
+		for (const v of data.followUpVisits) {
+			visitRows.push([
+				v.visitDate || '—',
+				v.painLevel || '—',
+				normalizePdfText(v.findings) || '—',
+			]);
+		}
+		autoTable(doc, {
+			startY: y,
+			theme: 'grid',
+			head: [['FOLLOW-UP VISITS', '', '']],
+			body: visitRows,
+			headStyles,
+			styles: baseStyles,
+			columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 35 }, 2: { cellWidth: 'auto', overflow: 'linebreak' } },
+			margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+			didDrawPage: addFooter,
+		});
+		y = (doc as any).lastAutoTable.finalY + 1;
 	}
 
 	if (includeSection('nextFollowUp') && (data.nextFollowUpDate || data.nextFollowUpTime)) {
@@ -714,32 +868,43 @@ export async function generatePhysiotherapyReportPDF(
 			headStyles,
 			styles: baseStyles,
 			columnStyles: { 0: { cellWidth: 60 } },
-			margin: { top: y, right: pageMargin, bottom: footerHeight, left: pageMargin },
-			didDrawPage: addFooter,
-		});
-		y = (doc as any).lastAutoTable.finalY + 4;
+		margin: { top: pageMargin, right: pageMargin, bottom: footerHeight, left: pageMargin },
+		didDrawPage: addFooter,
+	});
+		y = (doc as any).lastAutoTable.finalY + 1;
 	} else if (includeSection('nextFollowUp')) {
-		y += 4;
+		y += 2;
 	}
 
 	if (includeSection('signature')) {
-		// Ensure signature is not too close to footer - leave at least 15mm space
-		const signatureY = Math.min(y, pageHeight - footerHeight - 10);
+		// Avoid overlap with Section 8 (e.g. Home Advice): when Management section was drawn,
+		// its table may span pages and lastAutoTable.finalY can be from the wrong page. So we
+		// start a new page for the signature whenever that section was included.
+		let signatureY: number;
+		if (includeSection('physiotherapyManagement')) {
+			doc.addPage();
+			signatureY = pageMargin + 10;
+		} else {
+			const lastTableBottom = (doc as any).lastAutoTable?.finalY;
+			const contentBottom = lastTableBottom != null ? lastTableBottom : y;
+			const gap = 22;
+			const maxY = pageHeight - footerHeight - 12;
+			if (contentBottom + gap > maxY) {
+				doc.addPage();
+				signatureY = pageMargin + 10;
+			} else {
+				signatureY = contentBottom + gap;
+			}
+		}
 		doc.setFont('helvetica', 'bold');
 		doc.setFontSize(10);
 		doc.text('Physiotherapist Signature:', 12, signatureY);
 		doc.setFont('helvetica', 'normal');
 		doc.text(data.physioName || '', 65, signatureY);
-
 	}
 
-	// Add footer to all pages that don't have it yet (final pass)
-	// This ensures all pages have footers even if autoTable didn't trigger the callback
-	const totalPages = (doc as any).internal.getNumberOfPages();
-	for (let i = 1; i <= totalPages; i++) {
-		(doc as any).setPage(i);
-		addFooter({ pageNumber: i, pageCount: totalPages });
-	}
+	// Redraw all footers with correct total page count (fixes wrong "Page 1 of 1" etc.)
+	redrawAllFooters();
 
 		if (options?.forPrint) {
 			try {
@@ -829,7 +994,8 @@ export async function generatePhysiotherapyReportPDF(
 		} else {
 			try {
 				console.log('Saving PDF for download...');
-				doc.save(`Physiotherapy_Report_${data.patientId}.pdf`);
+				const safeName = (data.patientName || data.patientId || 'Report').replace(/[/\\:*?"<>|]/g, '_').trim() || 'Report';
+				doc.save(`Physiotherapy_Report_${safeName}.pdf`);
 				console.log('PDF saved successfully');
 			} catch (error) {
 				console.error('Error saving PDF:', error);
@@ -1038,7 +1204,7 @@ export async function generateStrengthConditioningPDF(
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Periodization Section
@@ -1069,7 +1235,7 @@ export async function generateStrengthConditioningPDF(
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Skill Training Section
@@ -1100,7 +1266,7 @@ export async function generateStrengthConditioningPDF(
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Strength & Conditioning Section
@@ -1131,7 +1297,7 @@ export async function generateStrengthConditioningPDF(
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Exercise Log Section
@@ -1168,7 +1334,7 @@ export async function generateStrengthConditioningPDF(
 					styles: { fontSize: 8, cellPadding: 1.5, minCellHeight: 5 },
 					margin: { left: pageMargin, right: pageMargin },
 				});
-				y = (doc as any).lastAutoTable.finalY + 3;
+				y = (doc as any).lastAutoTable.finalY + 1;
 			}
 		}
 
@@ -1201,7 +1367,7 @@ export async function generateStrengthConditioningPDF(
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// ACWR Section
@@ -1232,7 +1398,7 @@ export async function generateStrengthConditioningPDF(
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Injury Risk Screening Section
@@ -1265,7 +1431,7 @@ export async function generateStrengthConditioningPDF(
 				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Add more single-field rows
@@ -1298,7 +1464,7 @@ export async function generateStrengthConditioningPDF(
 				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		if (data.formData.pronePlank) {
@@ -1321,7 +1487,7 @@ export async function generateStrengthConditioningPDF(
 				styles: { fontSize: 9, cellPadding: 1.5, minCellHeight: 5 },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Additional fields
@@ -1342,7 +1508,7 @@ export async function generateStrengthConditioningPDF(
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Render single-field rows (scapularDyskinesiaTest, thoracicRotation, sitAndReachTest, pronePlank)
@@ -1362,7 +1528,7 @@ export async function generateStrengthConditioningPDF(
 				columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 'auto' } },
 				margin: { left: pageMargin, right: pageMargin },
 			});
-			y = (doc as any).lastAutoTable.finalY + 3;
+			y = (doc as any).lastAutoTable.finalY + 1;
 		}
 
 		// Summary
