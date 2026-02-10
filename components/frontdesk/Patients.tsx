@@ -3042,7 +3042,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 					<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
 							<div>
-								<h2 className="text-lg font-semibold text-slate-900">Register Patient</h2>
+								<h2 className="text-lg font-semibold text-slate-900">Registration Form</h2>
 								<p className="text-xs text-slate-500">Capture details and generate an ID instantly</p>
 							</div>
 							<button
