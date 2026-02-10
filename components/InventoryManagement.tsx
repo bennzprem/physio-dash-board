@@ -729,6 +729,37 @@ export default function InventoryManagement() {
 		);
 	}, [items]);
 
+	const handleExportOutOfStock = (format: 'xlsx' | 'csv') => {
+		if (outOfStockConsumables.length === 0) return;
+		const headers = ['Name', 'Category', 'Type', 'Total Quantity', 'Issued', 'Returned', 'Remaining'];
+		const rows = outOfStockConsumables.map(item => [
+			item.name,
+			item.category,
+			item.type,
+			item.totalQuantity,
+			item.issuedQuantity,
+			item.returnedQuantity,
+			item.remainingQuantity,
+		]);
+		const data = [headers, ...rows];
+		const worksheet = XLSX.utils.aoa_to_sheet(data);
+		const workbook = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(workbook, worksheet, 'Out of Stock');
+		const baseName = `out-of-stock-${new Date().toISOString().slice(0, 10)}`;
+		if (format === 'csv') {
+			const csv = XLSX.utils.sheet_to_csv(worksheet);
+			const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${baseName}.csv`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} else {
+			XLSX.writeFile(workbook, `${baseName}.xlsx`);
+		}
+	};
+
 	// Import functions
 	const parseFile = async (file: File): Promise<any[]> => {
 		return new Promise((resolve, reject) => {
@@ -977,27 +1008,35 @@ export default function InventoryManagement() {
 						<div className="flex flex-col items-end gap-3">
 							{/* Out-of-Stock Alerts - Above buttons */}
 							{outOfStockConsumables.length > 0 && (
-								<div className="z-40 max-w-sm">
-									<div className="rounded-lg bg-red-50 border-2 border-red-300 shadow-lg p-4">
-										<div className="flex items-center gap-2 mb-3">
-											<i className="fas fa-exclamation-triangle text-red-600 text-lg flex-shrink-0" aria-hidden="true" />
-											<h3 className="font-bold text-sm text-red-800">
+								<div className="z-40 w-52">
+									<div className="rounded-md bg-red-50 border border-red-300 shadow p-2.5">
+										<div className="flex items-center gap-1.5 mb-2">
+											<i className="fas fa-exclamation-triangle text-red-600 text-sm flex-shrink-0" aria-hidden="true" />
+											<h3 className="font-semibold text-xs text-red-800">
 												Out of Stock ({outOfStockConsumables.length})
 											</h3>
 										</div>
-										<div className="space-y-2 max-h-64 overflow-y-auto">
+										<div className="space-y-1 max-h-28 overflow-y-auto">
 											{outOfStockConsumables.map(item => (
 												<div
 													key={item.id}
-													className="flex items-center gap-2 rounded-md bg-white border border-red-200 px-3 py-2"
+													className="flex items-center gap-1.5 rounded bg-white border border-red-200 px-2 py-1"
 												>
-													<i className="fas fa-circle text-red-500 text-xs" aria-hidden="true" />
-													<p className="text-sm text-red-800 font-medium">
+													<i className="fas fa-circle text-red-500 text-[0.5rem] flex-shrink-0" aria-hidden="true" />
+													<p className="text-xs text-red-800 font-medium truncate">
 														{item.name}
 													</p>
 												</div>
 											))}
 										</div>
+										<button
+											type="button"
+											onClick={() => handleExportOutOfStock('xlsx')}
+											className="mt-2 w-full inline-flex items-center justify-center gap-1.5 rounded bg-red-600 hover:bg-red-700 text-white px-2 py-1.5 text-xs font-medium transition-colors"
+										>
+											<i className="fas fa-file-export text-[0.65rem]" aria-hidden="true" />
+											Export Excel/CSV
+										</button>
 									</div>
 								</div>
 							)}

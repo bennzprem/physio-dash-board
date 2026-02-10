@@ -729,6 +729,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const fetchedDataByVersionIdRef = useRef<Record<string, Partial<PatientRecordFull>>>({});
 	// Strength & Conditioning: fetched version data by id so View Full Report shows correct report, not primary
 	const fetchedSCDataByVersionIdRef = useRef<Record<string, StrengthConditioningData>>({});
+	const viewingVersionSCDataIdRef = useRef<string | null>(null); // Version id that current viewingVersionData belongs to (SC) — avoid showing Report #1 when viewing Report #2
 	// Psychology: fetched version data by id so View Full Report shows correct report, not primary
 	const fetchedPsychologyDataByVersionIdRef = useRef<Record<string, any>>({});
 	const [isEditingLoadedPhysioVersion, setIsEditingLoadedPhysioVersion] = useState(false); // True when editing a loaded version → show full primary report form
@@ -736,6 +737,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const [hasPsychologyVersions, setHasPsychologyVersions] = useState(false);
 	const [hasPhysiotherapyVersions, setHasPhysiotherapyVersions] = useState(false);
 	const [hasStrengthConditioningVersions, setHasStrengthConditioningVersions] = useState(false);
+	const [isEditingPrimarySCReport, setIsEditingPrimarySCReport] = useState(false); // True when Edit was used from Report #1 → show full primary form, not follow-up view
 	const [isExtraTreatment, setIsExtraTreatment] = useState(false);
 	
 	// Crisp report state
@@ -2281,26 +2283,47 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			// Explicitly update form data with saved data to ensure it persists
 			// This prevents any timing issues with onSnapshot
 			setStrengthConditioningFormData(dataToSave);
+			setIsEditingPrimarySCReport(false); // After save, exit "editing primary" mode
 
-			// Handle session completion if checkbox is checked
+			// Persist totalSessionsRequired and remainingSessions to patient if edited in this form (same logic as Physiotherapy)
+			const totalToSave = typeof formData.totalSessionsRequired === 'number' ? formData.totalSessionsRequired : reportPatientData.totalSessionsRequired;
+			const remainingToSave = typeof formData.remainingSessions === 'number' ? formData.remainingSessions : reportPatientData.remainingSessions;
+			if (totalToSave !== undefined || remainingToSave !== undefined) {
+				const patientRef = doc(db, 'patients', documentIdToUse);
+				await updateDoc(patientRef, {
+					...(totalToSave !== undefined ? { totalSessionsRequired: totalToSave } : {}),
+					...(remainingToSave !== undefined ? { remainingSessions: remainingToSave } : {}),
+					updatedAt: serverTimestamp(),
+				});
+				setReportPatientData((prev: any) => prev ? { ...prev, totalSessionsRequired: totalToSave ?? prev.totalSessionsRequired, remainingSessions: remainingToSave ?? prev.remainingSessions } : null);
+			}
+
+			// Handle session completion if checkbox is checked (same logic as Physiotherapy report)
+			let finalRemainingForSC: number | undefined;
 			if (sessionCompleted && reportPatientData) {
 				try {
 					const patientRef = doc(db, 'patients', documentIdToUse);
-					const totalSessionsValue =
-						typeof reportPatientData.totalSessionsRequired === 'number'
-							? reportPatientData.totalSessionsRequired
-							: null;
-
-					// Calculate remaining sessions
-					const baseRemaining = 
-						typeof reportPatientData.remainingSessions === 'number'
-							? reportPatientData.remainingSessions
-							: totalSessionsValue !== null
-								? totalSessionsValue
+					// Use formData / totalToSave so we use the values just persisted (same as Physio)
+					const totalSessionsValueSC =
+						totalToSave !== undefined && totalToSave !== null
+							? totalToSave
+							: typeof reportPatientData.totalSessionsRequired === 'number'
+								? reportPatientData.totalSessionsRequired
 								: null;
+
+					// Base remaining: use persisted remaining or current patient data
+					const baseRemaining =
+						remainingToSave !== undefined && remainingToSave !== null
+							? remainingToSave
+							: typeof reportPatientData.remainingSessions === 'number'
+								? reportPatientData.remainingSessions
+								: totalSessionsValueSC !== null
+									? totalSessionsValueSC
+									: null;
 
 					if (baseRemaining !== null && baseRemaining > 0) {
 						const newRemainingSessions = Math.max(0, baseRemaining - 1);
+						finalRemainingForSC = newRemainingSessions;
 
 						// Update patient's remaining sessions
 						await updateDoc(patientRef, {
@@ -2311,31 +2334,43 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						// Update reportPatientData state
 						setReportPatientData((prev: any) => prev ? { ...prev, remainingSessions: newRemainingSessions } : null);
 
-						// Mark appointment as completed
+						// Mark appointment as completed (same as Physio)
 						const patientForProgress: PatientRecordFull = {
 							...reportPatientData,
 							id: documentIdToUse,
-							totalSessionsRequired: totalSessionsValue ?? reportPatientData.totalSessionsRequired,
+							totalSessionsRequired: totalSessionsValueSC ?? reportPatientData.totalSessionsRequired,
 							remainingSessions: newRemainingSessions,
 						};
 
 						const consultationDate = strengthConditioningFormData.assessmentDate || reportPatientData.dateOfConsultation || new Date().toISOString().split('T')[0];
 						await markAppointmentCompletedForReport(patientForProgress, consultationDate, isExtraTreatment);
 
-						// Refresh patient session progress
+						// Refresh patient session progress (same as Physio)
 						const sessionProgress = await refreshPatientSessionProgress(
 							patientForProgress,
-							totalSessionsValue ?? null
+							totalSessionsValueSC ?? null
 						);
 
 						if (sessionProgress) {
 							setReportPatientData((prev: any) => (prev ? { ...prev, ...sessionProgress } : null));
+							if (sessionProgress.remainingSessions !== undefined) {
+								finalRemainingForSC = sessionProgress.remainingSessions;
+							}
 						}
 					}
 				} catch (sessionError) {
 					console.error('Failed to handle session completion for strength conditioning report', sessionError);
 					// Don't block the save if session completion fails
 				}
+			}
+
+			// Sync formData with final session values (same as Physiotherapy) so Report tab and SC stay in sync
+			if (finalRemainingForSC !== undefined || totalToSave !== undefined) {
+				setFormData(prev => ({
+					...prev,
+					...(finalRemainingForSC !== undefined ? { remainingSessions: finalRemainingForSC } : {}),
+					...(totalToSave !== undefined ? { totalSessionsRequired: totalToSave } : {}),
+				}));
 			}
 
 			setSessionCompleted(false);
@@ -3398,6 +3433,9 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setViewingVersionIsPsychology(false);
 			setViewingPsychologyVersionData(null);
 			setViewingVersionData(null); // show loading until fetch returns; use version doc data only
+			viewingVersionSCDataIdRef.current = null;
+			// Clear cached SC data so we only show the version we're fetching (avoids showing Report #1 when opening Report #2)
+			fetchedSCDataByVersionIdRef.current = {};
 			setShowVersionHistory(false);
 			const versionIdForFetch = version.id;
 			getDoc(doc(db, 'strengthConditioningReportVersions', versionIdForFetch))
@@ -3406,10 +3444,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
 					const data = (snap.data()?.reportData as StrengthConditioningData) || {};
 					fetchedSCDataByVersionIdRef.current[versionIdForFetch] = data;
+					viewingVersionSCDataIdRef.current = versionIdForFetch;
 					setViewingVersionData(data as Partial<PatientRecordFull>);
 				})
 				.catch((err) => {
 					console.error('Failed to load strength conditioning version for view:', err);
+					// Store list data in ref keyed by this version id so modal only shows this version
+					fetchedSCDataByVersionIdRef.current[versionIdForFetch] = (versionDataFromList || {}) as StrengthConditioningData;
+					viewingVersionSCDataIdRef.current = versionIdForFetch;
 					setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
 				});
 		} else {
@@ -3501,7 +3543,24 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 		if (reportType === 'strength-conditioning') {
 			setShowVersionHistory(false);
 			setViewingVersionData(null);
-			if (version.data) {
+			// Report #1 (version === 1) = primary report. Report #2, #3... = follow-up reports.
+			const isPrimaryReport = version.version === 1;
+			if (isPrimaryReport) {
+				setViewingVersionId(null);
+				setViewingVersionIsStrengthConditioning(false);
+				setViewingVersionIsPsychology(false);
+				viewingVersionForEditRef.current = null;
+				viewingVersionIdForEditRef.current = null;
+				// Show full primary form (not the follow-up assessment view)
+				setIsEditingPrimarySCReport(true);
+				// Reset form to primary report data so we don't show a previously loaded follow-up
+				setStrengthConditioningFormData((strengthConditioningData || {}) as StrengthConditioningData);
+				setActiveReportTab('strength-conditioning');
+				return;
+			}
+			// Follow-up report (Report #2, #3, ...): load that version into the form and show follow-up view
+			setIsEditingPrimarySCReport(false);
+			if (version.data && Object.keys(version.data).length > 0) {
 				setStrengthConditioningFormData((version.data || {}) as StrengthConditioningData);
 				setActiveReportTab('strength-conditioning');
 			} else {
@@ -4012,6 +4071,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const handleClose = () => {
 		setViewingVersionData(null);
 		setIsEditingLoadedPhysioVersion(false);
+		setIsEditingPrimarySCReport(false);
 		if (strengthConditioningUnsubscribeRef.current) {
 			strengthConditioningUnsubscribeRef.current();
 			strengthConditioningUnsubscribeRef.current = null;
@@ -5380,11 +5440,73 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</div>
 											<div>
 												<label className="block text-xs font-medium text-slate-500 mb-1">Total Sessions Required</label>
-												<p className="text-sm font-medium text-slate-900">{typeof reportPatientData.totalSessionsRequired === 'number' ? reportPatientData.totalSessionsRequired : '—'}</p>
+												<input
+													type="number"
+													min={0}
+													value={formData.totalSessionsRequired ?? reportPatientData.totalSessionsRequired ?? ''}
+													onChange={e => {
+														const raw = e.target.value;
+														const numericValue = Number(raw);
+														const sanitized =
+															raw === '' || Number.isNaN(numericValue)
+																? undefined
+																: Math.max(numericValue, 0);
+
+														setFormData(prev => {
+															const total = sanitized;
+
+															if (total === undefined) {
+																return {
+																	...prev,
+																	totalSessionsRequired: undefined,
+																	remainingSessions: undefined,
+																};
+															}
+
+															const baselineTotal =
+																typeof prev.totalSessionsRequired === 'number' && !Number.isNaN(prev.totalSessionsRequired)
+																	? prev.totalSessionsRequired
+																	: typeof reportPatientData?.totalSessionsRequired === 'number'
+																		? reportPatientData.totalSessionsRequired
+																		: undefined;
+
+															const baselineRemaining =
+																typeof prev.remainingSessions === 'number' && !Number.isNaN(prev.remainingSessions)
+																	? prev.remainingSessions
+																	: typeof reportPatientData?.remainingSessions === 'number'
+																		? reportPatientData.remainingSessions
+																		: undefined;
+
+															const completedSessions =
+																typeof baselineTotal === 'number' &&
+																typeof baselineRemaining === 'number'
+																	? Math.max(0, baselineTotal - 1 - baselineRemaining)
+																	: undefined;
+
+															const nextRemaining =
+																typeof completedSessions === 'number'
+																	? Math.max(0, total - completedSessions)
+																	: total;
+
+															return {
+																...prev,
+																totalSessionsRequired: total,
+																remainingSessions: nextRemaining,
+															};
+														});
+													}}
+													className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+												/>
 											</div>
 											<div>
 												<label className="block text-xs font-medium text-slate-500 mb-1">Remaining Sessions</label>
-												<p className="text-sm font-medium text-slate-900">{typeof reportPatientData.remainingSessions === 'number' ? reportPatientData.remainingSessions : '—'}</p>
+												<input
+													type="number"
+													min={0}
+													value={displayedRemainingSessions ?? formData.remainingSessions ?? reportPatientData.remainingSessions ?? ''}
+													readOnly
+													className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+												/>
 											</div>
 										</div>
 									</div>
@@ -5421,8 +5543,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</select>
 									</div>
 
-									{/* Follow-up assessment disclaimer */}
-									{hasStrengthConditioningVersions && (
+									{/* Follow-up assessment disclaimer - hide when editing primary (Report #1) */}
+									{hasStrengthConditioningVersions && !isEditingPrimarySCReport && (
 										<div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
 											<p className="text-sm text-blue-800">
 												<i className="fas fa-info-circle mr-2" aria-hidden="true" />
@@ -5635,8 +5757,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									</div>
 
-									{/* Skill Training - Hidden on subsequent dates */}
-									{!hasStrengthConditioningVersions && (
+									{/* Skill Training - Hidden on follow-up; show for primary or when editing primary (Report #1) */}
+									{(!hasStrengthConditioningVersions || isEditingPrimarySCReport) && (
 									<div className="mb-8 border-t border-slate-200 pt-6">
 										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
 											1. Skill Training
@@ -6323,8 +6445,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 									</div>
 
-									{/* Injury Risk Screening - Hidden on subsequent dates */}
-									{!hasStrengthConditioningVersions && (
+									{/* Injury Risk Screening - Hidden on follow-up; show for primary or when editing primary (Report #1) */}
+									{(!hasStrengthConditioningVersions || isEditingPrimarySCReport) && (
 									<div className="mb-8">
 										<h2 className="mb-4 text-lg font-semibold text-slate-900 border-b-2 border-slate-300 pb-2">
 											Injury Risk Screening
@@ -7254,7 +7376,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					));
 
 				return (
-					<div key={viewingVersionId ?? 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionFetchedData(null); setViewingVersionId(null); setViewingVersionIsStrengthConditioning(false); setViewingVersionIsPsychology(false); viewingVersionIdRequestedRef.current = null; viewingVersionForEditRef.current = null; viewingVersionIdForEditRef.current = null; viewingVersionFetchedDataIdRef.current = null; fetchedDataByVersionIdRef.current = {}; fetchedSCDataByVersionIdRef.current = {}; fetchedPsychologyDataByVersionIdRef.current = {}; } }}>
+					<div key={viewingVersionIdRequestedRef.current ?? viewingVersionId ?? viewingVersionData ? 'view-has-data' : 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionFetchedData(null); setViewingVersionId(null); setViewingVersionIsStrengthConditioning(false); setViewingVersionIsPsychology(false); viewingVersionIdRequestedRef.current = null; viewingVersionForEditRef.current = null; viewingVersionIdForEditRef.current = null; viewingVersionFetchedDataIdRef.current = null; viewingVersionSCDataIdRef.current = null; fetchedDataByVersionIdRef.current = {}; fetchedSCDataByVersionIdRef.current = {}; fetchedPsychologyDataByVersionIdRef.current = {}; } }}>
 						<div className="bg-white rounded-lg shadow-xl max-w-6xl w-full h-[95vh] max-h-[95vh] flex flex-col overflow-hidden">
 							<div className="flex items-center justify-between p-6 border-b border-slate-200 flex-shrink-0 bg-white">
 							<h2 className="text-xl font-semibold text-slate-900">
@@ -7272,6 +7394,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									viewingVersionForEditRef.current = null;
 									viewingVersionIdForEditRef.current = null;
 									viewingVersionFetchedDataIdRef.current = null;
+									viewingVersionSCDataIdRef.current = null;
 									fetchedDataByVersionIdRef.current = {};
 									fetchedSCDataByVersionIdRef.current = {};
 									fetchedPsychologyDataByVersionIdRef.current = {};
@@ -7340,8 +7463,13 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</div>
 										);
 									}
-									// Strength & Conditioning: wait for getDoc so we show this version's data, not primary
-									if (viewingVersionIsStrengthConditioning && viewingVersionId && !fetchedSCDataByVersionIdRef.current[viewingVersionId] && !viewingVersionData) {
+									// Strength & Conditioning: use version we're viewing from ref (set on click) — single source of truth so we never show Report #1 when user clicked Report #2
+									const scVersionToShow = viewingVersionIsStrengthConditioning ? viewingVersionForEditRef.current : null;
+									const scVersionIdToShow = scVersionToShow?.id ?? viewingVersionIdRequestedRef.current ?? viewingVersionId;
+									const scDataForView = scVersionIdToShow
+										? fetchedSCDataByVersionIdRef.current[scVersionIdToShow]
+										: viewingVersionData;
+									if (viewingVersionIsStrengthConditioning && scVersionIdToShow && scDataForView == null) {
 										return (
 											<div className="flex flex-col items-center justify-center py-16 text-slate-600">
 												<i className="fas fa-spinner fa-spin text-3xl mb-4" aria-hidden="true" />
@@ -7349,11 +7477,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</div>
 										);
 									}
-									// Use fetched SC data by version id when available so we never show another report's data
-									const scDataForView = viewingVersionIsStrengthConditioning && viewingVersionId
-										? (fetchedSCDataByVersionIdRef.current[viewingVersionId] ?? viewingVersionData)
-										: viewingVersionData;
-									const dataForDisplay = isSCReport ? (scDataForView ?? viewingVersionData) : viewingVersionData;
+									const dataForDisplay = isSCReport ? scDataForView : viewingVersionData;
 									if (!scDataForView && !viewingVersionFetchedData) return null;
 									if (isSCReport) {
 										return (
@@ -7724,8 +7848,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</div>
 										)}
 
-										{/* Functional Movement Screen */}
-										{((dataForDisplay as any).scapularDyskinesiaTest || (dataForDisplay as any).upperLimbFlexibilityRight || (dataForDisplay as any).fmsScore) && (
+										{/* Functional Movement Screen - only for Report #1 (primary); hide for Report #2+ */}
+										{(!scVersionToShow || scVersionToShow.version === 1) && ((dataForDisplay as any).scapularDyskinesiaTest || (dataForDisplay as any).upperLimbFlexibilityRight || (dataForDisplay as any).fmsScore) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Functional Movement Screen</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -8005,8 +8129,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											</div>
 										)}
 
-										{/* Summary */}
-										{(dataForDisplay as any).summary && (
+										{/* Summary - only for Report #1 (primary); hide for Report #2+ */}
+										{(!scVersionToShow || scVersionToShow.version === 1) && (dataForDisplay as any).summary && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Summary</h3>
 												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
@@ -8530,6 +8654,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							<button
 								type="button"
 								onClick={async () => {
+<<<<<<< HEAD
 									// Psychology: use viewingPsychologyVersionData or fetched ref
 									if (viewingVersionIsPsychology) {
 										const psychData = viewingPsychologyVersionData ?? (viewingVersionId ? fetchedPsychologyDataByVersionIdRef.current[viewingVersionId] : null);
@@ -8557,6 +8682,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									// Use fetched SC data by version id when available (same as modal content)
 									const dataForPDF = viewingVersionIsStrengthConditioning && viewingVersionId
 										? (fetchedSCDataByVersionIdRef.current[viewingVersionId] ?? viewingVersionData)
+=======
+									// SC: use version from ref (same as modal content)
+									const pdfScVersionId = viewingVersionIsStrengthConditioning
+										? (viewingVersionForEditRef.current?.id ?? viewingVersionIdRequestedRef.current ?? viewingVersionId)
+										: null;
+									const dataForPDF = pdfScVersionId
+										? fetchedSCDataByVersionIdRef.current[pdfScVersionId]
+>>>>>>> 20001bf3867e2e6cfb9c6712cb41c86e8f52a4dc
 										: viewingVersionData;
 									if (!dataForPDF) return;
 									try {
@@ -8620,6 +8753,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 											viewingVersionForEditRef.current = null;
 											viewingVersionIdForEditRef.current = null;
 											viewingVersionFetchedDataIdRef.current = null;
+											viewingVersionSCDataIdRef.current = null;
 											fetchedDataByVersionIdRef.current = {};
 											fetchedSCDataByVersionIdRef.current = {};
 											fetchedPsychologyDataByVersionIdRef.current = {};
@@ -8643,6 +8777,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									viewingVersionForEditRef.current = null;
 									viewingVersionIdForEditRef.current = null;
 									viewingVersionFetchedDataIdRef.current = null;
+									viewingVersionSCDataIdRef.current = null;
 									fetchedDataByVersionIdRef.current = {};
 									fetchedSCDataByVersionIdRef.current = {};
 									fetchedPsychologyDataByVersionIdRef.current = {};

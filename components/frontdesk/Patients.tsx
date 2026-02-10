@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, doc, onSnapshot, updateDoc, deleteDoc, query, where, getDocs, writeBatch, addDoc, serverTimestamp, orderBy, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, updateDoc, deleteDoc, query, where, getDocs, writeBatch, addDoc, serverTimestamp, orderBy, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 
 import {
 	type AdminGenderOption,
@@ -718,6 +718,12 @@ export default function Patients() {
 								: data.packageAmount
 									? Number(data.packageAmount)
 									: null,
+						concessionPercent:
+							typeof data.concessionPercent === 'number'
+								? data.concessionPercent
+								: data.concessionPercent
+									? Number(data.concessionPercent)
+									: null,
 						amountPaid:
 							typeof data.amountPaid === 'number'
 								? data.amountPaid
@@ -1073,6 +1079,22 @@ export default function Patients() {
 		return paidPackageBills.length > 0 ? paidPackageBills[0] : null;
 	};
 
+	// For View All Data modal: fallback package/concession from billing when patient doc has none
+	const viewingPatientPackageFallback = useMemo(() => {
+		if (!viewingPatient?.patientId || !billing.length) return null;
+		const packageBill = billing.find(
+			bill =>
+				bill.patientId === viewingPatient.patientId &&
+				typeof bill.packageAmount === 'number' &&
+				bill.packageAmount > 0
+		);
+		if (!packageBill) return null;
+		return {
+			packageAmount: packageBill.packageAmount ?? null,
+			concessionPercent: packageBill.concessionPercent ?? null,
+		};
+	}, [viewingPatient?.patientId, billing]);
+
 	const handlePayConsultation = (patient: FrontdeskPatient) => {
 		const pendingBill = getPendingConsultationBill(patient.patientId);
 		if (!pendingBill) {
@@ -1289,9 +1311,71 @@ export default function Patients() {
 		}
 	};
 
-	const handleViewPatientDetails = (patient: FrontdeskPatient) => {
+	const handleViewPatientDetails = async (patient: FrontdeskPatient) => {
 		setViewingPatient(patient);
 		setOpenMenuId(null);
+		const docId = (patient as FrontdeskPatient & { id?: string }).id;
+		if (!docId) return;
+		try {
+			const docSnap = await getDoc(doc(db, 'patients', docId));
+			if (!docSnap.exists()) return;
+			const data = docSnap.data() as Record<string, unknown>;
+			const created = (data.registeredAt as Timestamp | undefined)?.toDate?.();
+			const deleted = (data.deletedAt as Timestamp | undefined)?.toDate?.();
+			const fresh: FrontdeskPatient & { deleted?: boolean; deletedAt?: string | null } = {
+				id: docSnap.id,
+				patientId: data.patientId ? String(data.patientId) : '',
+				name: data.name ? String(data.name) : '',
+				dob: data.dob ? String(data.dob) : '',
+				gender: (data.gender as AdminGenderOption) || '',
+				phone: data.phone ? String(data.phone) : '',
+				email: data.email ? String(data.email) : undefined,
+				address: data.address ? String(data.address) : undefined,
+				complaint: data.complaint ? String(data.complaint) : undefined,
+				status: (data.status as AdminPatientStatus) ?? 'pending',
+				registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined) || new Date().toISOString(),
+				patientType: (data.patientType as PatientTypeOption) || '',
+				paymentType: (data.paymentType as PaymentTypeOption) || 'without',
+				paymentDescription: data.paymentDescription ? String(data.paymentDescription) : undefined,
+				assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
+				assignedFrontdeskId: data.assignedFrontdeskId ? String(data.assignedFrontdeskId) : undefined,
+				assignedFrontdeskName: data.assignedFrontdeskName ? String(data.assignedFrontdeskName) : undefined,
+				assignedFrontdeskEmail: data.assignedFrontdeskEmail ? String(data.assignedFrontdeskEmail) : undefined,
+				packageAmount:
+					typeof data.packageAmount === 'number'
+						? data.packageAmount
+						: data.packageAmount
+							? Number(data.packageAmount)
+							: null,
+				concessionPercent:
+					typeof data.concessionPercent === 'number'
+						? data.concessionPercent
+						: data.concessionPercent
+							? Number(data.concessionPercent)
+							: null,
+				totalSessionsRequired:
+					typeof data.totalSessionsRequired === 'number'
+						? data.totalSessionsRequired
+						: data.totalSessionsRequired
+							? Number(data.totalSessionsRequired)
+							: undefined,
+				remainingSessions:
+					typeof data.remainingSessions === 'number'
+						? data.remainingSessions
+						: data.remainingSessions
+							? Number(data.remainingSessions)
+							: undefined,
+				readyForNewAppointment: data.readyForNewAppointment === true,
+				deleted: data.deleted === true,
+				deletedAt: deleted ? deleted.toISOString() : (data.deletedAt as string | undefined) || null,
+				registeredBy: data.registeredBy ? String(data.registeredBy) : undefined,
+				registeredByName: data.registeredByName ? String(data.registeredByName) : undefined,
+				registeredByEmail: data.registeredByEmail ? String(data.registeredByEmail) : undefined,
+			};
+			setViewingPatient(fresh);
+		} catch (e) {
+			console.error('Failed to fetch patient for View All Data', e);
+		}
 	};
 
 	const handleClosePatientDetails = () => {
@@ -3624,23 +3708,31 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 										<p className="text-sm font-medium text-slate-900">
 											{typeof viewingPatient.packageAmount === 'number'
 												? viewingPatient.packageAmount.toLocaleString()
-												: '—'}
+												: viewingPatient.packageAmount != null
+													? Number(viewingPatient.packageAmount).toLocaleString()
+													: viewingPatientPackageFallback?.packageAmount != null
+														? Number(viewingPatientPackageFallback.packageAmount).toLocaleString()
+														: '—'}
 										</p>
 									</div>
 									<div>
 										<p className="text-xs text-slate-500">Payment Type</p>
-										<p className="text-sm font-medium text-slate-900">{viewingPatient.paymentType || '—'}</p>
+										<p className="text-sm font-medium text-slate-900">{viewingPatient.paymentType ?? '—'}</p>
 									</div>
 									<div>
 										<p className="text-xs text-slate-500">Payment Notes</p>
-										<p className="text-sm font-medium text-slate-900">{viewingPatient.paymentDescription || '—'}</p>
+										<p className="text-sm font-medium text-slate-900">{viewingPatient.paymentDescription ?? '—'}</p>
 									</div>
 									<div>
 										<p className="text-xs text-slate-500">Concession %</p>
 										<p className="text-sm font-medium text-slate-900">
 											{typeof viewingPatient.concessionPercent === 'number'
 												? `${viewingPatient.concessionPercent}%`
-												: '—'}
+												: viewingPatient.concessionPercent != null
+													? `${Number(viewingPatient.concessionPercent)}%`
+													: viewingPatientPackageFallback?.concessionPercent != null
+														? `${Number(viewingPatientPackageFallback.concessionPercent)}%`
+														: '—'}
 										</p>
 									</div>
 								</div>
