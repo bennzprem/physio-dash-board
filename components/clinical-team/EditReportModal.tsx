@@ -173,18 +173,17 @@ function removeUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
 
 const VERSION_DOC_METADATA_KEYS = new Set(['patientId', 'patientName', 'version', 'reportType', 'createdBy', 'createdById', 'createdAt', 'sessionNumber', 'restoredFrom']);
 
-/** Get report payload from a reportVersions doc: use reportData, or legacy top-level fields. reportData always wins so follow-up treatment is from this version, not primary. */
+/** Get report payload from a reportVersions doc: merge reportData with legacy top-level fields so all saved data is available for view. reportData wins on conflict. */
 function getReportDataFromVersionDoc(data: Record<string, unknown> | undefined): Record<string, unknown> {
 	if (!data) return {};
 	const fromReportData = (data.reportData as Record<string, unknown>) || {};
-	if (Object.keys(fromReportData).length >= 5) return fromReportData;
 	const topLevel: Record<string, unknown> = {};
 	for (const key of Object.keys(data)) {
 		if (VERSION_DOC_METADATA_KEYS.has(key)) continue;
 		topLevel[key] = data[key];
 	}
-	// Prefer reportData over topLevel so treatment/followUpAssessment are from this version's reportData, not legacy top-level
-	return Object.keys(topLevel).length > Object.keys(fromReportData).length ? { ...topLevel, ...fromReportData } : fromReportData;
+	// Always merge both: old docs may have only top-level fields; new docs have reportData. reportData overrides so version-specific treatment/followUp show correctly.
+	return { ...topLevel, ...fromReportData };
 }
 
 /** Normalize report data from Firestore: convert Timestamps to ISO strings, deep-clone so form gets plain values */
@@ -3425,7 +3424,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			const versionFirstFallback = reportPatientData
 				? { ...version.data, name: reportPatientData.name, patientId: reportPatientData.patientId, dob: reportPatientData.dob }
 				: version.data;
-			getDoc(doc(db, 'reportVersions', versionIdForFetch))
+				getDoc(doc(db, 'reportVersions', versionIdForFetch))
 				.then((versionSnap) => {
 					if (!versionSnap.exists()) {
 						setViewingVersionData(versionFirstFallback as Partial<PatientRecordFull>);
@@ -3437,11 +3436,14 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 					const data = versionSnap.data() as Record<string, unknown> | undefined;
 					const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
 					const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
+					// If version doc had very little report content, merge in list version.data so whatever was entered is shown
+					const hasEnoughReportFields = Object.keys(normalized).filter(k => !['name', 'patientId', 'dob'].includes(k)).length >= 3;
+					const source = hasEnoughReportFields ? normalized : { ...(version.data || {}), ...normalized };
 					const merged: Partial<PatientRecordFull> = {
-						...normalized,
-						name: reportPatientData?.name ?? normalized.name,
-						patientId: reportPatientData?.patientId ?? normalized.patientId,
-						dob: reportPatientData?.dob ?? normalized.dob,
+						...source,
+						name: reportPatientData?.name ?? (source.name as string),
+						patientId: reportPatientData?.patientId ?? (source.patientId as string),
+						dob: reportPatientData?.dob ?? (source.dob as string),
 					};
 					// Store by version id so follow-up view always reads the correct report's data
 					fetchedDataByVersionIdRef.current[versionIdForFetch] = merged;

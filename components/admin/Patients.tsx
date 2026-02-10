@@ -2579,7 +2579,7 @@ export default function Patients() {
 							onClick={e => e.stopPropagation()}
 						>
 							<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sticky top-0 bg-white z-10">
-								<h2 className="text-lg font-semibold text-slate-900">Register Patient</h2>
+								<h2 className="text-lg font-semibold text-slate-900">Registration Form</h2>
 								<button
 									type="button"
 									onClick={() => setShowRegisterModal(false)}

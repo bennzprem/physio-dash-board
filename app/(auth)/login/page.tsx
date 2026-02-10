@@ -7,31 +7,56 @@ import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+<<<<<<< HEAD
 
-const iconClass = 'h-5 w-5';
-const iconClassSm = 'h-4 w-4';
-
-const MailIcon = ({ className = iconClass }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+/* Inline icons to avoid lucide-react (avoids corrupted node_modules) */
+const MailIcon = ({ className }: { className?: string }) => (
+	<svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+		<rect width="20" height="16" x="2" y="4" rx="2" />
+		<path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+	</svg>
 );
-const LockIcon = ({ className = iconClass }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+const LockIcon = ({ className }: { className?: string }) => (
+	<svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+		<rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+		<path d="M7 11V7a5 5 0 0 1 10 0v4" />
+	</svg>
 );
-const EyeIcon = ({ className = iconClass }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+const EyeIcon = ({ className }: { className?: string }) => (
+	<svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+		<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+		<circle cx="12" cy="12" r="3" />
+	</svg>
 );
-const EyeOffIcon = ({ className = iconClass }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+const EyeOffIcon = ({ className }: { className?: string }) => (
+	<svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+		<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+		<path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+		<path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-4.444" />
+		<path d="m2 2 20 20" />
+	</svg>
 );
-const ArrowRightIcon = ({ className = iconClassSm }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+const AlertCircleIcon = ({ className }: { className?: string }) => (
+	<svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+		<circle cx="12" cy="12" r="10" />
+		<line x1="12" x2="12" y1="8" y2="12" />
+		<line x1="12" x2="12.01" y1="16" y2="16" />
+	</svg>
 );
-const AlertCircleIcon = ({ className = iconClass }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+const LoaderIcon = ({ className }: { className?: string }) => (
+	<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+		<path d="M21 12a9 9 0 1 1-6.219-8.56" />
+	</svg>
 );
-const Loader2Icon = ({ className = iconClassSm }: { className?: string }) => (
-	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+const ArrowRightIcon = ({ className }: { className?: string }) => (
+	<svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+		<path d="M5 12h14" />
+		<path d="m12 5 7 7-7 7" />
+	</svg>
 );
+=======
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
+>>>>>>> ae57b0cc5b729ee2123eaab64a017dcda14d493c
 
 type AllowedRole = 'SuperAdmin' | 'Admin' | 'FrontDesk' | 'ClinicalTeam';
 
@@ -144,7 +169,23 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="flex min-h-screen bg-white font-sans text-slate-900">
+		<div className="flex min-h-screen bg-white font-sans text-slate-900 relative">
+			{/* Loading Overlay */}
+			{loading && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-white/95 backdrop-blur-sm">
+					<div className="flex flex-col items-center gap-6">
+						<div className="loaderRectangle">
+							<div></div>
+							<div></div>
+							<div></div>
+							<div></div>
+							<div></div>
+						</div>
+						<p className="text-lg font-medium text-slate-600">Authenticating credentials...</p>
+					</div>
+				</div>
+			)}
+
 			{/* Left Side: Login Form */}
 			<div className="flex w-full flex-col justify-between p-8 md:w-1/2 lg:p-16 xl:p-24">
 				{/* Logo */}
@@ -242,9 +283,10 @@ export default function LoginPage() {
 							className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-sm font-semibold text-white shadow-xl shadow-blue-200 transition-all hover:bg-blue-700 hover:shadow-blue-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
 							disabled={loading}
 						>
+<<<<<<< HEAD
 							{loading ? (
 								<>
-									<Loader2Icon className="h-4 w-4 animate-spin" />
+									<LoaderIcon className="h-4 w-4 animate-spin" />
 									Signing in...
 								</>
 							) : (
@@ -253,6 +295,10 @@ export default function LoginPage() {
 									<ArrowRightIcon className="h-4 w-4" />
 								</>
 							)}
+=======
+							Sign In to Dashboard
+							<ArrowRight className="h-4 w-4" />
+>>>>>>> ae57b0cc5b729ee2123eaab64a017dcda14d493c
 						</button>
 					</form>
 				</div>
