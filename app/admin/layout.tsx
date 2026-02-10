@@ -9,7 +9,6 @@ import Dashboard from '@/components/admin/Dashboard';
 import Users from '@/components/admin/Users';
 import Patients from '@/components/admin/Patients';
 import CalendarAppointments from '@/components/admin/CalendarAppointments';
-import Billing from '@/components/admin/Billing';
 import Reports from '@/components/admin/Reports';
 import Seed from '@/components/admin/Seed';
 import AuditLogs from '@/components/admin/AuditLogs';
@@ -26,14 +25,13 @@ import SOPViewer from '@/components/SOPViewer';
 import Internship from '@/components/admin/Internship';
 import { useAuth } from '@/contexts/AuthContext';
 
-type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'billing' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'internship' | 'profile' | 'rating-approvals' | 'performance-rating' | 'sop';
+type AdminPage = 'dashboard' | 'users' | 'patients' | 'appointments' | 'analytics' | 'calendar' | 'calendar-appointments' | 'audit' | 'seed' | 'headers' | 'notifications' | 'inventory' | 'leave' | 'internship' | 'profile' | 'rating-approvals' | 'performance-rating' | 'sop';
 
 const baseAdminLinks: SidebarLink[] = [
 	{ href: '#dashboard', label: 'Dashboard', icon: 'fas fa-columns' },
 	{ href: '#users', label: 'Employee Management', icon: 'fas fa-users-cog' },
 	{ href: '#patients', label: 'Patient Management', icon: 'fas fa-user-injured' },
 	{ href: '#calendar-appointments', label: 'Calendar & Appointments', icon: 'fas fa-calendar-check' },
-	{ href: '#billing', label: 'Billing & Payments', icon: 'fas fa-file-invoice-dollar' },
 	{ href: '#analytics', label: 'Analytics', icon: 'fas fa-chart-pie' },
 	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
 	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
@@ -136,8 +134,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 			case 'calendar':
 			case 'calendar-appointments':
 				return <CalendarAppointments />;
-			case 'billing':
-				return <Billing />;
 		case 'analytics':
 				return <Reports />;
 			case 'headers':

@@ -833,18 +833,6 @@ export default function MyPerformance() {
 				<div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
 					<div className="flex items-center justify-between">
 						<div>
-							<p className="text-sm font-medium text-slate-500">Total Revenue</p>
-							<p className="mt-2 text-2xl font-bold text-slate-900">₹{analytics.totalRevenue.toLocaleString()}</p>
-						</div>
-						<div className="rounded-full bg-green-100 p-3">
-							<i className="fas fa-rupee-sign text-green-600 text-xl" aria-hidden="true" />
-						</div>
-					</div>
-				</div>
-
-				<div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-					<div className="flex items-center justify-between">
-						<div>
 							<p className="text-sm font-medium text-slate-500">Total Activities</p>
 							<p className="mt-2 text-2xl font-bold text-slate-900">
 								{Object.values(analytics.activitiesByType).reduce((sum, act) => sum + act.count, 0)}
@@ -919,21 +907,6 @@ export default function MyPerformance() {
 					<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
 						<p className="text-xs font-medium text-slate-500">OTHERS</p>
 						<p className="mt-1 text-xl font-bold text-slate-900">{analytics.patientsByType.OTHERS}</p>
-					</div>
-				</div>
-			</div>
-
-			{/* Revenue Breakdown */}
-			<div className="mb-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-				<h3 className="mb-4 text-lg font-semibold text-slate-900">Revenue Breakdown</h3>
-				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-					<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-						<p className="text-xs font-medium text-slate-500">DYES Revenue</p>
-						<p className="mt-1 text-xl font-bold text-slate-900">₹{analytics.revenueByType.DYES.toLocaleString()}</p>
-					</div>
-					<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-						<p className="text-xs font-medium text-slate-500">Non-DYES Revenue</p>
-						<p className="mt-1 text-xl font-bold text-slate-900">₹{analytics.revenueByType.nonDYES.toLocaleString()}</p>
 					</div>
 				</div>
 			</div>
@@ -1023,63 +996,6 @@ export default function MyPerformance() {
 								<p className="text-xs font-medium text-slate-500">Total Hours</p>
 								<p className="mt-1 text-2xl font-bold text-slate-900">{analytics.appointmentHours}</p>
 							</div>
-						</div>
-					</div>
-				</div>
-
-				{/* Revenue Chart */}
-				<div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-					<h3 className="mb-4 text-lg font-semibold text-slate-900">Revenue Breakdown</h3>
-					<div className="space-y-4">
-						{/* Revenue Bar Chart */}
-						<div className="space-y-3">
-							{analytics.totalRevenue > 0 ? (
-								<>
-									<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-										<div className="mb-2 flex items-center justify-between">
-											<p className="text-sm font-semibold text-slate-700">DYES Revenue</p>
-											<p className="text-sm font-bold text-slate-900">
-												₹{analytics.revenueByType.DYES.toLocaleString()}
-											</p>
-										</div>
-										<div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
-											<div
-												className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600"
-												style={{
-													width: `${analytics.totalRevenue > 0 ? (analytics.revenueByType.DYES / analytics.totalRevenue) * 100 : 0}%`,
-												}}
-											/>
-										</div>
-									</div>
-									<div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-										<div className="mb-2 flex items-center justify-between">
-											<p className="text-sm font-semibold text-slate-700">Non-DYES Revenue</p>
-											<p className="text-sm font-bold text-slate-900">
-												₹{analytics.revenueByType.nonDYES.toLocaleString()}
-											</p>
-										</div>
-										<div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
-											<div
-												className="h-full bg-gradient-to-r from-blue-500 to-blue-600"
-												style={{
-													width: `${analytics.totalRevenue > 0 ? (analytics.revenueByType.nonDYES / analytics.totalRevenue) * 100 : 0}%`,
-												}}
-											/>
-										</div>
-									</div>
-									<div className="mt-4 rounded-lg border-2 border-slate-300 bg-gradient-to-r from-green-50 to-emerald-50 p-4 text-center">
-										<p className="text-xs font-medium text-slate-500">Total Revenue</p>
-										<p className="mt-1 text-2xl font-bold text-slate-900">
-											₹{analytics.totalRevenue.toLocaleString()}
-										</p>
-									</div>
-								</>
-							) : (
-								<div className="rounded-lg border border-slate-200 bg-slate-50 p-8 text-center">
-									<i className="fas fa-rupee-sign mb-2 text-4xl text-slate-400" aria-hidden="true" />
-									<p className="text-sm text-slate-500">No revenue recorded for this period.</p>
-								</div>
-							)}
 						</div>
 					</div>
 				</div>

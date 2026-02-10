@@ -155,12 +155,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			summary: 'Coordinate schedules and manage bookings.',
 		},
 		{
-			href: '#billing',
-			icon: 'fas fa-file-invoice-dollar',
-			title: 'Billing & Payments',
-			summary: 'Track invoices and payment status.',
-		},
-		{
 			href: '#analytics',
 			icon: 'fas fa-chart-bar',
 			title: 'Analytics',

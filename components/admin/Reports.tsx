@@ -102,11 +102,20 @@ interface BillingRecord {
 	date: string;
 }
 
+interface ActivityRecord {
+	id: string;
+	staffName?: string;
+	staffEmail?: string;
+	activityType?: string;
+	date?: string;
+}
+
 export default function Reports() {
 	const [patients, setPatients] = useState<(AdminPatientRecord & { id?: string })[]>([]);
 	const [appointments, setAppointments] = useState<(AdminAppointmentRecord & { id?: string })[]>([]);
 	const [staff, setStaff] = useState<StaffMember[]>([]);
 	const [billing, setBilling] = useState<BillingRecord[]>([]);
+	const [activities, setActivities] = useState<ActivityRecord[]>([]);
 
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 	const [doctorFilter, setDoctorFilter] = useState<'all' | string>('all');
@@ -268,6 +277,31 @@ export default function Reports() {
 			}
 		);
 
+		return () => unsubscribe();
+	}, []);
+
+	// Load activities from Firestore (for Activities Distribution chart)
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'activities'),
+			(snapshot: QuerySnapshot) => {
+				const mapped = snapshot.docs.map(docSnap => {
+					const data = docSnap.data() as Record<string, unknown>;
+					return {
+						id: docSnap.id,
+						staffName: data.staffName ? String(data.staffName) : undefined,
+						staffEmail: data.staffEmail ? String(data.staffEmail) : undefined,
+						activityType: data.activityType ? String(data.activityType) : undefined,
+						date: data.date ? String(data.date) : undefined,
+					} as ActivityRecord;
+				});
+				setActivities([...mapped]);
+			},
+			error => {
+				console.error('Failed to load activities', error);
+				setActivities([]);
+			}
+		);
 		return () => unsubscribe();
 	}, []);
 
@@ -488,35 +522,70 @@ export default function Reports() {
 		};
 	}, [selectedPhysician, billing, patients, analyticsFromDate, analyticsToDate]);
 
-	// Activities and Appointments Distribution by Clinical Team (Pie Chart Data)
+	// Activities Distribution for the selected clinician only (by activity type; no appointments)
 	const activitiesDistributionData = useMemo(() => {
-		const clinicalTeamMembers = staff.filter(
-			member => 
-				(member.role === 'ClinicalTeam' || member.role === 'Physiotherapist' || member.role === 'StrengthAndConditioning') &&
-				member.status === 'Active'
-		);
+		if (!selectedPhysician) {
+			return { labels: [] as string[], datasets: [{ label: 'Activities', data: [] as number[], backgroundColor: [] as string[], borderColor: '#ffffff', borderWidth: 2 }] };
+		}
+		const sel = selectedPhysician.toLowerCase().trim();
+		let clinicianActivities = activities.filter(act => {
+			const name = (act.staffName || '').toLowerCase().trim();
+			if (!name) return false;
+			return name === sel || name.includes(sel) || sel.includes(name);
+		});
+		// Apply analytics date range if set
+		if (analyticsFromDate || analyticsToDate) {
+			clinicianActivities = clinicianActivities.filter(act => {
+				if (!act.date) return false;
+				const actDate = new Date(act.date);
+				actDate.setHours(0, 0, 0, 0);
+				if (analyticsFromDate) {
+					const from = new Date(analyticsFromDate);
+					from.setHours(0, 0, 0, 0);
+					if (actDate < from) return false;
+				}
+				if (analyticsToDate) {
+					const to = new Date(analyticsToDate);
+					to.setHours(23, 59, 59, 999);
+					if (actDate > to) return false;
+				}
+				return true;
+			});
+		}
+		// Group by activity type
+		const byType: Record<string, number> = {};
+		clinicianActivities.forEach(act => {
+			const type = act.activityType?.trim() || 'Other';
+			byType[type] = (byType[type] ?? 0) + 1;
+		});
+		const distribution = Object.entries(byType)
+			.map(([name, count]) => ({ name, count }))
+			.filter(item => item.count > 0)
+			.sort((a, b) => b.count - a.count);
 
-		const distribution = clinicalTeamMembers.map(member => {
-			const memberAppointments = appointments.filter(
-				apt => apt.doctor?.toLowerCase() === member.userName.toLowerCase() && apt.status !== 'cancelled'
-			);
+		if (distribution.length === 0) {
 			return {
-				name: member.userName,
-				count: memberAppointments.length,
+				labels: ['No activities'],
+				datasets: [{
+					label: 'Activities',
+					data: [1],
+					backgroundColor: ['#e2e8f0'],
+					borderColor: '#ffffff',
+					borderWidth: 2,
+				}],
 			};
-		}).filter(item => item.count > 0).sort((a, b) => b.count - a.count);
+		}
 
-		// Generate gradient colors for pie chart
 		const gradientColors = distribution.map((_, index) => {
 			const hue = (index * 137.508) % 360;
 			return `hsl(${hue}, 70%, 60%)`;
 		});
 
 		return {
-			labels: distribution.map(item => item.name || 'Unassigned'),
+			labels: distribution.map(item => item.name),
 			datasets: [
 				{
-					label: 'Appointments',
+					label: 'Activities',
 					data: distribution.map(item => item.count),
 					backgroundColor: gradientColors,
 					borderColor: '#ffffff',
@@ -524,7 +593,7 @@ export default function Reports() {
 				},
 			],
 		};
-	}, [staff, appointments]);
+	}, [selectedPhysician, activities, analyticsFromDate, analyticsToDate]);
 
 	const appointmentMap = useMemo(() => {
 		const map = new Map<string, AdminAppointmentRecord[]>();
@@ -1713,7 +1782,7 @@ export default function Reports() {
 				
 				<div className="mb-6">
 					<label className="block text-sm font-medium text-slate-700 mb-2">
-						Select Physician
+						Select Clinician
 					</label>
 					<select
 						value={selectedPhysician}
@@ -1835,11 +1904,11 @@ export default function Reports() {
 				</div>
 						</div>
 
-						{/* Activities and Appointments Distribution + Revenue by Patient Type */}
+						{/* Activities Distribution + Revenue by Patient Type */}
 						<div className="mt-8 grid gap-6 lg:grid-cols-2">
 							<div className="group rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)] transition-all duration-300 hover:shadow-[0_25px_50px_rgba(15,23,42,0.15)] hover:scale-[1.01]">
-								<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Activities & Appointments Distribution</h3>
-								<p className="mb-4 text-sm text-slate-500">Distribution of appointments across clinical team members</p>
+								<h3 className="mb-2 text-lg font-semibold text-slate-900 transition-colors group-hover:text-sky-600">Activities Distribution</h3>
+								<p className="mb-4 text-sm text-slate-500">Distribution of activity types for the selected physician</p>
 								<div className="h-[350px]">
 									<StatsChart 
 										type="doughnut" 
