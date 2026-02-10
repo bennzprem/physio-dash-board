@@ -8654,7 +8654,6 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							<button
 								type="button"
 								onClick={async () => {
-<<<<<<< HEAD
 									// Psychology: use viewingPsychologyVersionData or fetched ref
 									if (viewingVersionIsPsychology) {
 										const psychData = viewingPsychologyVersionData ?? (viewingVersionId ? fetchedPsychologyDataByVersionIdRef.current[viewingVersionId] : null);
@@ -8679,17 +8678,12 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										}
 										return;
 									}
-									// Use fetched SC data by version id when available (same as modal content)
-									const dataForPDF = viewingVersionIsStrengthConditioning && viewingVersionId
-										? (fetchedSCDataByVersionIdRef.current[viewingVersionId] ?? viewingVersionData)
-=======
 									// SC: use version from ref (same as modal content)
 									const pdfScVersionId = viewingVersionIsStrengthConditioning
 										? (viewingVersionForEditRef.current?.id ?? viewingVersionIdRequestedRef.current ?? viewingVersionId)
 										: null;
 									const dataForPDF = pdfScVersionId
-										? fetchedSCDataByVersionIdRef.current[pdfScVersionId]
->>>>>>> 20001bf3867e2e6cfb9c6712cb41c86e8f52a4dc
+										? (fetchedSCDataByVersionIdRef.current[pdfScVersionId] ?? viewingVersionData)
 										: viewingVersionData;
 									if (!dataForPDF) return;
 									try {
