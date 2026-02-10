@@ -7,7 +7,6 @@ import { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-<<<<<<< HEAD
 
 /* Inline icons to avoid lucide-react (avoids corrupted node_modules) */
 const MailIcon = ({ className }: { className?: string }) => (
@@ -54,9 +53,6 @@ const ArrowRightIcon = ({ className }: { className?: string }) => (
 		<path d="m12 5 7 7-7 7" />
 	</svg>
 );
-=======
-import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
->>>>>>> ae57b0cc5b729ee2123eaab64a017dcda14d493c
 
 type AllowedRole = 'SuperAdmin' | 'Admin' | 'FrontDesk' | 'ClinicalTeam';
 
@@ -283,7 +279,6 @@ export default function LoginPage() {
 							className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-sm font-semibold text-white shadow-xl shadow-blue-200 transition-all hover:bg-blue-700 hover:shadow-blue-300 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
 							disabled={loading}
 						>
-<<<<<<< HEAD
 							{loading ? (
 								<>
 									<LoaderIcon className="h-4 w-4 animate-spin" />
@@ -295,10 +290,6 @@ export default function LoginPage() {
 									<ArrowRightIcon className="h-4 w-4" />
 								</>
 							)}
-=======
-							Sign In to Dashboard
-							<ArrowRight className="h-4 w-4" />
->>>>>>> ae57b0cc5b729ee2123eaab64a017dcda14d493c
 						</button>
 					</form>
 				</div>
