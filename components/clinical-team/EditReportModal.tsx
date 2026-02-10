@@ -3373,7 +3373,10 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			setViewingVersionIsPsychology(true);
 			setViewingVersionIsStrengthConditioning(false);
 			setViewingVersionData(null);
-			setViewingPsychologyVersionData(null); // show loading until fetch returns; use version doc data only
+			// Show version list data immediately so report renders; getDoc will replace when it completes
+			const psychFallback = (version.data && typeof version.data === 'object') ? version.data : {};
+			setViewingPsychologyVersionData(psychFallback);
+			fetchedPsychologyDataByVersionIdRef.current[version.id] = psychFallback;
 			setActiveReportTab('psychology');
 			setShowVersionHistory(false);
 			const versionIdForFetch = version.id;
@@ -7255,7 +7258,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						<div className="bg-white rounded-lg shadow-xl max-w-6xl w-full h-[95vh] max-h-[95vh] flex flex-col overflow-hidden">
 							<div className="flex items-center justify-between p-6 border-b border-slate-200 flex-shrink-0 bg-white">
 							<h2 className="text-xl font-semibold text-slate-900">
-								{isSCReport ? 'Strength and Conditioning' : 'Physiotherapy'} Report - {reportPatientData.name} ({reportPatientData.patientId})
+								{viewingVersionIsPsychology ? 'Psychology' : isSCReport ? 'Strength and Conditioning' : 'Physiotherapy'} Report - {reportPatientData.name} ({reportPatientData.patientId})
 							</h2>
 							<button
 								type="button"
@@ -7282,6 +7285,50 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						<div className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-white">
 							<div className="space-y-6">
 								{(() => {
+									// Psychology: show content from viewingPsychologyVersionData (with fallback from version list)
+									if (viewingVersionIsPsychology) {
+										const psychDataForView = viewingPsychologyVersionData ?? fetchedPsychologyDataByVersionIdRef.current[viewingVersionId ?? ''];
+										if (!psychDataForView) {
+											return (
+												<div className="flex flex-col items-center justify-center py-16 text-slate-600">
+													<i className="fas fa-spinner fa-spin text-3xl mb-4" aria-hidden="true" />
+													<p>Loading report…</p>
+												</div>
+											);
+										}
+										return (
+											<div className="space-y-6">
+												<div className="mb-8 border-b border-slate-200 pb-6">
+													<h2 className="mb-4 text-xl font-bold text-indigo-600">Brain Training / Sports Psychology</h2>
+													<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Patient Name</label>
+															<div className="mt-1 text-sm text-slate-800">{reportPatientData.name || '—'}</div>
+														</div>
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Patient ID</label>
+															<div className="mt-1 text-sm text-slate-800">{reportPatientData.patientId || '—'}</div>
+														</div>
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Date of Birth</label>
+															<div className="mt-1 text-sm text-slate-800">{reportPatientData.dob || '—'}</div>
+														</div>
+													</div>
+												</div>
+												<PsychologyReport
+													patientData={reportPatientData}
+													formData={psychDataForView}
+													onChange={() => {}}
+													editable={false}
+													hasExistingVersions={true}
+													isViewingSavedVersion={true}
+													isEditingLoadedVersion={false}
+													sessionCompleted={false}
+													onSessionCompletedChange={() => {}}
+												/>
+											</div>
+										);
+									}
 									// Physio: wait for getDoc so Treatment/Follow-up show this version's data (not Report#1)
 									const hasFetchedForThisVersion = viewingVersionId && fetchedDataByVersionIdRef.current[viewingVersionId];
 									const physioLoading = viewingVersionId && !hasFetchedForThisVersion && !viewingVersionData && !viewingVersionIsStrengthConditioning;
@@ -8483,6 +8530,30 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							<button
 								type="button"
 								onClick={async () => {
+									// Psychology: use viewingPsychologyVersionData or fetched ref
+									if (viewingVersionIsPsychology) {
+										const psychData = viewingPsychologyVersionData ?? (viewingVersionId ? fetchedPsychologyDataByVersionIdRef.current[viewingVersionId] : null);
+										if (!psychData) return;
+										try {
+											await generatePsychologyPDF({
+												patient: {
+													name: reportPatientData.name,
+													patientId: reportPatientData.patientId,
+													dob: reportPatientData.dob || '',
+													gender: reportPatientData.gender || '',
+													phone: reportPatientData.phone || '',
+													email: reportPatientData.email || '',
+													totalSessionsRequired: reportPatientData.totalSessionsRequired,
+													remainingSessions: reportPatientData.remainingSessions,
+												},
+												formData: psychData as PsychologyReportPDFData['formData'],
+											});
+										} catch (err) {
+											console.error('Error downloading Psychology PDF:', err);
+											alert('Failed to download PDF. Please try again.');
+										}
+										return;
+									}
 									// Use fetched SC data by version id when available (same as modal content)
 									const dataForPDF = viewingVersionIsStrengthConditioning && viewingVersionId
 										? (fetchedSCDataByVersionIdRef.current[viewingVersionId] ?? viewingVersionData)
