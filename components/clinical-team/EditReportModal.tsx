@@ -6,7 +6,7 @@ import { collection, doc, query, where, getDocs, getDoc, onSnapshot, orderBy, up
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
-import { generatePhysiotherapyReportPDF, generateStrengthConditioningPDF, generatePsychologyPDF, type StrengthConditioningData, type PsychologyReportPDFData, type ReportSection } from '@/lib/pdfGenerator';
+import { generatePhysiotherapyReportPDF, generateStrengthConditioningPDF, generatePsychologyPDF, type StrengthConditioningData, type PsychologyReportPDFData, type ReportSection, type PatientReportData } from '@/lib/pdfGenerator';
 import type { PatientRecordFull } from '@/lib/types';
 import { recordSessionUsageForAppointment } from '@/lib/sessionAllowanceClient';
 import { createDYESBilling } from '@/lib/dyesBilling';
@@ -173,17 +173,17 @@ function removeUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
 
 const VERSION_DOC_METADATA_KEYS = new Set(['patientId', 'patientName', 'version', 'reportType', 'createdBy', 'createdById', 'createdAt', 'sessionNumber', 'restoredFrom']);
 
-/** Get report payload from a reportVersions doc: use reportData, or legacy top-level fields (e.g. Report #1) */
+/** Get report payload from a reportVersions doc: merge reportData with legacy top-level fields so all saved data is available for view. reportData wins on conflict. */
 function getReportDataFromVersionDoc(data: Record<string, unknown> | undefined): Record<string, unknown> {
 	if (!data) return {};
 	const fromReportData = (data.reportData as Record<string, unknown>) || {};
-	if (Object.keys(fromReportData).length >= 5) return fromReportData;
 	const topLevel: Record<string, unknown> = {};
 	for (const key of Object.keys(data)) {
 		if (VERSION_DOC_METADATA_KEYS.has(key)) continue;
 		topLevel[key] = data[key];
 	}
-	return Object.keys(topLevel).length > Object.keys(fromReportData).length ? { ...fromReportData, ...topLevel } : fromReportData;
+	// Always merge both: old docs may have only top-level fields; new docs have reportData. reportData overrides so version-specific treatment/followUp show correctly.
+	return { ...topLevel, ...fromReportData };
 }
 
 /** Normalize report data from Firestore: convert Timestamps to ISO strings, deep-clone so form gets plain values */
@@ -402,6 +402,128 @@ function getPersonalHistoryText(p: any): string {
 	return items.join(', ') || 'N/A';
 }
 
+/** Build full physio report payload for PDF from patient + version data (unified for both Download Report and Download PDF). */
+function buildPhysioReportPayloadForPDF(reportPatientData: Record<string, any>, versionData: Record<string, any>): PatientReportData {
+	const fd = { ...reportPatientData, ...versionData } as Record<string, unknown>;
+	const age = fd.dob ? new Date().getFullYear() - new Date(fd.dob as string).getFullYear() : undefined;
+	return {
+		patientName: (fd.name as string) || (fd.patientName as string) || '',
+		patientId: (fd.patientId as string) || '',
+		referredBy: (fd.assignedDoctor as string) || (fd.referredBy as string) || '',
+		age: age != null ? String(age) : '',
+		gender: (fd.gender as string) || '',
+		dob: (fd.dob as string) || '',
+		dateOfConsultation: (fd.dateOfConsultation as string) || new Date().toISOString().split('T')[0],
+		contact: (fd.phone as string) || '',
+		email: (fd.email as string) || '',
+		totalSessionsRequired: (fd.totalSessionsRequired as number) ?? 0,
+		remainingSessions: (fd.remainingSessions as number) ?? 0,
+		history: (fd.history as string) || (fd.presentHistory as string) || '',
+		historyOfPresentIllness: (fd.historyOfPresentIllness as string) || (fd.history as string) || '',
+		presentHistory: (fd.presentHistory as string) || '',
+		pastHistory: (fd.pastHistory as string) || '',
+		surgicalHistory: (fd.surgicalHistory as string) || '',
+		medicalHistory: getMedicalHistoryText(fd) || (fd.medicalHistory as string) || '',
+		pastMedicalHistory: (fd.pastMedicalHistory as string) || getMedicalHistoryText(fd) || '',
+		relevantHistory: (fd.relevantHistory as string) || '',
+		sleepCycle: (fd.sleepCycle as string) || '',
+		hydration: (fd.hydration as string) || '4',
+		nutrition: (fd.nutrition as string) || '',
+		chiefComplaint: (fd.chiefComplaint as string) || (fd.complaints as string) || '',
+		complaints: (fd.complaints as string) || '',
+		duration: (fd.duration as string) || '',
+		mechanismOfInjury: (fd.mechanismOfInjury as string) || '',
+		painType: (fd.painType as string) || (fd.typeOfPain as string) || '',
+		typeOfPain: (fd.typeOfPain as string) || '',
+		painLocation: (fd.painLocation as string) || (fd.siteSide as string) || '',
+		painIntensity: (fd.painIntensity as string) || (fd.vasScale as string) || '',
+		aggravatingFactor: (fd.aggravatingFactor as string) || '',
+		relievingFactor: (fd.relievingFactor as string) || '',
+		siteSide: (fd.siteSide as string) || '',
+		onset: (fd.onset as string) || '',
+		natureOfInjury: (fd.natureOfInjury as string) || '',
+		vasScale: (fd.vasScale as string) || '5',
+		rom: (fd.rom as Record<string, any>) || {},
+		mmt: (fd.mmt as Record<string, any>) || {},
+		built: (fd.built as string) || '',
+		posture: (fd.posture as string) || '',
+		postureManualNotes: (fd.postureManualNotes as string) || '',
+		postureFileName: (fd.postureFileName as string) || '',
+		gait: (fd.gait as string) || '',
+		gaitAnalysis: (fd.gaitAnalysis as string) || '',
+		gaitManualNotes: (fd.gaitManualNotes as string) || '',
+		gaitFileName: (fd.gaitFileName as string) || '',
+		mobilityAids: (fd.mobilityAids as string) || '',
+		localObservation: (fd.localObservation as string) || '',
+		localObservation1: (fd.localObservation1 as string) || (fd.localObservation as string) || '',
+		localObservation2: (fd.localObservation2 as string) || '',
+		localObservation3: (fd.localObservation3 as string) || '',
+		localObservation4: (fd.localObservation4 as string) || '',
+		swelling: (fd.swelling as string) || '',
+		muscleWasting: (fd.muscleWasting as string) || '',
+		tenderness: (fd.tenderness as string) || '',
+		tenderness1: (fd.tenderness1 as string) || (fd.tenderness as string) || '',
+		tenderness2: (fd.tenderness2 as string) || '',
+		warmth: (fd.warmth as string) || '',
+		temperature: (fd.temperature as string) || (fd.warmth as string) || '',
+		scar: (fd.scar as string) || '',
+		crepitus: (fd.crepitus as string) || '',
+		odema: (fd.odema as string) || '',
+		adimaEdema: (fd.adimaEdema as string) || (fd.odema as string) || '',
+		otherSignsOfInflammation: (fd.otherSignsOfInflammation as string) || '',
+		jointPlayMovement: (fd.jointPlayMovement as string) || '',
+		accessoryJointMovement: (fd.accessoryJointMovement as string) || '',
+		examinationAdditionalNotes: (fd.examinationAdditionalNotes as string) || '',
+		specialTest: (fd.specialTest as string) || '',
+		differentialDiagnosis: (fd.differentialDiagnosis as string) || (fd.clinicalDiagnosis as string) || '',
+		clinicalDiagnosis: (fd.clinicalDiagnosis as string) || '',
+		assessmentOfInvestigation: (fd.assessmentOfInvestigation as string) || '',
+		finalDiagnosis: (fd.finalDiagnosis as string) || '',
+		shortTermGoals: (fd.shortTermGoals as string) || '',
+		longTermGoals: (fd.longTermGoals as string) || '',
+		treatment: (fd.treatment as string) || (fd.treatmentProvided as string) || '',
+		treatmentProvided: (fd.treatmentProvided as string) || '',
+		advice: (fd.advice as string) || '',
+		homeAdvice: (fd.homeAdvice as string) || (fd.advice as string) || '',
+		patientEducationCondition: !!(fd.patientEducationCondition ?? fd.patientEducation_condition),
+		patientEducationGoals: !!(fd.patientEducationGoals ?? fd.patientEducation_goals),
+		patientEducationAdvantages: !!(fd.patientEducationAdvantages ?? fd.patientEducation_advantages),
+		patientEducationOthers: !!(fd.patientEducationOthers ?? fd.patientEducation_others),
+		patientEducationOthersText: (fd.patientEducationOthersText as string) || '',
+		shortTermGoalReducePain: !!(fd.shortTermGoalReducePain ?? fd.shortTermGoal_reducePain),
+		shortTermGoalImproveROM: !!(fd.shortTermGoalImproveROM ?? fd.shortTermGoal_improveROM),
+		shortTermGoalImproveStrength: !!(fd.shortTermGoalImproveStrength ?? fd.shortTermGoal_improveStrength),
+		shortTermGoalOthers: !!(fd.shortTermGoalOthers ?? fd.shortTermGoal_others),
+		shortTermGoalOthersText: (fd.shortTermGoalOthersText as string) || '',
+		treatmentCryotherapy: !!(fd.treatmentCryotherapy ?? fd.treatment_cryotherapy),
+		treatmentIFT: !!(fd.treatmentIFT ?? fd.treatment_IFT),
+		treatmentTENS: !!(fd.treatmentTENS ?? fd.treatment_TENS),
+		treatmentLaser: !!(fd.treatmentLaser ?? fd.treatment_laser),
+		treatmentSWT: !!(fd.treatmentSWT ?? fd.treatment_SWT),
+		treatmentHotTherapy: !!(fd.treatmentHotTherapy ?? fd.treatment_hotTherapy),
+		treatmentManualTherapy: !!(fd.treatmentManualTherapy ?? fd.treatment_manualTherapy),
+		treatmentSoftTissueManipulation: !!(fd.treatmentSoftTissueManipulation ?? fd.treatment_softTissueManipulation),
+		treatmentDryNeedling: !!(fd.treatmentDryNeedling ?? fd.treatment_dryNeedling),
+		treatmentCuppingTherapy: !!(fd.treatmentCuppingTherapy ?? fd.treatment_cuppingTherapy),
+		treatmentOthers: !!(fd.treatmentOthers ?? fd.treatment_others),
+		treatmentOthersText: (fd.treatmentOthersText as string) || '',
+		longTermGoalReducePain: !!(fd.longTermGoalReducePain ?? fd.longTermGoal_reducePain),
+		longTermGoalImproveROM: !!(fd.longTermGoalImproveROM ?? fd.longTermGoal_improveROM),
+		longTermGoalImproveStrength: !!(fd.longTermGoalImproveStrength ?? fd.longTermGoal_improveStrength),
+		longTermGoalImproveStability: !!(fd.longTermGoalImproveStability ?? fd.longTermGoal_improveStability),
+		longTermGoalRTP: !!(fd.longTermGoalRTP ?? fd.longTermGoal_rtp),
+		longTermGoalOthers: !!(fd.longTermGoalOthers ?? fd.longTermGoal_others),
+		longTermGoalOthersText: (fd.longTermGoalOthersText as string) || '',
+		rehabProtocol: (fd.rehabProtocol as string) || '',
+		nextFollowUpDate: (fd.nextFollowUpDate as string) || '',
+		nextFollowUpTime: (fd.nextFollowUpTime as string) || '',
+		followUpAssessment: (fd.followUpAssessment as string) || '',
+		followUpVisits: (fd.followUpVisits as any) || [],
+		physioName: (fd.physioName as string) || (fd.physioId as string) || '',
+		patientType: (fd.patientType as string) || '',
+	} as PatientReportData;
+}
+
 function renderRomView(romData: Record<string, any> | undefined) {
 	if (!romData || !Object.keys(romData).length) {
 		return <p className="text-sm italic text-slate-500">No ROM joints recorded.</p>;
@@ -590,6 +712,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	}>>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
 	const [viewingVersionData, setViewingVersionData] = useState<Partial<PatientRecordFull> | StrengthConditioningData | null>(null);
+	// Fetched data for the version we're viewing — set ONLY in getDoc callback; used for follow-up view so Treatment is never from another report
+	const [viewingVersionFetchedData, setViewingVersionFetchedData] = useState<Partial<PatientRecordFull> | null>(null);
 	const [viewingVersionId, setViewingVersionId] = useState<string | null>(null); // key for View Full Report modal to avoid stale data
 	const [viewingVersionIsStrengthConditioning, setViewingVersionIsStrengthConditioning] = useState(false);
 	const [viewingVersionIsPsychology, setViewingVersionIsPsychology] = useState(false);
@@ -597,6 +721,16 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const [psychologyFormDataKey, setPsychologyFormDataKey] = useState(0); // Key to force re-render when loading version data
 	const [isEditingLoadedPsychologyVersion, setIsEditingLoadedPsychologyVersion] = useState(false); // True when form was loaded from version via Edit
 	const isEditingLoadedPhysioVersionRef = useRef(false); // True when physio form was loaded from version via Edit (prevents listener from overwriting)
+	const viewingVersionIdRequestedRef = useRef<string | null>(null); // Version id we're loading for View Full Report (avoids stale getDoc overwriting with wrong version)
+	const viewingVersionForEditRef = useRef<typeof versionHistory[0] | null>(null); // Version object we're viewing — used by Edit so we always edit the correct report
+	const viewingVersionIdForEditRef = useRef<string | null>(null); // Version id when View Full Report was opened — single source of truth for which report to edit
+	const viewingVersionFetchedDataIdRef = useRef<string | null>(null); // Version id that viewingVersionFetchedData belongs to — avoid showing another report's data
+	// Fetched report data keyed by version id — single source for follow-up view so we never show another report's treatment
+	const fetchedDataByVersionIdRef = useRef<Record<string, Partial<PatientRecordFull>>>({});
+	// Strength & Conditioning: fetched version data by id so View Full Report shows correct report, not primary
+	const fetchedSCDataByVersionIdRef = useRef<Record<string, StrengthConditioningData>>({});
+	// Psychology: fetched version data by id so View Full Report shows correct report, not primary
+	const fetchedPsychologyDataByVersionIdRef = useRef<Record<string, any>>({});
 	const [isEditingLoadedPhysioVersion, setIsEditingLoadedPhysioVersion] = useState(false); // True when editing a loaded version → show full primary report form
 	const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 	const [hasPsychologyVersions, setHasPsychologyVersions] = useState(false);
@@ -2550,6 +2684,61 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				managementRemarks: formData.managementRemarks || '',
 				nextFollowUpDate: formData.nextFollowUpDate || '',
 				nextFollowUpTime: formData.nextFollowUpTime || '',
+				// Current primary report format fields (so View Full Report shows saved data)
+				historyOfPresentIllness: formData.historyOfPresentIllness || formData.history || '',
+				painLocation: formData.painLocation || formData.siteSide || '',
+				painType: formData.painType || formData.typeOfPain || '',
+				pastMedicalHistory: formData.pastMedicalHistory || '',
+				relevantHistory: formData.relevantHistory || '',
+				localObservation1: formData.localObservation1 || '',
+				localObservation2: formData.localObservation2 || '',
+				localObservation3: formData.localObservation3 || '',
+				localObservation4: formData.localObservation4 || '',
+				gait: formData.gait || formData.gaitAnalysis || '',
+				tenderness1: formData.tenderness1 || formData.tenderness || '',
+				tenderness2: formData.tenderness2 || '',
+				temperature: formData.temperature || formData.warmth || '',
+				adimaEdema: formData.adimaEdema || formData.odema || '',
+				otherSignsOfInflammation: formData.otherSignsOfInflammation || '',
+				jointPlayMovement: formData.jointPlayMovement || '',
+				accessoryJointMovement: formData.accessoryJointMovement || '',
+				examinationAdditionalNotes: formData.examinationAdditionalNotes || '',
+				assessmentOfInvestigation: formData.assessmentOfInvestigation || '',
+				investigationXray: formData.investigationXray || formData.med_xray || false,
+				investigationMRI: formData.investigationMRI || formData.med_mri || false,
+				investigationCTScan: formData.investigationCTScan || formData.med_ct || false,
+				investigationBlood: formData.investigationBlood || false,
+				investigationOthers: formData.investigationOthers || false,
+				patientEducationCondition: formData.patientEducationCondition || false,
+				patientEducationGoals: formData.patientEducationGoals || false,
+				patientEducationAdvantages: formData.patientEducationAdvantages || false,
+				patientEducationOthers: formData.patientEducationOthers || false,
+				patientEducationOthersText: formData.patientEducationOthersText || '',
+				shortTermGoalReducePain: formData.shortTermGoalReducePain || false,
+				shortTermGoalImproveROM: formData.shortTermGoalImproveROM || false,
+				shortTermGoalImproveStrength: formData.shortTermGoalImproveStrength || false,
+				shortTermGoalOthers: formData.shortTermGoalOthers || false,
+				shortTermGoalOthersText: formData.shortTermGoalOthersText || '',
+				treatmentCryotherapy: formData.treatmentCryotherapy || false,
+				treatmentIFT: formData.treatmentIFT || false,
+				treatmentTENS: formData.treatmentTENS || false,
+				treatmentLaser: formData.treatmentLaser || false,
+				treatmentSWT: formData.treatmentSWT || false,
+				treatmentHotTherapy: formData.treatmentHotTherapy || false,
+				treatmentManualTherapy: formData.treatmentManualTherapy || false,
+				treatmentSoftTissueManipulation: formData.treatmentSoftTissueManipulation || false,
+				treatmentDryNeedling: formData.treatmentDryNeedling || false,
+				treatmentCuppingTherapy: formData.treatmentCuppingTherapy || false,
+				treatmentOthers: formData.treatmentOthers || false,
+				treatmentOthersText: formData.treatmentOthersText || '',
+				longTermGoalReducePain: formData.longTermGoalReducePain || false,
+				longTermGoalImproveROM: formData.longTermGoalImproveROM || false,
+				longTermGoalImproveStrength: formData.longTermGoalImproveStrength || false,
+				longTermGoalImproveStability: formData.longTermGoalImproveStability || false,
+				longTermGoalRTP: formData.longTermGoalRTP || false,
+				longTermGoalOthers: formData.longTermGoalOthers || false,
+				longTermGoalOthersText: formData.longTermGoalOthersText || '',
+				homeAdvice: formData.homeAdvice || formData.advice || '',
 				sessionNumber: sessionNum, // Add session number to patient record
 				totalSessionsRequired:
 					typeof formData.totalSessionsRequired === 'number'
@@ -2600,6 +2789,10 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			const versionReportData = { ...reportData };
 			delete (versionReportData as Record<string, unknown>).updatedAt;
 			const currentReportData = versionReportData as Partial<PatientRecordFull>;
+			// For follow-up reports (version 2+), always force treatment/followUpAssessment from current form so View Full Report shows what the user entered, not primary report
+			currentReportData.treatment = formData.treatment ?? formData.treatmentProvided ?? '';
+			currentReportData.treatmentProvided = formData.treatmentProvided ?? formData.treatment ?? '';
+			currentReportData.followUpAssessment = formData.followUpAssessment ?? '';
 
 			const hasReportData = Object.values(currentReportData).some(val => 
 				val !== undefined && val !== null && val !== '' && 
@@ -3160,6 +3353,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 	const handleViewVersionHistory = async () => {
 		setShowVersionHistory(true);
 		setViewingVersionData(null);
+		setViewingVersionFetchedData(null);
 		await loadVersionHistory();
 	};
 
@@ -3170,43 +3364,97 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 
 	// View the clicked version (pass version object so the correct row is always used)
 	const handleViewFullReport = (version: typeof versionHistory[0]) => {
+		viewingVersionIdRequestedRef.current = version.id; // ignore stale getDoc responses for other versions
+		viewingVersionForEditRef.current = version; // so Edit always edits this report, not another
+		viewingVersionIdForEditRef.current = version.id; // single source of truth for Edit: always use this id to resolve version
 		const versionDataFromList = reportPatientData ? { ...reportPatientData, ...version.data } : version.data;
 		setViewingVersionId(version.id); // key modal so it remounts when version changes (avoids stale data)
 		if (version.isPsychology) {
 			setViewingVersionIsPsychology(true);
 			setViewingVersionIsStrengthConditioning(false);
 			setViewingVersionData(null);
-			const psychologyData = version.data && typeof version.data === 'object' && Object.keys(version.data).length > 0 ? version.data : {};
-			setViewingPsychologyVersionData(psychologyData);
+			setViewingPsychologyVersionData(null); // show loading until fetch returns; use version doc data only
 			setActiveReportTab('psychology');
 			setShowVersionHistory(false);
+			const versionIdForFetch = version.id;
+			getDoc(doc(db, 'psychologyReportVersions', versionIdForFetch))
+				.then((snap) => {
+					if (!snap.exists()) return;
+					if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
+					const data = (snap.data()?.reportData as Record<string, unknown>) || {};
+					fetchedPsychologyDataByVersionIdRef.current[versionIdForFetch] = data;
+					setViewingPsychologyVersionData(data);
+				})
+				.catch((err) => {
+					console.error('Failed to load psychology version for view:', err);
+					const fallback = version.data && typeof version.data === 'object' ? version.data : {};
+					setViewingPsychologyVersionData(fallback);
+				});
 		} else if (version.isStrengthConditioning) {
 			setViewingVersionIsStrengthConditioning(true);
 			setViewingVersionIsPsychology(false);
 			setViewingPsychologyVersionData(null);
-			setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
+			setViewingVersionData(null); // show loading until fetch returns; use version doc data only
 			setShowVersionHistory(false);
+			const versionIdForFetch = version.id;
+			getDoc(doc(db, 'strengthConditioningReportVersions', versionIdForFetch))
+				.then((snap) => {
+					if (!snap.exists()) return;
+					if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
+					const data = (snap.data()?.reportData as StrengthConditioningData) || {};
+					fetchedSCDataByVersionIdRef.current[versionIdForFetch] = data;
+					setViewingVersionData(data as Partial<PatientRecordFull>);
+				})
+				.catch((err) => {
+					console.error('Failed to load strength conditioning version for view:', err);
+					setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
+				});
 		} else {
-			// Physiotherapy: show list data first, then fetch full version doc so all saved fields are displayed
+			// Physiotherapy: do NOT use list data — only set viewingVersionData/viewingVersionFetchedData when getDoc returns
 			setViewingVersionIsStrengthConditioning(false);
 			setViewingVersionIsPsychology(false);
 			setViewingPsychologyVersionData(null);
-			setViewingVersionData(versionDataFromList as Partial<PatientRecordFull>);
+			setViewingVersionData(null);
+			setViewingVersionFetchedData(null);
+			viewingVersionFetchedDataIdRef.current = null;
+			delete fetchedDataByVersionIdRef.current[version.id]; // force re-fetch for this version
 			setShowVersionHistory(false);
 
-			getDoc(doc(db, 'reportVersions', version.id))
+			const versionIdForFetch = version.id;
+			const versionFirstFallback = reportPatientData
+				? { ...version.data, name: reportPatientData.name, patientId: reportPatientData.patientId, dob: reportPatientData.dob }
+				: version.data;
+				getDoc(doc(db, 'reportVersions', versionIdForFetch))
 				.then((versionSnap) => {
-					if (!versionSnap.exists()) return;
+					if (!versionSnap.exists()) {
+						setViewingVersionData(versionFirstFallback as Partial<PatientRecordFull>);
+						// Do NOT set viewingVersionFetchedData from list — would show Report#1's treatment for Report#2
+						viewingVersionFetchedDataIdRef.current = null;
+						return;
+					}
+					if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
 					const data = versionSnap.data() as Record<string, unknown> | undefined;
 					const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
 					const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
-					const merged = reportPatientData
-						? { ...reportPatientData, ...normalized }
-						: normalized;
+					// If version doc had very little report content, merge in list version.data so whatever was entered is shown
+					const hasEnoughReportFields = Object.keys(normalized).filter(k => !['name', 'patientId', 'dob'].includes(k)).length >= 3;
+					const source = hasEnoughReportFields ? normalized : { ...(version.data || {}), ...normalized };
+					const merged: Partial<PatientRecordFull> = {
+						...source,
+						name: reportPatientData?.name ?? (source.name as string),
+						patientId: reportPatientData?.patientId ?? (source.patientId as string),
+						dob: reportPatientData?.dob ?? (source.dob as string),
+					};
+					// Store by version id so follow-up view always reads the correct report's data
+					fetchedDataByVersionIdRef.current[versionIdForFetch] = merged;
+					viewingVersionFetchedDataIdRef.current = versionIdForFetch;
 					setViewingVersionData(merged);
+					setViewingVersionFetchedData(merged);
 				})
 				.catch((err) => {
 					console.error('Failed to load version for view:', err);
+					setViewingVersionData(versionFirstFallback as Partial<PatientRecordFull>);
+					viewingVersionFetchedDataIdRef.current = null;
 				});
 		}
 	};
@@ -3268,18 +3516,18 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 			return;
 		}
 
-		// Physiotherapy: fetch full version doc, normalize Firestore types, merge with patient data, then show full primary report form
+		// Physiotherapy: load form from the version doc (version.id). Report #2+ → show follow-up form only; Report #1 → show full primary form
 		setViewingVersionData(null);
-		setIsEditingLoadedPhysioVersion(true);
-		const versionDataFromList = reportPatientData
-			? { ...reportPatientData, ...version.data }
-			: (version.data as Partial<PatientRecordFull>);
-		setFormData(versionDataFromList as Partial<PatientRecordFull>);
+		setViewingVersionFetchedData(null);
+		// When editing Report #2+ show the follow-up assessment form only; when editing Report #1 show the full primary report form
+		setIsEditingLoadedPhysioVersion(version.version < 2);
+		// Set form to patient demographics only until fetch completes; never use version.data from list (can be wrong report)
+		setFormData(reportPatientData ? { ...reportPatientData } : {});
 		setActiveReportTab('report');
 		setShowVersionHistory(false);
 
-		// Fetch the version doc so we have the complete saved reportData and normalize Timestamps/nested objects for the form
-		getDoc(doc(db, 'reportVersions', version.id))
+		const versionIdToLoad = version.id;
+		getDoc(doc(db, 'reportVersions', versionIdToLoad))
 			.then((versionSnap) => {
 				if (!versionSnap.exists()) return;
 				const data = versionSnap.data() as Record<string, unknown> | undefined;
@@ -3287,12 +3535,15 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
 				const merged = reportPatientData
 					? { ...reportPatientData, ...normalized }
-					: normalized;
+					: { ...normalized };
+				// Form uses treatmentProvided; doc may have treatment only
+				if ((merged.treatmentProvided == null || merged.treatmentProvided === '') && merged.treatment)
+					merged.treatmentProvided = merged.treatment as string;
 				setFormData(merged);
 			})
 			.catch((err) => {
 				console.error('Failed to load version for edit:', err);
-				// Form already has versionDataFromList; only overwrite if fetch failed and user might have stale data
+				alert('Failed to load this report version. Please try again.');
 			});
 	};
 
@@ -6939,75 +7190,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 																				formData: versionData as StrengthConditioningData,
 																			});
 																		} else {
-																			// Generate regular Physiotherapy PDF
-																			const age = versionData.dob ? new Date().getFullYear() - new Date(versionData.dob).getFullYear() : undefined;
-																			const reportData = {
-																				patientName: versionData.name || reportPatientData.name,
-																				patientId: versionData.patientId || reportPatientData.patientId,
-																				referredBy: versionData.assignedDoctor || versionData.referredBy || '',
-																				age: age ? String(age) : '',
-																				gender: versionData.gender || reportPatientData.gender || '',
-																				dateOfConsultation: versionData.dateOfConsultation || new Date().toISOString().split('T')[0],
-																				contact: versionData.phone || reportPatientData.phone || '',
-																				email: versionData.email || reportPatientData.email || '',
-																				totalSessionsRequired: versionData.totalSessionsRequired,
-																				remainingSessions: versionData.remainingSessions,
-																				history: versionData.history || (versionData.presentHistory || '') + (versionData.pastHistory ? '\n' + versionData.pastHistory : ''),
-																				surgicalHistory: versionData.surgicalHistory || '',
-																				medicalHistory: getMedicalHistoryText(versionData),
-																				sleepCycle: versionData.sleepCycle || '',
-																				hydration: versionData.hydration || '4',
-																				nutrition: versionData.nutrition || '',
-																				chiefComplaint: versionData.chiefComplaint || versionData.complaints || '',
-																				onsetType: versionData.onsetType || '',
-																				duration: versionData.duration || '',
-																				mechanismOfInjury: versionData.mechanismOfInjury || '',
-																				painType: versionData.painType || versionData.typeOfPain || '',
-																				painIntensity: versionData.painIntensity || versionData.vasScale || '',
-																				aggravatingFactor: versionData.aggravatingFactor || '',
-																				relievingFactor: versionData.relievingFactor || '',
-																				siteSide: versionData.siteSide || '',
-																				onset: versionData.onset || '',
-																				natureOfInjury: versionData.natureOfInjury || '',
-																				typeOfPain: versionData.typeOfPain || '',
-																				vasScale: versionData.vasScale || '5',
-																				rom: versionData.rom || {},
-																				mmt: versionData.mmt || {},
-																				built: versionData.built || '',
-																				posture: versionData.posture || '',
-																				postureManualNotes: versionData.postureManualNotes || '',
-																				postureFileName: versionData.postureFileName || '',
-																				gaitAnalysis: versionData.gaitAnalysis || '',
-																				gaitManualNotes: versionData.gaitManualNotes || '',
-																				gaitFileName: versionData.gaitFileName || '',
-																				mobilityAids: versionData.mobilityAids || '',
-																				localObservation: versionData.localObservation || '',
-																				swelling: versionData.swelling || '',
-																				muscleWasting: versionData.muscleWasting || '',
-																				tenderness: versionData.tenderness || '',
-																				warmth: versionData.warmth || '',
-																				scar: versionData.scar || '',
-																				crepitus: versionData.crepitus || '',
-																				odema: versionData.odema || '',
-																				specialTest: versionData.specialTest || '',
-																				differentialDiagnosis: versionData.differentialDiagnosis || versionData.clinicalDiagnosis || '',
-																				finalDiagnosis: versionData.finalDiagnosis || '',
-																				shortTermGoals: versionData.shortTermGoals || '',
-																				longTermGoals: versionData.longTermGoals || '',
-																				treatment: versionData.treatment || versionData.treatmentProvided || '',
-																				treatmentProvided: versionData.treatmentProvided || '',
-																				advice: versionData.advice || '',
-																				nextFollowUpDate: versionData.nextFollowUpDate || '',
-																				nextFollowUpTime: versionData.nextFollowUpTime || '',
-																				followUpVisits: versionData.followUpVisits || [],
-																				currentPainStatus: versionData.currentPainStatus || '',
-																				currentRom: versionData.currentRom || '',
-																				currentStrength: versionData.currentStrength || '',
-																				currentFunctionalAbility: versionData.currentFunctionalAbility || '',
-																				complianceWithHEP: versionData.complianceWithHEP || '',
-																				physioName: versionData.physioName || '',
-																				patientType: versionData.patientType || '',
-																			};
+																			// Generate regular Physiotherapy PDF (same payload as View Full Report Download PDF)
+																			const reportData = buildPhysioReportPayloadForPDF(reportPatientData, versionData);
 																			await generatePhysiotherapyReportPDF(reportData);
 																		}
 																	} catch (error) {
@@ -7055,17 +7239,19 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 				document.body
 			)}
 
-			{/* View Full Report Modal - key by viewingVersionId so modal remounts when version changes (no stale data) */}
-			{viewingVersionData && reportPatientData && (() => {
-				// Check if this is a Strength and Conditioning report
-				const isSCReport = viewingVersionIsStrengthConditioning || 
-					'sports' in viewingVersionData || 
-					'trainingAge' in viewingVersionData || 
-					'competitionLevel' in viewingVersionData ||
-					'scRPEPlanned' in viewingVersionData;
-				
+			{/* View Full Report Modal - show when viewing a version (by id or data); physio waits for getDoc so data is correct */}
+			{(viewingVersionId || viewingVersionData) && reportPatientData && (() => {
+				// Check if this is a Strength and Conditioning report (viewingVersionData may be null while physio report is loading)
+				const isSCReport = viewingVersionIsStrengthConditioning ||
+					(viewingVersionData != null && (
+						'sports' in viewingVersionData ||
+						'trainingAge' in viewingVersionData ||
+						'competitionLevel' in viewingVersionData ||
+						'scRPEPlanned' in viewingVersionData
+					));
+
 				return (
-					<div key={viewingVersionId ?? 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionId(null); } }}>
+					<div key={viewingVersionId ?? 'view'} className="fixed inset-0 z-60 flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) { setViewingVersionData(null); setViewingVersionFetchedData(null); setViewingVersionId(null); setViewingVersionIsStrengthConditioning(false); setViewingVersionIsPsychology(false); viewingVersionIdRequestedRef.current = null; viewingVersionForEditRef.current = null; viewingVersionIdForEditRef.current = null; viewingVersionFetchedDataIdRef.current = null; fetchedDataByVersionIdRef.current = {}; fetchedSCDataByVersionIdRef.current = {}; fetchedPsychologyDataByVersionIdRef.current = {}; } }}>
 						<div className="bg-white rounded-lg shadow-xl max-w-6xl w-full h-[95vh] max-h-[95vh] flex flex-col overflow-hidden">
 							<div className="flex items-center justify-between p-6 border-b border-slate-200 flex-shrink-0 bg-white">
 							<h2 className="text-xl font-semibold text-slate-900">
@@ -7075,8 +7261,17 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								type="button"
 								onClick={() => {
 									setViewingVersionData(null);
+									setViewingVersionFetchedData(null);
 									setViewingVersionId(null);
 									setViewingVersionIsStrengthConditioning(false);
+									setViewingVersionIsPsychology(false);
+									viewingVersionIdRequestedRef.current = null;
+									viewingVersionForEditRef.current = null;
+									viewingVersionIdForEditRef.current = null;
+									viewingVersionFetchedDataIdRef.current = null;
+									fetchedDataByVersionIdRef.current = {};
+									fetchedSCDataByVersionIdRef.current = {};
+									fetchedPsychologyDataByVersionIdRef.current = {};
 								}}
 								className="text-slate-400 hover:text-slate-600 transition"
 								aria-label="Close"
@@ -7087,6 +7282,32 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 						<div className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-white">
 							<div className="space-y-6">
 								{(() => {
+									// Physio: wait for getDoc so Treatment/Follow-up show this version's data (not Report#1)
+									const hasFetchedForThisVersion = viewingVersionId && fetchedDataByVersionIdRef.current[viewingVersionId];
+									const physioLoading = viewingVersionId && !hasFetchedForThisVersion && !viewingVersionData && !viewingVersionIsStrengthConditioning;
+									if (physioLoading) {
+										return (
+											<div className="flex flex-col items-center justify-center py-16 text-slate-600">
+												<i className="fas fa-spinner fa-spin text-3xl mb-4" aria-hidden="true" />
+												<p>Loading report…</p>
+											</div>
+										);
+									}
+									// Strength & Conditioning: wait for getDoc so we show this version's data, not primary
+									if (viewingVersionIsStrengthConditioning && viewingVersionId && !fetchedSCDataByVersionIdRef.current[viewingVersionId] && !viewingVersionData) {
+										return (
+											<div className="flex flex-col items-center justify-center py-16 text-slate-600">
+												<i className="fas fa-spinner fa-spin text-3xl mb-4" aria-hidden="true" />
+												<p>Loading report…</p>
+											</div>
+										);
+									}
+									// Use fetched SC data by version id when available so we never show another report's data
+									const scDataForView = viewingVersionIsStrengthConditioning && viewingVersionId
+										? (fetchedSCDataByVersionIdRef.current[viewingVersionId] ?? viewingVersionData)
+										: viewingVersionData;
+									const dataForDisplay = isSCReport ? (scDataForView ?? viewingVersionData) : viewingVersionData;
+									if (!scDataForView && !viewingVersionFetchedData) return null;
 									if (isSCReport) {
 										return (
 											// Strength and Conditioning Report View
@@ -7115,67 +7336,67 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										</div>
 
 										{/* Assessment Date */}
-										{(viewingVersionData as any).assessmentDate && (
+										{(dataForDisplay as any).assessmentDate && (
 											<div>
 												<label className="block text-xs font-medium text-slate-500 mb-1">Assessment Date</label>
 												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-													{(viewingVersionData as any).assessmentDate}
+													{(dataForDisplay as any).assessmentDate}
 												</div>
 											</div>
 										)}
 
 										{/* Therapist Name */}
-										{(viewingVersionData as any).therapistName && (
+										{(dataForDisplay as any).therapistName && (
 											<div>
 												<label className="block text-xs font-medium text-slate-500 mb-1">Therapist Name</label>
 												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-													{(viewingVersionData as any).therapistName}
+													{(dataForDisplay as any).therapistName}
 												</div>
 											</div>
 										)}
 
 										{/* Athlete Profile */}
-										{((viewingVersionData as any).sports || (viewingVersionData as any).trainingAge || (viewingVersionData as any).competitionLevel || (viewingVersionData as any).injuryHistory || (viewingVersionData as any).dominantSide) && (
+										{((dataForDisplay as any).sports || (dataForDisplay as any).trainingAge || (dataForDisplay as any).competitionLevel || (dataForDisplay as any).injuryHistory || (dataForDisplay as any).dominantSide) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Athlete Profile</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-													{(viewingVersionData as any).sports && (
+													{(dataForDisplay as any).sports && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Sports</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sports}
+																{(dataForDisplay as any).sports}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).trainingAge && (
+													{(dataForDisplay as any).trainingAge && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Training Age (years)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).trainingAge}
+																{(dataForDisplay as any).trainingAge}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).competitionLevel && (
+													{(dataForDisplay as any).competitionLevel && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Competition Level</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).competitionLevel}
+																{(dataForDisplay as any).competitionLevel}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).injuryHistory && (
+													{(dataForDisplay as any).injuryHistory && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Injury History</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-																{(viewingVersionData as any).injuryHistory}
+																{(dataForDisplay as any).injuryHistory}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).dominantSide && (
+													{(dataForDisplay as any).dominantSide && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Dominant Side</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).dominantSide}
+																{(dataForDisplay as any).dominantSide}
 															</div>
 														</div>
 													)}
@@ -7184,24 +7405,24 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Periodization */}
-										{((viewingVersionData as any).seasonPhase || ((viewingVersionData as any).matchDates && Array.isArray((viewingVersionData as any).matchDates) && (viewingVersionData as any).matchDates.length > 0)) && (
+										{((dataForDisplay as any).seasonPhase || ((dataForDisplay as any).matchDates && Array.isArray((dataForDisplay as any).matchDates) && (dataForDisplay as any).matchDates.length > 0)) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Periodization</h3>
 												<div className="grid gap-4 sm:grid-cols-2">
-													{(viewingVersionData as any).seasonPhase && (
+													{(dataForDisplay as any).seasonPhase && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Season Phase</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).seasonPhase}
+																{(dataForDisplay as any).seasonPhase}
 															</div>
 														</div>
 													)}
-													{((viewingVersionData as any).matchDates && Array.isArray((viewingVersionData as any).matchDates) && (viewingVersionData as any).matchDates.length > 0) && (
+													{((dataForDisplay as any).matchDates && Array.isArray((dataForDisplay as any).matchDates) && (dataForDisplay as any).matchDates.length > 0) && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">List of Matches</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
 																<ul className="list-disc list-inside space-y-1">
-																	{(viewingVersionData as any).matchDates.map((date: string, idx: number) => (
+																	{(dataForDisplay as any).matchDates.map((date: string, idx: number) => (
 																		<li key={idx}>{date}</li>
 																	))}
 																</ul>
@@ -7213,39 +7434,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Skill Training */}
-										{((viewingVersionData as any).skillType || (viewingVersionData as any).skillDuration || (viewingVersionData as any).skillRPEPlanned || (viewingVersionData as any).skillPRPEPerceived) && (
+										{((dataForDisplay as any).skillType || (dataForDisplay as any).skillDuration || (dataForDisplay as any).skillRPEPlanned || (dataForDisplay as any).skillPRPEPerceived) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Skill Training</h3>
 												<div className="grid gap-4 sm:grid-cols-2">
-													{(viewingVersionData as any).skillType && (
+													{(dataForDisplay as any).skillType && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).skillType}
+																{(dataForDisplay as any).skillType}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).skillDuration && (
+													{(dataForDisplay as any).skillDuration && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Duration</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).skillDuration}
+																{(dataForDisplay as any).skillDuration}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).skillRPEPlanned && (
+													{(dataForDisplay as any).skillRPEPlanned && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">RPE Planned</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).skillRPEPlanned}
+																{(dataForDisplay as any).skillRPEPlanned}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).skillPRPEPerceived && (
+													{(dataForDisplay as any).skillPRPEPerceived && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">PRPE Perceived</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).skillPRPEPerceived}
+																{(dataForDisplay as any).skillPRPEPerceived}
 															</div>
 														</div>
 													)}
@@ -7254,39 +7475,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Strength & Conditioning */}
-										{((viewingVersionData as any).scType || (viewingVersionData as any).scDuration || (viewingVersionData as any).scRPEPlanned || (viewingVersionData as any).scPRPEPerceived) && (
+										{((dataForDisplay as any).scType || (dataForDisplay as any).scDuration || (dataForDisplay as any).scRPEPlanned || (dataForDisplay as any).scPRPEPerceived) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Strength & Conditioning</h3>
 												<div className="grid gap-4 sm:grid-cols-2">
-													{(viewingVersionData as any).scType && (
+													{(dataForDisplay as any).scType && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scType}
+																{(dataForDisplay as any).scType}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).scDuration && (
+													{(dataForDisplay as any).scDuration && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Duration</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scDuration}
+																{(dataForDisplay as any).scDuration}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).scRPEPlanned && (
+													{(dataForDisplay as any).scRPEPlanned && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">RPE Planned</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scRPEPlanned}
+																{(dataForDisplay as any).scRPEPlanned}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).scPRPEPerceived && (
+													{(dataForDisplay as any).scPRPEPerceived && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">PRPE Perceived</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scPRPEPerceived}
+																{(dataForDisplay as any).scPRPEPerceived}
 															</div>
 														</div>
 													)}
@@ -7295,17 +7516,17 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Total Duration and Daily Workload */}
-										{((viewingVersionData as any).skillDuration || (viewingVersionData as any).scDuration || (viewingVersionData as any).scRPEPlanned) && (() => {
-											const skillDur = typeof (viewingVersionData as any).skillDuration === 'number' 
-												? (viewingVersionData as any).skillDuration 
-												: parseFloat(String((viewingVersionData as any).skillDuration || 0)) || 0;
-											const scDur = typeof (viewingVersionData as any).scDuration === 'number' 
-												? (viewingVersionData as any).scDuration 
-												: parseFloat(String((viewingVersionData as any).scDuration || 0)) || 0;
+										{((dataForDisplay as any).skillDuration || (dataForDisplay as any).scDuration || (dataForDisplay as any).scRPEPlanned) && (() => {
+											const skillDur = typeof (dataForDisplay as any).skillDuration === 'number' 
+												? (dataForDisplay as any).skillDuration 
+												: parseFloat(String((dataForDisplay as any).skillDuration || 0)) || 0;
+											const scDur = typeof (dataForDisplay as any).scDuration === 'number' 
+												? (dataForDisplay as any).scDuration 
+												: parseFloat(String((dataForDisplay as any).scDuration || 0)) || 0;
 											const totalDuration = skillDur + scDur;
-											const rpe = typeof (viewingVersionData as any).scRPEPlanned === 'number' 
-												? (viewingVersionData as any).scRPEPlanned 
-												: parseFloat(String((viewingVersionData as any).scRPEPlanned || 0)) || 0;
+											const rpe = typeof (dataForDisplay as any).scRPEPlanned === 'number' 
+												? (dataForDisplay as any).scRPEPlanned 
+												: parseFloat(String((dataForDisplay as any).scRPEPlanned || 0)) || 0;
 											const dailyWorkload = totalDuration > 0 && rpe > 0 ? rpe * totalDuration : 0;
 											
 											return (
@@ -7332,7 +7553,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										})()}
 
 										{/* Exercise Log */}
-										{((viewingVersionData as any).exercises && Array.isArray((viewingVersionData as any).exercises) && (viewingVersionData as any).exercises.length > 0) && (
+										{((dataForDisplay as any).exercises && Array.isArray((dataForDisplay as any).exercises) && (dataForDisplay as any).exercises.length > 0) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Exercise Log</h3>
 												<div className="overflow-x-auto">
@@ -7349,7 +7570,7 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 															</tr>
 														</thead>
 														<tbody className="bg-white divide-y divide-slate-200">
-															{(viewingVersionData as any).exercises.map((exercise: any, idx: number) => (
+															{(dataForDisplay as any).exercises.map((exercise: any, idx: number) => (
 																<tr key={idx}>
 																	<td className="px-3 py-2 text-xs text-slate-700">{exercise.exerciseName || '—'}</td>
 																	<td className="px-3 py-2 text-xs text-slate-700">{exercise.sets || '—'}</td>
@@ -7367,47 +7588,47 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Wellness Score */}
-										{((viewingVersionData as any).sleepDuration || (viewingVersionData as any).sleepQuality || (viewingVersionData as any).stressLevel || (viewingVersionData as any).muscleSoreness || (viewingVersionData as any).moodState) && (
+										{((dataForDisplay as any).sleepDuration || (dataForDisplay as any).sleepQuality || (dataForDisplay as any).stressLevel || (dataForDisplay as any).muscleSoreness || (dataForDisplay as any).moodState) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Wellness Score</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-													{(viewingVersionData as any).sleepDuration && (
+													{(dataForDisplay as any).sleepDuration && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Sleep Duration (hours)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sleepDuration}
+																{(dataForDisplay as any).sleepDuration}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).sleepQuality && (
+													{(dataForDisplay as any).sleepQuality && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Sleep Quality (1-10)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sleepQuality}
+																{(dataForDisplay as any).sleepQuality}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).stressLevel && (
+													{(dataForDisplay as any).stressLevel && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Stress Level (1-10)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).stressLevel}
+																{(dataForDisplay as any).stressLevel}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).muscleSoreness && (
+													{(dataForDisplay as any).muscleSoreness && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Muscle Soreness (1-10)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).muscleSoreness}
+																{(dataForDisplay as any).muscleSoreness}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).moodState && (
+													{(dataForDisplay as any).moodState && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Mood State</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).moodState}
+																{(dataForDisplay as any).moodState}
 															</div>
 														</div>
 													)}
@@ -7416,39 +7637,39 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* ACWR */}
-										{((viewingVersionData as any).dailyWorkload || (viewingVersionData as any).acuteWorkload || (viewingVersionData as any).chronicWorkload || (viewingVersionData as any).acwrRatio) && (
+										{((dataForDisplay as any).dailyWorkload || (dataForDisplay as any).acuteWorkload || (dataForDisplay as any).chronicWorkload || (dataForDisplay as any).acwrRatio) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">ACWR (Acute:Chronic Workload Ratio)</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-													{(viewingVersionData as any).dailyWorkload && (
+													{(dataForDisplay as any).dailyWorkload && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Daily Workload (A.U.)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).dailyWorkload}
+																{(dataForDisplay as any).dailyWorkload}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).acuteWorkload && (
+													{(dataForDisplay as any).acuteWorkload && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Acute Workload (7 days)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).acuteWorkload}
+																{(dataForDisplay as any).acuteWorkload}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).chronicWorkload && (
+													{(dataForDisplay as any).chronicWorkload && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Chronic Workload (28 days avg)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).chronicWorkload}
+																{(dataForDisplay as any).chronicWorkload}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).acwrRatio && (
+													{(dataForDisplay as any).acwrRatio && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">ACWR Ratio</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).acwrRatio}
+																{(dataForDisplay as any).acwrRatio}
 															</div>
 														</div>
 													)}
@@ -7457,279 +7678,279 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Functional Movement Screen */}
-										{((viewingVersionData as any).scapularDyskinesiaTest || (viewingVersionData as any).upperLimbFlexibilityRight || (viewingVersionData as any).fmsScore) && (
+										{((dataForDisplay as any).scapularDyskinesiaTest || (dataForDisplay as any).upperLimbFlexibilityRight || (dataForDisplay as any).fmsScore) && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Functional Movement Screen</h3>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-													{(viewingVersionData as any).scapularDyskinesiaTest && (
+													{(dataForDisplay as any).scapularDyskinesiaTest && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Scapular Dyskinesia Test</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).scapularDyskinesiaTest}
+																{(dataForDisplay as any).scapularDyskinesiaTest}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).upperLimbFlexibilityRight && (
+													{(dataForDisplay as any).upperLimbFlexibilityRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Upper Limb Flexibility (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).upperLimbFlexibilityRight}
+																{(dataForDisplay as any).upperLimbFlexibilityRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).upperLimbFlexibilityLeft && (
+													{(dataForDisplay as any).upperLimbFlexibilityLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Upper Limb Flexibility (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).upperLimbFlexibilityLeft}
+																{(dataForDisplay as any).upperLimbFlexibilityLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).shoulderInternalRotationRight && (
+													{(dataForDisplay as any).shoulderInternalRotationRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Shoulder Internal Rotation (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).shoulderInternalRotationRight}
+																{(dataForDisplay as any).shoulderInternalRotationRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).shoulderInternalRotationLeft && (
+													{(dataForDisplay as any).shoulderInternalRotationLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Shoulder Internal Rotation (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).shoulderInternalRotationLeft}
+																{(dataForDisplay as any).shoulderInternalRotationLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).shoulderExternalRotationRight && (
+													{(dataForDisplay as any).shoulderExternalRotationRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Shoulder External Rotation (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).shoulderExternalRotationRight}
+																{(dataForDisplay as any).shoulderExternalRotationRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).shoulderExternalRotationLeft && (
+													{(dataForDisplay as any).shoulderExternalRotationLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Shoulder External Rotation (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).shoulderExternalRotationLeft}
+																{(dataForDisplay as any).shoulderExternalRotationLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).thoracicRotation && (
+													{(dataForDisplay as any).thoracicRotation && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Thoracic Rotation</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).thoracicRotation}
+																{(dataForDisplay as any).thoracicRotation}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).sitAndReachTest && (
+													{(dataForDisplay as any).sitAndReachTest && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Sit and Reach Test</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sitAndReachTest}
+																{(dataForDisplay as any).sitAndReachTest}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).singleLegSquatRight && (
+													{(dataForDisplay as any).singleLegSquatRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Single Leg Squat (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).singleLegSquatRight}
+																{(dataForDisplay as any).singleLegSquatRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).singleLegSquatLeft && (
+													{(dataForDisplay as any).singleLegSquatLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Single Leg Squat (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).singleLegSquatLeft}
+																{(dataForDisplay as any).singleLegSquatLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).weightBearingLungeTestRight && (
+													{(dataForDisplay as any).weightBearingLungeTestRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Weight Bearing Lunge Test (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).weightBearingLungeTestRight}
+																{(dataForDisplay as any).weightBearingLungeTestRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).weightBearingLungeTestLeft && (
+													{(dataForDisplay as any).weightBearingLungeTestLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Weight Bearing Lunge Test (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).weightBearingLungeTestLeft}
+																{(dataForDisplay as any).weightBearingLungeTestLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hamstringsFlexibilityRight && (
+													{(dataForDisplay as any).hamstringsFlexibilityRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hamstrings Flexibility (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hamstringsFlexibilityRight}
+																{(dataForDisplay as any).hamstringsFlexibilityRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hamstringsFlexibilityLeft && (
+													{(dataForDisplay as any).hamstringsFlexibilityLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hamstrings Flexibility (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hamstringsFlexibilityLeft}
+																{(dataForDisplay as any).hamstringsFlexibilityLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).quadricepsFlexibilityRight && (
+													{(dataForDisplay as any).quadricepsFlexibilityRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Quadriceps Flexibility (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).quadricepsFlexibilityRight}
+																{(dataForDisplay as any).quadricepsFlexibilityRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).quadricepsFlexibilityLeft && (
+													{(dataForDisplay as any).quadricepsFlexibilityLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Quadriceps Flexibility (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).quadricepsFlexibilityLeft}
+																{(dataForDisplay as any).quadricepsFlexibilityLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipExternalRotationRight && (
+													{(dataForDisplay as any).hipExternalRotationRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip External Rotation (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipExternalRotationRight}
+																{(dataForDisplay as any).hipExternalRotationRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipExternalRotationLeft && (
+													{(dataForDisplay as any).hipExternalRotationLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip External Rotation (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipExternalRotationLeft}
+																{(dataForDisplay as any).hipExternalRotationLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipInternalRotationRight && (
+													{(dataForDisplay as any).hipInternalRotationRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip Internal Rotation (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipInternalRotationRight}
+																{(dataForDisplay as any).hipInternalRotationRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipInternalRotationLeft && (
+													{(dataForDisplay as any).hipInternalRotationLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip Internal Rotation (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipInternalRotationLeft}
+																{(dataForDisplay as any).hipInternalRotationLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipExtensionRight && (
+													{(dataForDisplay as any).hipExtensionRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip Extension (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipExtensionRight}
+																{(dataForDisplay as any).hipExtensionRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).hipExtensionLeft && (
+													{(dataForDisplay as any).hipExtensionLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Hip Extension (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).hipExtensionLeft}
+																{(dataForDisplay as any).hipExtensionLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).activeSLRRight && (
+													{(dataForDisplay as any).activeSLRRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Active SLR (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).activeSLRRight}
+																{(dataForDisplay as any).activeSLRRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).activeSLRLeft && (
+													{(dataForDisplay as any).activeSLRLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Active SLR (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).activeSLRLeft}
+																{(dataForDisplay as any).activeSLRLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).pronePlank && (
+													{(dataForDisplay as any).pronePlank && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Prone Plank</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).pronePlank}
+																{(dataForDisplay as any).pronePlank}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).sidePlankRight && (
+													{(dataForDisplay as any).sidePlankRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Side Plank (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sidePlankRight}
+																{(dataForDisplay as any).sidePlankRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).sidePlankLeft && (
+													{(dataForDisplay as any).sidePlankLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Side Plank (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).sidePlankLeft}
+																{(dataForDisplay as any).sidePlankLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).storkStandingBalanceTestRight && (
+													{(dataForDisplay as any).storkStandingBalanceTestRight && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Stork Standing Balance Test (Right)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).storkStandingBalanceTestRight}
+																{(dataForDisplay as any).storkStandingBalanceTestRight}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).storkStandingBalanceTestLeft && (
+													{(dataForDisplay as any).storkStandingBalanceTestLeft && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Stork Standing Balance Test (Left)</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).storkStandingBalanceTestLeft}
+																{(dataForDisplay as any).storkStandingBalanceTestLeft}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).deepSquat && (
+													{(dataForDisplay as any).deepSquat && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Deep Squat</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).deepSquat}
+																{(dataForDisplay as any).deepSquat}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).pushup && (
+													{(dataForDisplay as any).pushup && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Push-up</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).pushup}
+																{(dataForDisplay as any).pushup}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).fmsScore && (
+													{(dataForDisplay as any).fmsScore && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">FMS Score</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).fmsScore}
+																{(dataForDisplay as any).fmsScore}
 															</div>
 														</div>
 													)}
-													{(viewingVersionData as any).totalFmsScore && (
+													{(dataForDisplay as any).totalFmsScore && (
 														<div>
 															<label className="block text-xs font-medium text-slate-500 mb-1">Total FMS Score</label>
 															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-																{(viewingVersionData as any).totalFmsScore}
+																{(dataForDisplay as any).totalFmsScore}
 															</div>
 														</div>
 													)}
@@ -7738,637 +7959,519 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										)}
 
 										{/* Summary */}
-										{(viewingVersionData as any).summary && (
+										{(dataForDisplay as any).summary && (
 											<div>
 												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Summary</h3>
 												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-													{(viewingVersionData as any).summary}
+													{(dataForDisplay as any).summary}
 												</div>
 											</div>
 										)}
 											</>
 										);
 									} else {
-										// Type assertion: we know this is a physiotherapy report in this branch
-										const physioData = viewingVersionData as Partial<PatientRecordFull>;
+										// Merge current patient with version so we show version value when present, else patient (handles legacy keys and missing keys)
+										const physioData = { ...(reportPatientData || {}), ...(viewingVersionData || {}) } as Partial<PatientRecordFull> & Record<string, unknown>;
+										const v = (x: any) => (x !== undefined && x !== null && x !== '') ? String(x) : '—';
+										// Get first non-empty value from merged data (version wins; supports legacy + new keys) so saved data always shows
+										const get = (...keys: string[]) => {
+											for (const k of keys) {
+												const val = physioData[k];
+												if (val !== undefined && val !== null && val !== '') return val;
+											}
+											return undefined;
+										};
+										const has = (...keys: string[]) => get(...keys) !== undefined;
+										// Format ROM/MMT cell values so nested objects (e.g. left/right) show as readable text, not [object Object]
+										const formatCell = (val: any): string => {
+											if (val == null || val === '') return '—';
+											if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+												return Object.entries(val).map(([k, v]) => `${k}: ${formatCell(v)}`).join('; ');
+											}
+											return String(val);
+										};
+										// Report #2 (follow-up): read only from ref keyed by viewingVersionId so we never show another report's treatment
+										const currentVersion = (versionHistory ?? []).find(vh => vh.id === viewingVersionId);
+										const isFollowUpReport = currentVersion != null && currentVersion.version >= 2;
+										if (isFollowUpReport) {
+											const viewOnly = (fetchedDataByVersionIdRef.current[viewingVersionId ?? ''] ?? {}) as Record<string, unknown>;
+											const followUpVal = viewOnly.followUpAssessment != null && String(viewOnly.followUpAssessment).trim() !== '' ? String(viewOnly.followUpAssessment) : '—';
+											const treatmentVal = (viewOnly.treatment ?? viewOnly.treatmentProvided) != null && String(viewOnly.treatment ?? viewOnly.treatmentProvided).trim() !== '' ? String(viewOnly.treatment ?? viewOnly.treatmentProvided) : '—';
+											const completionChecked = viewOnly.completionOfOneSession === true || viewOnly.completionOfOneSession === 'true';
+											return (
+												<>
+													<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
+														<strong>Follow-up report (Report #{currentVersion?.version ?? 2})</strong> — Follow-up Assessment · Treatment
+													</div>
+													{/* Follow-up Assessment — from this version only */}
+													<div className="mb-8 border-b border-slate-200 pb-6">
+														<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap min-h-[80px]">
+															{followUpVal}
+														</div>
+													</div>
+													{/* Treatment — from this version only */}
+													<div className="mb-8">
+														<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Treatment</h3>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap min-h-[80px]">
+															{treatmentVal}
+														</div>
+														{completionChecked && (
+															<div className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+																<i className="fas fa-check-circle text-sky-600" aria-hidden="true" />
+																<span>Completion of one session</span>
+															</div>
+														)}
+													</div>
+												</>
+											);
+										}
 										return (
 											<>
+											{/* Current Primary Report format - same structure as edit form */}
+											<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
+												<strong>Sections:</strong> Patient Information · Report Date · Assessment · 1–8 · Follow-up Assessment · Follow-Up Visits · Physiotherapist Signature — <em>scroll to view all</em>
+											</div>
 											{/* Patient Information */}
 											<div className="mb-8 border-b border-slate-200 pb-6">
 												<h2 className="mb-4 text-xl font-bold text-sky-600">Physiotherapy Report</h2>
 												<div className="mb-4 text-right text-sm text-slate-600">
-													<div>
-														<b>Clinic:</b> Centre For Sports Science, Kanteerava Stadium
-													</div>
-													<div>
-														<b>Report Date:</b> {physioData.dateOfConsultation || new Date().toLocaleDateString()}
-													</div>
+													<div><b>Clinic:</b> Centre For Sports Science, Kanteerava Stadium</div>
+													{has('dateOfConsultation') && <div><b>Report Date:</b> {String(get('dateOfConsultation'))}</div>}
 												</div>
 												<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+													{reportPatientData.name != null && reportPatientData.name !== '' && (
 													<div>
 														<label className="block text-xs font-medium text-slate-500">Patient Name</label>
-														<input
-															type="text"
-															value={reportPatientData.name || ''}
-															readOnly
-															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-														/>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{reportPatientData.name}</div>
 													</div>
+													)}
+													{has('patientType') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500">Type of Organization</label>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('patientType') ?? reportPatientData.patientType)}</div>
+													</div>
+													)}
+													{reportPatientData.patientId != null && reportPatientData.patientId !== '' && (
 													<div>
 														<label className="block text-xs font-medium text-slate-500">Patient ID</label>
-														<input
-															type="text"
-															value={reportPatientData.patientId || ''}
-															readOnly
-															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-														/>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{reportPatientData.patientId}</div>
 													</div>
+													)}
+													{reportPatientData.dob != null && reportPatientData.dob !== '' && (
 													<div>
 														<label className="block text-xs font-medium text-slate-500">Date of Birth</label>
-														<input
-															type="date"
-															value={reportPatientData.dob || ''}
-															readOnly
-															className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-														/>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{reportPatientData.dob}</div>
 													</div>
-												</div>
-											</div>
-
-											{/* Assessment Section - Read Only */}
-											<div className="space-y-6">
-												{physioData.dateOfConsultation && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Date of Consultation</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-												{physioData.dateOfConsultation}
-											</div>
-										</div>
-									)}
-
-									{physioData.chiefComplaint && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Chief Complaint</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.chiefComplaint}
-											</div>
-										</div>
-									)}
-
-									{(physioData.history || physioData.presentHistory || physioData.pastHistory) && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">History</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.history || (physioData.presentHistory || '') + (physioData.pastHistory ? '\n' + physioData.pastHistory : '')}
-											</div>
-										</div>
-									)}
-
-									{((physioData.med_xray || physioData.med_mri || physioData.med_report || physioData.med_ct) || physioData.surgicalHistory) && (
-										<div className="grid gap-4 sm:grid-cols-2">
-											{(physioData.med_xray || physioData.med_mri || physioData.med_report || physioData.med_ct) && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Medical History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{[
-															physioData.med_xray && 'X-RAYS',
-															physioData.med_mri && 'MRI',
-															physioData.med_report && 'Reports',
-															physioData.med_ct && 'CT Scans'
-														].filter(Boolean).join(', ') || '—'}
-													</div>
-												</div>
-											)}
-											{physioData.surgicalHistory && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Surgical History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-														{physioData.surgicalHistory}
-													</div>
-												</div>
-											)}
-										</div>
-									)}
-
-									{((physioData.per_smoking || physioData.per_drinking || physioData.per_alcohol || physioData.per_drugs) || physioData.sleepCycle || physioData.hydration || physioData.nutrition) && (
-										<div className="grid gap-4 sm:grid-cols-2">
-											{(physioData.per_smoking || physioData.per_drinking || physioData.per_alcohol || physioData.per_drugs) && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Personal History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{[
-															physioData.per_smoking && 'Smoking',
-															physioData.per_drinking && 'Drinking',
-															physioData.per_alcohol && 'Alcohol',
-															physioData.per_drugs && `Drugs${physioData.drugsText ? ` (${physioData.drugsText})` : ''}`
-														].filter(Boolean).join(', ') || '—'}
-													</div>
-												</div>
-											)}
-											{physioData.sleepCycle && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Sleep Cycle</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.sleepCycle}
-													</div>
-												</div>
-											)}
-											{physioData.hydration && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Hydration</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.hydration}/8 {HYDRATION_EMOJIS[Math.min(HYDRATION_EMOJIS.length - 1, Math.max(1, Number(physioData.hydration)) - 1)]}
-													</div>
-												</div>
-											)}
-											{physioData.nutrition && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Nutrition</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.nutrition}
-													</div>
-												</div>
-											)}
-										</div>
-									)}
-
-									{(physioData.siteSide || physioData.onset || physioData.duration || physioData.natureOfInjury || physioData.typeOfPain || physioData.aggravatingFactor || physioData.relievingFactor) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Pain Assessment</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.siteSide && (
+													)}
+													{(get('totalSessionsRequired') != null && get('totalSessionsRequired') !== '' || (reportPatientData.totalSessionsRequired != null && reportPatientData.totalSessionsRequired !== '')) && (
 													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Site and Side</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.siteSide}
-														</div>
+														<label className="block text-xs font-medium text-slate-500">Total Sessions Required</label>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('totalSessionsRequired') ?? reportPatientData.totalSessionsRequired)}</div>
 													</div>
-												)}
-												{physioData.onset && (
+													)}
+													{(get('remainingSessions') != null && get('remainingSessions') !== '' || (reportPatientData.remainingSessions != null && reportPatientData.remainingSessions !== '')) && (
 													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Onset</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.onset}
-														</div>
+														<label className="block text-xs font-medium text-slate-500">Remaining Sessions</label>
+														<div className="mt-1 text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('remainingSessions') ?? reportPatientData.remainingSessions)}</div>
 													</div>
-												)}
-												{physioData.duration && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Duration</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.duration}
-														</div>
-													</div>
-												)}
-												{physioData.natureOfInjury && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Nature of Injury</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.natureOfInjury}
-														</div>
-													</div>
-												)}
-												{physioData.aggravatingFactor && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Aggravating Factor</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.aggravatingFactor}
-														</div>
-													</div>
-												)}
-												{physioData.relievingFactor && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Relieving Factor</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.relievingFactor}
-														</div>
-													</div>
-												)}
+													)}
+												</div>
 											</div>
-										</div>
-									)}
 
-									{(physioData.differentialDiagnosis || physioData.clinicalDiagnosis) && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Differential Diagnosis</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.differentialDiagnosis || physioData.clinicalDiagnosis}
+											{has('dateOfConsultation') && (
+											<div className="mb-8 border-b border-slate-200 pb-4">
+												<h3 className="text-sm font-semibold text-sky-600 mb-2">Report Date</h3>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('dateOfConsultation'))}</div>
 											</div>
-										</div>
-									)}
+											)}
 
-									{physioData.vasScale && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">VAS Scale</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-												{physioData.vasScale} {VAS_EMOJIS[Math.min(VAS_EMOJIS.length - 1, Math.max(1, Number(physioData.vasScale)) - 1)]}
+											{(has('referredBy') || has('chiefComplaint', 'complaints')) && (
+											<div className="mb-8">
+												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Assessment</h3>
+												<div className="grid gap-4 sm:grid-cols-2">
+													{has('referredBy') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Referred by</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('referredBy'))}</div>
+													</div>
+													)}
+													{has('chiefComplaint', 'complaints') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Chief complaints</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('chiefComplaint', 'complaints'))}</div>
+													</div>
+													)}
+												</div>
 											</div>
-										</div>
-									)}
+											)}
 
-									{physioData.rom && Object.keys(physioData.rom).length > 0 && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-2">ROM (Range of Motion)</label>
-											<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
-												{Object.entries(physioData.rom).map(([joint, data]: [string, any]) => (
-													<div key={joint} className="mb-4 last:mb-0">
-														<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
-														{data && typeof data === 'object' && (
-															<div className="text-xs text-slate-700 space-y-1 ml-4">
-																{Object.entries(data).map(([motion, value]: [string, any]) => (
-																	<div key={motion}>
-																		<span className="font-medium">{motion}:</span> {String(value || '—')}
-																	</div>
-																))}
+											{(has('historyOfPresentIllness', 'history') || has('presentHistory') || has('pastHistory')) && (
+											<div className="mb-8">
+												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">1. Subjective Assessment</h3>
+												<label className="block text-xs font-medium text-slate-500 mb-1">History of Present Illness (HOPI)</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
+													{String(get('historyOfPresentIllness', 'history') || (get('presentHistory') ? (get('presentHistory') as string) + (get('pastHistory') ? '\n' + get('pastHistory') : '') : ''))}
+												</div>
+											</div>
+											)}
+
+											{(has('painLocation', 'siteSide') || has('painType', 'typeOfPain') || has('vasScale') || has('aggravatingFactor') || has('relievingFactor')) && (
+											<div className="mb-8">
+												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">2. Pain Assessment</h3>
+												<div className="space-y-4">
+													{has('painLocation', 'siteSide') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Pain Mapping System (Location)</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('painLocation', 'siteSide'))}</div>
+													</div>
+													)}
+													<div className="grid gap-4 sm:grid-cols-2">
+														{has('painType', 'typeOfPain') && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Type of Pain</label>
+															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('painType', 'typeOfPain'))}</div>
+														</div>
+														)}
+														{has('vasScale') && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">VAS Scale</label>
+															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+																{`${get('vasScale')} ${VAS_EMOJIS[Math.min(VAS_EMOJIS.length - 1, Math.max(0, Number(get('vasScale')) - 1))]}`}
 															</div>
+														</div>
+														)}
+														{has('aggravatingFactor') && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Aggravating Factors</label>
+															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('aggravatingFactor'))}</div>
+														</div>
+														)}
+														{has('relievingFactor') && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Relieving Factors</label>
+															<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('relievingFactor'))}</div>
+														</div>
 														)}
 													</div>
-												))}
+												</div>
 											</div>
-										</div>
-									)}
+											)}
 
-									{physioData.mmt && Object.keys(physioData.mmt).length > 0 && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-2">MMT (Manual Muscle Testing)</label>
-											<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
-												{Object.entries(physioData.mmt).map(([joint, data]: [string, any]) => (
-													<div key={joint} className="mb-4 last:mb-0">
-														<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
-														{data && typeof data === 'object' && (
-															<div className="text-xs text-slate-700 space-y-1 ml-4">
-																{Object.entries(data).map(([motion, value]: [string, any]) => (
-																	<div key={motion}>
-																		<span className="font-medium">{motion}:</span> {String(value || '—')}
-																	</div>
-																))}
-															</div>
-														)}
+											{(has('pastMedicalHistory') || has('surgicalHistory') || has('relevantHistory')) && (
+											<div className="mb-8">
+												<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">3. Medical History</h3>
+												<div className="space-y-4">
+													{has('pastMedicalHistory') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Past Medical History</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('pastMedicalHistory'))}</div>
 													</div>
-												))}
+													)}
+													{has('surgicalHistory') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Past Surgical History</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('surgicalHistory'))}</div>
+													</div>
+													)}
+													{has('relevantHistory') && (
+													<div>
+														<label className="block text-xs font-medium text-slate-500 mb-1">Relevant History</label>
+														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('relevantHistory'))}</div>
+													</div>
+													)}
+												</div>
 											</div>
-										</div>
-									)}
+											)}
 
-									{/* On Observation Section */}
-									{(physioData.built || physioData.posture || physioData.gaitAnalysis || physioData.mobilityAids) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">On Observation</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.built && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Built</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.built}
-														</div>
-													</div>
-												)}
-												{physioData.posture && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Posture</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.posture}
-														</div>
-													</div>
-												)}
-												{physioData.gaitAnalysis && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Gait Analysis</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.gaitAnalysis}
-														</div>
-													</div>
-												)}
-												{physioData.mobilityAids && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Mobility Aids</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.mobilityAids}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{/* On Palpation Section */}
-									{(physioData.localObservation || physioData.swelling || physioData.muscleWasting || physioData.tenderness || physioData.warmth || physioData.scar || physioData.crepitus || physioData.odema) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">On Palpation</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.localObservation && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Local Observation</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.localObservation}
-														</div>
-													</div>
-												)}
-												{physioData.swelling && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Swelling</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.swelling}
-														</div>
-													</div>
-												)}
-												{physioData.muscleWasting && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Muscle Wasting</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.muscleWasting}
-														</div>
-													</div>
-												)}
-												{physioData.tenderness && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Tenderness</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.tenderness}
-														</div>
-													</div>
-												)}
-												{physioData.warmth && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Warmth</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.warmth}
-														</div>
-													</div>
-												)}
-												{physioData.scar && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Scar</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.scar}
-														</div>
-													</div>
-												)}
-												{physioData.crepitus && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Crepitus</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.crepitus}
-														</div>
-													</div>
-												)}
-												{physioData.odema && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Oedema</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.odema}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{/* Advanced Assessment */}
-									{(physioData.specialTest || physioData.differentialDiagnosis || physioData.finalDiagnosis) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Advanced Assessment</h3>
-											<div className="space-y-4">
-												{physioData.specialTest && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Special Test</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.specialTest}
-														</div>
-													</div>
-												)}
-												{physioData.differentialDiagnosis && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Differential Diagnosis</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.differentialDiagnosis}
-														</div>
-													</div>
-												)}
-												{physioData.finalDiagnosis && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Final Diagnosis</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.finalDiagnosis}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{/* Treatment Plan & Management */}
-									<div>
-										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapy Management</h3>
+									{([1, 2, 3, 4].some(i => has(`localObservation${i}`) || (i === 1 && has('localObservation'))) || has('posture') || has('gait', 'gaitAnalysis')) && (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">4. Objective Assessment - Observation</h3>
 										<div className="space-y-4">
-												{physioData.shortTermGoals && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Short Term Goals</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.shortTermGoals}
-														</div>
-													</div>
+											{([1, 2, 3, 4].some(i => has(`localObservation${i}`) || (i === 1 && has('localObservation')))) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Local Observation (Area of Pain)</label>
+												<div className="space-y-2">
+													{[1, 2, 3, 4].map(i => {
+														const val = get(`localObservation${i}`) ?? (i === 1 ? get('localObservation') : undefined);
+														return val != null && String(val).trim() !== '' ? (
+															<div key={i} className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(val)}</div>
+														) : null;
+													})}
+												</div>
+											</div>
+											)}
+											<div className="grid gap-4 sm:grid-cols-2">
+												{has('posture') && (
+												<div>
+													<label className="block text-xs font-medium text-slate-500 mb-1">Posture</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('posture'))}</div>
+												</div>
 												)}
-												{physioData.longTermGoals && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Long Term Goals</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.longTermGoals}
-														</div>
-													</div>
+												{has('gait', 'gaitAnalysis') && (
+												<div>
+													<label className="block text-xs font-medium text-slate-500 mb-1">Gait</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('gait', 'gaitAnalysis'))}</div>
+												</div>
 												)}
-												{(physioData.treatment || physioData.treatmentProvided) && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Treatment</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.treatment || physioData.treatmentProvided}
-														</div>
-													</div>
-												)}
-												{physioData.treatmentPlan && Array.isArray(physioData.treatmentPlan) && physioData.treatmentPlan.length > 0 && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Treatment Plan</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															<ul className="list-disc list-inside space-y-1">
-																{physioData.treatmentPlan.map((item: any, index: number) => (
-																	<li key={index}>
-																		{typeof item === 'string' ? item : `${item.therapy || ''} - ${item.frequency || ''} - ${item.remarks || ''}`}
-																	</li>
-																))}
-															</ul>
-														</div>
-													</div>
-												)}
-												{physioData.progressNotes && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Progress Notes</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.progressNotes}
-														</div>
-													</div>
-												)}
-												{physioData.advice && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Advice</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{physioData.advice}
-														</div>
-													</div>
-												)}
-												{!physioData.shortTermGoals && !physioData.longTermGoals && !physioData.treatment && !physioData.treatmentProvided && (!physioData.treatmentPlan || (Array.isArray(physioData.treatmentPlan) && physioData.treatmentPlan.length === 0)) && !physioData.progressNotes && !physioData.advice && (
-													<div className="text-sm text-slate-500 italic py-4 text-center">
-														No management information available for this report.
-													</div>
-												)}
+											</div>
 										</div>
 									</div>
-
-									{/* Follow-up Assessment (after Physiotherapy Management) */}
-									{physioData.followUpAssessment && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.followUpAssessment}
-											</div>
-										</div>
 									)}
 
-									{/* Follow-Up Visits */}
-									{physioData.followUpVisits && Array.isArray(physioData.followUpVisits) && physioData.followUpVisits.length > 0 && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-Up Visits</h3>
-											<div className="overflow-x-auto">
-												<table className="min-w-full divide-y divide-slate-200 border border-slate-300">
-													<thead className="bg-slate-100">
-														<tr>
-															<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Visit #</th>
-															<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Date</th>
-															<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Pain Level</th>
-															<th className="px-3 py-2 text-left text-xs font-semibold text-slate-700">Findings</th>
-														</tr>
-													</thead>
-													<tbody className="bg-white divide-y divide-slate-200">
-														{physioData.followUpVisits.map((visit: any, index: number) => (
-															<tr key={index}>
-																<td className="px-3 py-2 text-xs text-slate-700">{index + 1}</td>
-																<td className="px-3 py-2 text-xs text-slate-700">{visit.visitDate || '—'}</td>
-																<td className="px-3 py-2 text-xs text-slate-700">{visit.painLevel || '—'}</td>
-																<td className="px-3 py-2 text-xs text-slate-700">{visit.findings || '—'}</td>
-															</tr>
-														))}
-													</tbody>
-												</table>
-											</div>
-										</div>
-									)}
-
-									{/* Current Status */}
-									{(physioData.currentPainStatus || physioData.currentRom || physioData.currentStrength || physioData.currentFunctionalAbility || physioData.complianceWithHEP) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Current Status</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.currentPainStatus && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Current Pain Status</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.currentPainStatus}
-														</div>
-													</div>
-												)}
-												{physioData.currentRom && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Current ROM</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.currentRom}
-														</div>
-													</div>
-												)}
-												{physioData.currentStrength && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Current Strength</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.currentStrength}
-														</div>
-													</div>
-												)}
-												{physioData.currentFunctionalAbility && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Current Functional Ability</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.currentFunctionalAbility}
-														</div>
-													</div>
-												)}
-												{physioData.complianceWithHEP && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Compliance with HEP</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.complianceWithHEP}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{physioData.recommendations && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Recommendations</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.recommendations}
-											</div>
-										</div>
-									)}
-
-									{physioData.managementRemarks && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Management Remarks</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{physioData.managementRemarks}
-											</div>
-										</div>
-									)}
-
-									{/* Physiotherapist Information */}
-									{physioData.physioName && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapist Information</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Physiotherapist Name</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{physioData.physioName}
-													</div>
+									{(has('tenderness1') || has('tenderness') || has('tenderness2') || has('temperature', 'warmth') || has('adimaEdema', 'odema') || has('otherSignsOfInflammation')) && (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">5. Objective Assessment - Palpation</h3>
+										<div className="space-y-4">
+											{(has('tenderness1') || has('tenderness') || has('tenderness2')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Tenderness</label>
+												<div className="space-y-2">
+													{((physioData as Record<string, unknown>).tenderness1 || physioData.tenderness) != null && String((physioData as Record<string, unknown>).tenderness1 || physioData.tenderness).trim() !== '' && (
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String((physioData as Record<string, unknown>).tenderness1 || physioData.tenderness)}</div>
+													)}
+													{has('tenderness2') && (
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('tenderness2'))}</div>
+													)}
 												</div>
 											</div>
+											)}
+											<div className="grid gap-4 sm:grid-cols-2">
+												{has('temperature', 'warmth') && (
+												<div>
+													<label className="block text-xs font-medium text-slate-500 mb-1">Temperature</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('temperature', 'warmth'))}</div>
+												</div>
+												)}
+												{has('adimaEdema', 'odema') && (
+												<div>
+													<label className="block text-xs font-medium text-slate-500 mb-1">ADIMA / Edema</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('adimaEdema', 'odema'))}</div>
+												</div>
+												)}
+												{has('otherSignsOfInflammation') && (
+												<div className="sm:col-span-2">
+													<label className="block text-xs font-medium text-slate-500 mb-1">Other Signs of Inflammation</label>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('otherSignsOfInflammation'))}</div>
+												</div>
+												)}
+											</div>
 										</div>
+									</div>
 									)}
 
-									{/* Next Follow-up (after Physiotherapist Information) */}
-									{(physioData.nextFollowUpDate || physioData.nextFollowUpTime) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Next Follow-up</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{physioData.nextFollowUpDate && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Date</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.nextFollowUpDate}
+									{(physioData.rom && Object.keys(physioData.rom).length > 0) || (physioData.mmt && Object.keys(physioData.mmt).length > 0) || has('jointPlayMovement') || has('accessoryJointMovement') || has('examinationAdditionalNotes') ? (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">6. On Examination</h3>
+										<div className="space-y-6">
+											{physioData.rom && Object.keys(physioData.rom).length > 0 && (
+											<div>
+												<h4 className="text-xs font-semibold text-slate-700 mb-2">i) Range of Motion Assessment</h4>
+												<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
+													{Object.entries(physioData.rom).map(([joint, data]: [string, any]) => (
+														<div key={joint} className="mb-4 last:mb-0">
+															<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
+															{data && typeof data === 'object' ? (
+																<div className="text-xs text-slate-700 space-y-1 ml-4">
+																	{Object.entries(data).map(([motion, value]: [string, any]) => (
+																		<div key={motion}><span className="font-medium">{motion}:</span> {formatCell(value)}</div>
+																	))}
+																</div>
+															) : <div className="text-sm text-slate-500 italic">No data</div>}
 														</div>
-													</div>
-												)}
-												{physioData.nextFollowUpTime && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Time</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{physioData.nextFollowUpTime}
+													))}
+												</div>
+											</div>
+											)}
+											{physioData.mmt && Object.keys(physioData.mmt).length > 0 && (
+											<div>
+												<h4 className="text-xs font-semibold text-slate-700 mb-2">ii) Manual Muscle Testing</h4>
+												<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
+													{Object.entries(physioData.mmt).map(([joint, data]: [string, any]) => (
+														<div key={joint} className="mb-4 last:mb-0">
+															<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
+															{data && typeof data === 'object' ? (
+																<div className="text-xs text-slate-700 space-y-1 ml-4">
+																	{Object.entries(data).map(([motion, value]: [string, any]) => (
+																		<div key={motion}><span className="font-medium">{motion}:</span> {formatCell(value)}</div>
+																	))}
+																</div>
+															) : <div className="text-sm text-slate-500 italic">No data</div>}
 														</div>
+													))}
+												</div>
+											</div>
+											)}
+											{has('jointPlayMovement') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Joint Play Movement</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('jointPlayMovement'))}</div>
+											</div>
+											)}
+											{has('accessoryJointMovement') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Accessory Joint Movement</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('accessoryJointMovement'))}</div>
+											</div>
+											)}
+											{has('examinationAdditionalNotes') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Additional Notes</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('examinationAdditionalNotes'))}</div>
+											</div>
+											)}
+										</div>
+									</div>
+									) : null}
+
+									{(() => {
+										const invList = [(physioData as Record<string, unknown>).investigationXray && 'X-ray', (physioData as Record<string, unknown>).investigationMRI && 'MRI', (physioData as Record<string, unknown>).investigationCTScan && 'CT-Scan', (physioData as Record<string, unknown>).investigationBlood && 'Blood', (physioData as Record<string, unknown>).investigationOthers && 'Others', physioData.med_xray && 'X-RAY', physioData.med_mri && 'MRI', physioData.med_ct && 'CT'].filter(Boolean);
+										const hasInv = invList.length > 0;
+										const hasDiagSection = has('specialTest') || (physioData.differentialDiagnosis != null && String(physioData.differentialDiagnosis).trim() !== '') || (physioData.clinicalDiagnosis != null && String(physioData.clinicalDiagnosis).trim() !== '') || hasInv || has('assessmentOfInvestigation') || (physioData.finalDiagnosis != null && String(physioData.finalDiagnosis).trim() !== '');
+										if (!hasDiagSection) return null;
+										return (
+									<div className="mb-8" key="diag">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">7. Diagnosis & Investigation</h3>
+										<div className="space-y-4">
+											{has('specialTest') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Special Tests</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('specialTest'))}</div>
+											</div>
+											)}
+											{((physioData.differentialDiagnosis != null && String(physioData.differentialDiagnosis).trim() !== '') || (physioData.clinicalDiagnosis != null && String(physioData.clinicalDiagnosis).trim() !== '')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Differential Diagnosis</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(physioData.differentialDiagnosis || physioData.clinicalDiagnosis)}</div>
+											</div>
+											)}
+											{hasInv && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Investigations</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{invList.join(', ')}</div>
+											</div>
+											)}
+											{has('assessmentOfInvestigation') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Assessment of Investigation</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('assessmentOfInvestigation'))}</div>
+											</div>
+											)}
+											{physioData.finalDiagnosis != null && String(physioData.finalDiagnosis).trim() !== '' && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Final Diagnosis</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(physioData.finalDiagnosis)}</div>
+											</div>
+											)}
+										</div>
+									</div>
+									);
+									})()}
+
+									{(() => {
+										const peArr = [get('patientEducationCondition') && 'Explained the condition', get('patientEducationGoals') && 'Explained goals', get('patientEducationAdvantages') && 'Explained advantages/complications', get('patientEducationOthers') && `Others: ${get('patientEducationOthersText') || ''}`].filter(Boolean);
+										const stArr = [get('shortTermGoalReducePain') && 'Reduce pain', get('shortTermGoalImproveROM') && 'Improve ROM', get('shortTermGoalImproveStrength') && 'Improve & Maintain Strength', get('shortTermGoalOthers') && `Others: ${get('shortTermGoalOthersText') || ''}`].filter(Boolean);
+										const tgArr = [get('treatmentCryotherapy') && 'Cryotherapy', get('treatmentIFT') && 'IFT', get('treatmentTENS') && 'TENS', get('treatmentLaser') && 'Laser', get('treatmentSWT') && 'SWT', get('treatmentHotTherapy') && 'Hot Therapy', get('treatmentManualTherapy') && 'Manual Therapy', get('treatmentSoftTissueManipulation') && 'Soft Tissue Manipulation', get('treatmentDryNeedling') && 'Dry Needling', get('treatmentCuppingTherapy') && 'Cupping', get('treatmentOthers') && `Others: ${get('treatmentOthersText') || ''}`].filter(Boolean);
+										const ltArr = [get('longTermGoalReducePain') && 'Reduce pain & Maintain pain-free movement', get('longTermGoalImproveROM') && 'Improve & Maintain ROM', get('longTermGoalImproveStrength') && 'Improve & Maintain Strength', get('longTermGoalImproveStability') && 'Improve stability', get('longTermGoalRTP') && 'RTP plan', get('longTermGoalOthers') && `Others: ${get('longTermGoalOthersText') || ''}`].filter(Boolean);
+										const hasMgmtSection = peArr.length > 0 || get('advice') || stArr.length > 0 || has('shortTermGoals') || tgArr.length > 0 || has('treatment', 'treatmentProvided') || ltArr.length > 0 || has('longTermGoals') || has('homeAdvice', 'advice');
+										if (!hasMgmtSection) return null;
+										return (
+									<div className="mb-8" key="mgmt">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">8. Physiotherapy Management</h3>
+										<div className="space-y-6">
+											{(peArr.length > 0 || get('advice')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Patient Education</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{peArr.length > 0 ? peArr.join('; ') : String(get('advice'))}</div>
+											</div>
+											)}
+											{(stArr.length > 0 || has('shortTermGoals')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Short Term Goals</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{stArr.length > 0 ? stArr.join('; ') : String(get('shortTermGoals'))}</div>
+											</div>
+											)}
+											{tgArr.length > 0 && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Treatment Given</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{tgArr.join(', ')}</div>
+											</div>
+											)}
+											{has('treatment', 'treatmentProvided') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Treatment</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('treatment', 'treatmentProvided'))}</div>
+											</div>
+											)}
+											{(ltArr.length > 0 || has('longTermGoals')) && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Long Term Goals</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{ltArr.length > 0 ? ltArr.join('; ') : String(get('longTermGoals'))}</div>
+											</div>
+											)}
+											{has('homeAdvice', 'advice') && (
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Home Advice</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('homeAdvice', 'advice'))}</div>
+											</div>
+											)}
+										</div>
+									</div>
+									);
+									})()}
+
+									{/* Follow-up Assessment (for follow-up visit reports e.g. Report #2+) */}
+									{has('followUpAssessment') && (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+										<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('followUpAssessment'))}</div>
+									</div>
+									)}
+
+									{/* Follow-Up Visits (for follow-up reports with visit history) */}
+									{Array.isArray(physioData.followUpVisits) && physioData.followUpVisits.length > 0 && (
+									<div className="mb-8">
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-Up Visits</h3>
+										<div className="space-y-4">
+											{physioData.followUpVisits.map((visit: { visitDate?: string; painLevel?: string; findings?: string }, idx: number) => (
+												<div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+													<div className="grid gap-3 sm:grid-cols-3 text-sm">
+														{visit.visitDate != null && visit.visitDate !== '' && (
+															<div>
+																<label className="block text-xs font-medium text-slate-500 mb-1">Visit Date</label>
+																<div className="text-slate-800">{String(visit.visitDate)}</div>
+															</div>
+														)}
+														{visit.painLevel != null && visit.painLevel !== '' && (
+															<div>
+																<label className="block text-xs font-medium text-slate-500 mb-1">Pain Level</label>
+																<div className="text-slate-800">{String(visit.painLevel)}</div>
+															</div>
+														)}
+														{visit.findings != null && visit.findings !== '' && (
+															<div className="sm:col-span-3">
+																<label className="block text-xs font-medium text-slate-500 mb-1">Findings</label>
+																<div className="text-slate-800 whitespace-pre-wrap">{String(visit.findings)}</div>
+															</div>
+														)}
 													</div>
-												)}
+												</div>
+											))}
+										</div>
+									</div>
+									)}
+
+									{has('physioName') && (
+									<div>
+										<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapist Signature</h3>
+										<div className="grid gap-4 sm:grid-cols-2">
+											<div>
+												<label className="block text-xs font-medium text-slate-500 mb-1">Physiotherapist Name</label>
+												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('physioName'))}</div>
 											</div>
 										</div>
+									</div>
 									)}
-											</div>
 										</>
 									) as React.ReactElement;
 									}
@@ -8380,17 +8483,24 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 							<button
 								type="button"
 								onClick={async () => {
+									// Use fetched SC data by version id when available (same as modal content)
+									const dataForPDF = viewingVersionIsStrengthConditioning && viewingVersionId
+										? (fetchedSCDataByVersionIdRef.current[viewingVersionId] ?? viewingVersionData)
+										: viewingVersionData;
+									if (!dataForPDF) return;
 									try {
-										const versionData = reportPatientData ? { ...reportPatientData, ...viewingVersionData } : viewingVersionData;
+										const versionData = reportPatientData ? { ...reportPatientData, ...dataForPDF } : dataForPDF;
 										
 										// Check if this is a Strength and Conditioning report
-										const isSCReport = viewingVersionIsStrengthConditioning || 
-											'sports' in viewingVersionData || 
-											'trainingAge' in viewingVersionData || 
-											'competitionLevel' in viewingVersionData ||
-											'scRPEPlanned' in viewingVersionData;
+										const isSCReportPdf = viewingVersionIsStrengthConditioning ||
+											(dataForPDF && (
+												'sports' in dataForPDF ||
+												'trainingAge' in dataForPDF ||
+												'competitionLevel' in dataForPDF ||
+												'scRPEPlanned' in dataForPDF
+											));
 										
-										if (isSCReport) {
+										if (isSCReportPdf) {
 											// Generate Strength and Conditioning PDF
 											await generateStrengthConditioningPDF({
 												patient: {
@@ -8406,78 +8516,9 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 												formData: versionData as StrengthConditioningData,
 											});
 										} else {
-											// Generate regular Physiotherapy PDF
-											const age = versionData.dob ? new Date().getFullYear() - new Date(versionData.dob).getFullYear() : undefined;
-											const reportData = {
-											patientName: versionData.name || reportPatientData.name,
-											patientId: versionData.patientId || reportPatientData.patientId,
-											referredBy: versionData.assignedDoctor || versionData.referredBy || '',
-											age: age ? String(age) : '',
-											gender: versionData.gender || reportPatientData.gender || '',
-											dateOfConsultation: versionData.dateOfConsultation || new Date().toISOString().split('T')[0],
-											contact: versionData.phone || reportPatientData.phone || '',
-											email: versionData.email || reportPatientData.email || '',
-											totalSessionsRequired: versionData.totalSessionsRequired,
-											remainingSessions: versionData.remainingSessions,
-											history: versionData.history || (versionData.presentHistory || '') + (versionData.pastHistory ? '\n' + versionData.pastHistory : ''),
-											surgicalHistory: versionData.surgicalHistory || '',
-											medicalHistory: getMedicalHistoryText(versionData),
-											sleepCycle: versionData.sleepCycle || '',
-											hydration: versionData.hydration || '4',
-											nutrition: versionData.nutrition || '',
-											chiefComplaint: versionData.chiefComplaint || versionData.complaints || '',
-											onsetType: versionData.onsetType || '',
-											duration: versionData.duration || '',
-											mechanismOfInjury: versionData.mechanismOfInjury || '',
-											painType: versionData.painType || versionData.typeOfPain || '',
-											painIntensity: versionData.painIntensity || versionData.vasScale || '',
-											aggravatingFactor: versionData.aggravatingFactor || '',
-											relievingFactor: versionData.relievingFactor || '',
-											siteSide: versionData.siteSide || '',
-											onset: versionData.onset || '',
-											natureOfInjury: versionData.natureOfInjury || '',
-											typeOfPain: versionData.typeOfPain || '',
-											vasScale: versionData.vasScale || '5',
-											rom: versionData.rom || {},
-											mmt: versionData.mmt || {},
-											built: versionData.built || '',
-											posture: versionData.posture || '',
-											postureManualNotes: versionData.postureManualNotes || '',
-											postureFileName: versionData.postureFileName || '',
-											gaitAnalysis: versionData.gaitAnalysis || '',
-											gaitManualNotes: versionData.gaitManualNotes || '',
-											gaitFileName: versionData.gaitFileName || '',
-											mobilityAids: versionData.mobilityAids || '',
-											localObservation: versionData.localObservation || '',
-											swelling: versionData.swelling || '',
-											muscleWasting: versionData.muscleWasting || '',
-											tenderness: versionData.tenderness || '',
-											warmth: versionData.warmth || '',
-											scar: versionData.scar || '',
-											crepitus: versionData.crepitus || '',
-											odema: versionData.odema || '',
-											specialTest: versionData.specialTest || '',
-											differentialDiagnosis: versionData.differentialDiagnosis || '',
-											clinicalDiagnosis: versionData.clinicalDiagnosis || '',
-											finalDiagnosis: versionData.finalDiagnosis || '',
-											shortTermGoals: versionData.shortTermGoals || '',
-											longTermGoals: versionData.longTermGoals || '',
-											rehabProtocol: versionData.rehabProtocol || '',
-											treatmentProvided: versionData.treatmentProvided || '',
-											advice: versionData.advice || '',
-											nextFollowUpDate: versionData.nextFollowUpDate || '',
-											nextFollowUpTime: versionData.nextFollowUpTime || '',
-											followUpVisits: versionData.followUpVisits || [],
-											currentPainStatus: versionData.currentPainStatus || '',
-											currentRom: versionData.currentRom || '',
-											currentStrength: versionData.currentStrength || '',
-											currentFunctionalAbility: versionData.currentFunctionalAbility || '',
-											complianceWithHEP: versionData.complianceWithHEP || '',
-											physioName: versionData.physioName || '',
-											physioRegNo: versionData.physioId || '',
-											patientType: versionData.patientType || '',
-										};
-										await generatePhysiotherapyReportPDF(reportData);
+											// Generate regular Physiotherapy PDF (same payload as Report Versions Download Report)
+											const reportData = buildPhysioReportPayloadForPDF(reportPatientData, versionData);
+											await generatePhysiotherapyReportPDF(reportData);
 										}
 									} catch (error) {
 										console.error('Error downloading PDF:', error);
@@ -8489,16 +8530,28 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								<i className="fas fa-download mr-2" aria-hidden="true" />
 								Download PDF
 							</button>
-							{!viewingVersionIsStrengthConditioning && (versionHistory ?? []).some(v => v.id === viewingVersionId) && (
+							{((!viewingVersionIsStrengthConditioning && !viewingVersionIsPsychology && (versionHistory ?? []).some(v => v.id === viewingVersionId)) || (viewingVersionIsStrengthConditioning && viewingVersionForEditRef.current) || (viewingVersionIsPsychology && viewingVersionForEditRef.current)) && (
 								<button
 									type="button"
 									onClick={() => {
-										const version = (versionHistory ?? []).find(v => v.id === viewingVersionId);
+										// Use the version we stored when opening View Full Report so we always edit that report (Report #2 → edit Report #2)
+										const versionIdToEdit = viewingVersionIdForEditRef.current ?? viewingVersionId;
+										const versionFromRef = viewingVersionForEditRef.current?.id === versionIdToEdit ? viewingVersionForEditRef.current : null;
+										const version = versionFromRef ?? (versionHistory ?? []).find(v => v.id === versionIdToEdit);
 										if (version) {
 											handleEditVersion(version);
 											setViewingVersionData(null);
+											setViewingVersionFetchedData(null);
 											setViewingVersionIsStrengthConditioning(false);
+											setViewingVersionIsPsychology(false);
 											setViewingVersionId(null);
+											viewingVersionIdRequestedRef.current = null;
+											viewingVersionForEditRef.current = null;
+											viewingVersionIdForEditRef.current = null;
+											viewingVersionFetchedDataIdRef.current = null;
+											fetchedDataByVersionIdRef.current = {};
+											fetchedSCDataByVersionIdRef.current = {};
+											fetchedPsychologyDataByVersionIdRef.current = {};
 										}
 									}}
 									className="inline-flex items-center rounded-lg border border-amber-600 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 transition hover:bg-amber-100 focus-visible:outline-none"
@@ -8511,8 +8564,17 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								type="button"
 								onClick={() => {
 									setViewingVersionData(null);
+									setViewingVersionFetchedData(null);
 									setViewingVersionIsStrengthConditioning(false);
+									setViewingVersionIsPsychology(false);
 									setViewingVersionId(null);
+									viewingVersionIdRequestedRef.current = null;
+									viewingVersionForEditRef.current = null;
+									viewingVersionIdForEditRef.current = null;
+									viewingVersionFetchedDataIdRef.current = null;
+									fetchedDataByVersionIdRef.current = {};
+									fetchedSCDataByVersionIdRef.current = {};
+									fetchedPsychologyDataByVersionIdRef.current = {};
 								}}
 								className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition"
 							>

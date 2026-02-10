@@ -29,7 +29,7 @@ export function getDefaultHeaderConfig(type: HeaderType): Partial<HeaderConfig> 
 	if (type === 'reportDYES') {
 		return {
 			mainTitle: 'CENTRE FOR SPORTS SCIENCE',
-			subtitle: 'PHYSIOTHERAPY CONSULTATION & FOLLOW-UP REPORT',
+			subtitle: 'PHYSIOTHERAPY CONSULTATION REPORT',
 			associationText: '(In association with Department of Youth Empowerment and Sports-Govt of Karnataka)',
 			govermentOrder: 'GOVT ORDER: YU SE KRIE/VI/68/2016-17',
 			contactInfo: '',
@@ -37,7 +37,7 @@ export function getDefaultHeaderConfig(type: HeaderType): Partial<HeaderConfig> 
 	} else if (type === 'reportNonDYES') {
 		return {
 			mainTitle: 'CENTRE FOR SPORTS SCIENCE',
-			subtitle: 'PHYSIOTHERAPY CONSULTATION & FOLLOW-UP REPORT',
+			subtitle: 'PHYSIOTHERAPY CONSULTATION REPORT',
 			contactInfo: 'Phone No: +91 9731128396 | Address: Sree Kanteerava Stadium Gate 8 and 10, Sampangiram Nagar, Bengaluru 560027',
 			associationText: '',
 			govermentOrder: '',

@@ -79,7 +79,7 @@ export default function HeaderManagement() {
 					setFormData(prev => ({
 						...prev,
 						mainTitle: 'CENTRE FOR SPORTS SCIENCE',
-						subtitle: 'PHYSIOTHERAPY CONSULTATION & FOLLOW-UP REPORT',
+						subtitle: 'PHYSIOTHERAPY CONSULTATION REPORT',
 						associationText: '(In association with Department of Youth Empowerment and Sports-Govt of Karnataka)',
 						govermentOrder: 'GOVT ORDER: YU SE KRIE/VI/68/2016-17',
 						contactInfo: '',
@@ -88,7 +88,7 @@ export default function HeaderManagement() {
 					setFormData(prev => ({
 						...prev,
 						mainTitle: 'CENTRE FOR SPORTS SCIENCE',
-						subtitle: 'PHYSIOTHERAPY CONSULTATION & FOLLOW-UP REPORT',
+						subtitle: 'PHYSIOTHERAPY CONSULTATION REPORT',
 						contactInfo: 'Phone No: +91 9731128396 | Address: Sree Kanteerava Stadium Gate 8 and 10, Sampangiram Nagar, Bengaluru 560027',
 						associationText: '',
 						govermentOrder: '',
@@ -355,7 +355,7 @@ export default function HeaderManagement() {
 									type="text"
 									value={formData.subtitle}
 									onChange={e => setFormData(prev => ({ ...prev, subtitle: e.target.value }))}
-									placeholder={activeType === 'billing' || activeType === 'invoice' ? 'e.g., Sports Business Solutions Pvt. Ltd.' : 'e.g., PHYSIOTHERAPY CONSULTATION & FOLLOW-UP REPORT'}
+									placeholder={activeType === 'billing' || activeType === 'invoice' ? 'e.g., Sports Business Solutions Pvt. Ltd.' : 'e.g., PHYSIOTHERAPY CONSULTATION REPORT'}
 									className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
 								/>
 							</div>

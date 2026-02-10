@@ -562,6 +562,7 @@ export default function EditReport() {
 	}>>([]);
 	const [loadingVersions, setLoadingVersions] = useState(false);
 	const [viewingVersion, setViewingVersion] = useState<typeof versionHistory[0] | null>(null);
+	const viewingVersionIdRequestedRef = useRef<string | null>(null); // Version id we're loading for View Full Report (avoids stale getDoc overwriting with wrong version)
 	const [showCrispReportModal, setShowCrispReportModal] = useState(false);
 	const [showAllPatients, setShowAllPatients] = useState(false);
 	const [selectedSections, setSelectedSections] = useState<ReportSection[]>([
@@ -2585,17 +2586,24 @@ export default function EditReport() {
 
 	// View the clicked version (pass version object so the correct row is always used)
 	const handleViewVersion = (version: typeof versionHistory[0]) => {
+		viewingVersionIdRequestedRef.current = version.id; // ignore stale getDoc responses for other versions
 		setViewingVersion(version);
 		setShowVersionHistory(false);
 		// Fetch full version doc so View Full Report displays all saved fields
-		getDoc(doc(db, 'reportVersions', version.id))
+		const versionIdForFetch = version.id;
+		getDoc(doc(db, 'reportVersions', versionIdForFetch))
 			.then((versionSnap) => {
 				if (!versionSnap.exists()) return;
+				// Only apply fetched data if this is still the version the user is viewing (avoids Report#2 opening with Report#1 data when getDoc order varies)
+				if (viewingVersionIdRequestedRef.current !== versionIdForFetch) return;
 				const data = versionSnap.data() as Record<string, unknown> | undefined;
 				const rawReportData = getReportDataFromVersionDoc(data) as Record<string, unknown>;
 				const normalized = normalizeReportDataFromFirestore(rawReportData) as Partial<PatientRecordFull>;
-				const merged = selectedPatient ? { ...selectedPatient, ...normalized } : normalized;
-				setViewingVersion((prev) => prev && prev.id === version.id ? { ...prev, data: merged } : prev);
+				// Use version data as source of truth for all report fields; only fill patient demographics from current patient
+				const merged: Partial<PatientRecordFull> = selectedPatient
+					? { ...normalized, name: selectedPatient.name ?? normalized.name, patientId: selectedPatient.patientId ?? normalized.patientId, dob: selectedPatient.dob ?? normalized.dob }
+					: normalized;
+				setViewingVersion((prev) => prev && prev.id === versionIdForFetch ? { ...prev, data: merged } : prev);
 			})
 			.catch((err) => console.error('Failed to load version for view:', err));
 	};
@@ -2604,6 +2612,7 @@ export default function EditReport() {
 	const handleEditVersion = (version: typeof versionHistory[0]) => {
 		setShowVersionHistory(false);
 		setViewingVersion(null);
+		viewingVersionIdRequestedRef.current = null;
 		const fromList = selectedPatient && version?.data
 			? { ...selectedPatient, ...version.data }
 			: (version?.data as Partial<PatientRecordFull>) || {};
@@ -2638,6 +2647,7 @@ export default function EditReport() {
 			await loadVersionHistory();
 			// Clear view modal so it doesn't show stale/deleted data
 			setViewingVersion(null);
+			viewingVersionIdRequestedRef.current = null;
 			
 			alert(`Report #${version.version} has been deleted successfully.`);
 		} catch (error) {
@@ -4191,27 +4201,37 @@ export default function EditReport() {
 		if (!selectedPatient) return null;
 		const age = selectedPatient.dob ? new Date().getFullYear() - new Date(selectedPatient.dob).getFullYear() : undefined;
 
+		const fd = formData as Record<string, unknown>;
 		return {
-			patientName: selectedPatient.name,
-			patientId: selectedPatient.patientId,
-			referredBy: selectedPatient.assignedDoctor || formData.referredBy || '',
+			patientName: selectedPatient.name ?? '',
+			patientId: selectedPatient.patientId ?? '',
+			referredBy: selectedPatient.assignedDoctor || (fd.referredBy as string) || '',
 			age: age ? String(age) : '',
 			gender: selectedPatient.gender || '',
-			dateOfConsultation: formData.dateOfConsultation || new Date().toISOString().split('T')[0],
+			dob: selectedPatient.dob ?? '',
+			dateOfConsultation: (fd.dateOfConsultation as string) || new Date().toISOString().split('T')[0],
 			contact: selectedPatient.phone || '',
 			email: selectedPatient.email || '',
 			totalSessionsRequired: formData.totalSessionsRequired ?? selectedPatient.totalSessionsRequired,
 			remainingSessions: formData.remainingSessions ?? selectedPatient.remainingSessions,
-			history: formData.history || '',
+			history: (fd.history as string) || '',
+			historyOfPresentIllness: (fd.historyOfPresentIllness as string) || (fd.history as string) || '',
+			presentHistory: (fd.presentHistory as string) || '',
+			pastHistory: (fd.pastHistory as string) || '',
 			surgicalHistory: formData.surgicalHistory || '',
 			medicalHistory: getMedicalHistoryText(selectedPatient),
+			pastMedicalHistory: (fd.pastMedicalHistory as string) || getMedicalHistoryText(selectedPatient) || '',
+			relevantHistory: (fd.relevantHistory as string) || '',
 			sleepCycle: formData.sleepCycle || '',
 			hydration: formData.hydration || '4',
 			nutrition: formData.nutrition || '',
-			chiefComplaint: formData.chiefComplaint || formData.complaints || '',
+			chiefComplaint: formData.chiefComplaint || (fd.complaints as string) || '',
+			complaints: (fd.complaints as string) || '',
 			duration: formData.duration || '',
 			mechanismOfInjury: formData.mechanismOfInjury || '',
-			painType: formData.painType || '',
+			painType: formData.painType || (fd.typeOfPain as string) || '',
+			typeOfPain: (fd.typeOfPain as string) || '',
+			painLocation: (fd.painLocation as string) || formData.siteSide || '',
 			painIntensity: formData.painIntensity || formData.vasScale || '',
 			aggravatingFactor: formData.aggravatingFactor || '',
 			relievingFactor: formData.relievingFactor || '',
@@ -4225,18 +4245,31 @@ export default function EditReport() {
 			posture: formData.posture || '',
 			postureManualNotes: formData.postureManualNotes || '',
 			postureFileName: formData.postureFileName || '',
+			gait: (fd.gait as string) || '',
 			gaitAnalysis: formData.gaitAnalysis || '',
 			gaitManualNotes: formData.gaitManualNotes || '',
 			gaitFileName: formData.gaitFileName || '',
 			mobilityAids: formData.mobilityAids || '',
 			localObservation: formData.localObservation || '',
+			localObservation1: (fd.localObservation1 as string) || formData.localObservation || '',
+			localObservation2: (fd.localObservation2 as string) || '',
+			localObservation3: (fd.localObservation3 as string) || '',
+			localObservation4: (fd.localObservation4 as string) || '',
 			swelling: formData.swelling || '',
 			muscleWasting: formData.muscleWasting || '',
 			tenderness: formData.tenderness || '',
+			tenderness1: (fd.tenderness1 as string) || formData.tenderness || '',
+			tenderness2: (fd.tenderness2 as string) || '',
 			warmth: formData.warmth || '',
+			temperature: (fd.temperature as string) || formData.warmth || '',
 			scar: formData.scar || '',
 			crepitus: formData.crepitus || '',
 			odema: formData.odema || '',
+			adimaEdema: (fd.adimaEdema as string) || formData.odema || '',
+			otherSignsOfInflammation: (fd.otherSignsOfInflammation as string) || '',
+			jointPlayMovement: (fd.jointPlayMovement as string) || '',
+			accessoryJointMovement: (fd.accessoryJointMovement as string) || '',
+			examinationAdditionalNotes: (fd.examinationAdditionalNotes as string) || '',
 			followUpVisits: formData.followUpVisits || [],
 			currentPainStatus: formData.currentPainStatus || '',
 			currentRom: formData.currentRom || '',
@@ -4244,11 +4277,54 @@ export default function EditReport() {
 			currentFunctionalAbility: formData.currentFunctionalAbility || '',
 			complianceWithHEP: formData.complianceWithHEP || '',
 			specialTest: formData.specialTest || '',
+			differentialDiagnosis: (fd.differentialDiagnosis as string) || (fd.clinicalDiagnosis as string) || '',
+			clinicalDiagnosis: (fd.clinicalDiagnosis as string) || '',
+			assessmentOfInvestigation: (fd.assessmentOfInvestigation as string) || '',
 			finalDiagnosis: formData.finalDiagnosis || '',
+			investigationXray: (fd.investigationXray as boolean) || (fd.med_xray as boolean) || false,
+			investigationMRI: (fd.investigationMRI as boolean) || (fd.med_mri as boolean) || false,
+			investigationCTScan: (fd.investigationCTScan as boolean) || false,
+			investigationBlood: (fd.investigationBlood as boolean) || false,
+			investigationOthers: (fd.investigationOthers as boolean) || false,
+			med_xray: formData.med_xray || false,
+			med_mri: formData.med_mri || false,
+			med_ct: formData.med_ct || false,
 			shortTermGoals: formData.shortTermGoals || '',
 			longTermGoals: formData.longTermGoals || '',
-			rehabProtocol: formData.rehabProtocol || '',
+			treatment: formData.treatment || formData.treatmentProvided || '',
+			treatmentProvided: formData.treatmentProvided || '',
 			advice: formData.advice || '',
+			homeAdvice: (fd.homeAdvice as string) || formData.advice || '',
+			patientEducationCondition: !!(fd.patientEducationCondition ?? fd.patientEducation_condition),
+			patientEducationGoals: !!(fd.patientEducationGoals ?? fd.patientEducation_goals),
+			patientEducationAdvantages: !!(fd.patientEducationAdvantages ?? fd.patientEducation_advantages),
+			patientEducationOthers: !!(fd.patientEducationOthers ?? fd.patientEducation_others),
+			patientEducationOthersText: (fd.patientEducationOthersText as string) || '',
+			shortTermGoalReducePain: !!(fd.shortTermGoalReducePain ?? fd.shortTermGoal_reducePain),
+			shortTermGoalImproveROM: !!(fd.shortTermGoalImproveROM ?? fd.shortTermGoal_improveROM),
+			shortTermGoalImproveStrength: !!(fd.shortTermGoalImproveStrength ?? fd.shortTermGoal_improveStrength),
+			shortTermGoalOthers: !!(fd.shortTermGoalOthers ?? fd.shortTermGoal_others),
+			shortTermGoalOthersText: (fd.shortTermGoalOthersText as string) || '',
+			treatmentCryotherapy: !!(fd.treatmentCryotherapy ?? fd.treatment_cryotherapy),
+			treatmentIFT: !!(fd.treatmentIFT ?? fd.treatment_IFT),
+			treatmentTENS: !!(fd.treatmentTENS ?? fd.treatment_TENS),
+			treatmentLaser: !!(fd.treatmentLaser ?? fd.treatment_laser),
+			treatmentSWT: !!(fd.treatmentSWT ?? fd.treatment_SWT),
+			treatmentHotTherapy: !!(fd.treatmentHotTherapy ?? fd.treatment_hotTherapy),
+			treatmentManualTherapy: !!(fd.treatmentManualTherapy ?? fd.treatment_manualTherapy),
+			treatmentSoftTissueManipulation: !!(fd.treatmentSoftTissueManipulation ?? fd.treatment_softTissueManipulation),
+			treatmentDryNeedling: !!(fd.treatmentDryNeedling ?? fd.treatment_dryNeedling),
+			treatmentCuppingTherapy: !!(fd.treatmentCuppingTherapy ?? fd.treatment_cuppingTherapy),
+			treatmentOthers: !!(fd.treatmentOthers ?? fd.treatment_others),
+			treatmentOthersText: (fd.treatmentOthersText as string) || '',
+			longTermGoalReducePain: !!(fd.longTermGoalReducePain ?? fd.longTermGoal_reducePain),
+			longTermGoalImproveROM: !!(fd.longTermGoalImproveROM ?? fd.longTermGoal_improveROM),
+			longTermGoalImproveStrength: !!(fd.longTermGoalImproveStrength ?? fd.longTermGoal_improveStrength),
+			longTermGoalImproveStability: !!(fd.longTermGoalImproveStability ?? fd.longTermGoal_improveStability),
+			longTermGoalRTP: !!(fd.longTermGoalRTP ?? fd.longTermGoal_rtp),
+			longTermGoalOthers: !!(fd.longTermGoalOthers ?? fd.longTermGoal_others),
+			longTermGoalOthersText: (fd.longTermGoalOthersText as string) || '',
+			rehabProtocol: formData.rehabProtocol || '',
 			managementRemarks: formData.managementRemarks || '',
 			nextFollowUpDate: formData.nextFollowUpDate || '',
 			nextFollowUpTime: formData.nextFollowUpTime || '',
@@ -5591,7 +5667,7 @@ export default function EditReport() {
 							</h2>
 							<button
 								type="button"
-								onClick={() => setViewingVersion(null)}
+								onClick={() => { setViewingVersion(null); viewingVersionIdRequestedRef.current = null; }}
 								className="text-slate-400 hover:text-slate-600 transition"
 								aria-label="Close"
 							>
@@ -5599,336 +5675,290 @@ export default function EditReport() {
 							</button>
 						</div>
 						<div className="flex-1 overflow-y-auto p-6">
-							<div className="section-card">
-								{/* Patient Information */}
+							<div className="section-card space-y-6">
+								{(() => {
+									// Merge current patient with version so we show version value when present, else patient (handles legacy keys and missing keys)
+									const d = { ...(selectedPatient || {}), ...(viewingVersion.data || {}) } as Partial<PatientRecordFull> & Record<string, unknown>;
+									const v = (x: any) => (x !== undefined && x !== null && x !== '') ? String(x) : '—';
+									const get = (...keys: string[]) => {
+										for (const k of keys) {
+											const val = d[k];
+											if (val !== undefined && val !== null && val !== '') return val;
+										}
+										return undefined;
+									};
+									const has = (...keys: string[]) => get(...keys) !== undefined;
+									const formatCell = (val: any): string => {
+										if (val == null || val === '') return '—';
+										if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+											return Object.entries(val).map(([k, v]) => `${k}: ${formatCell(v)}`).join('; ');
+										}
+										return String(val);
+									};
+									// Report #2 (follow-up): show only Follow-up Assessment and Treatment sections
+									const isFollowUpReport = viewingVersion.version >= 2;
+									if (isFollowUpReport) {
+										return (
+											<>
+												<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
+													<strong>Follow-up report (Report #{viewingVersion.version})</strong> — Follow-up Assessment · Treatment
+												</div>
+												<div className="mb-8 border-b border-slate-200 pb-6">
+													<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap min-h-[80px]">
+														{has('followUpAssessment') ? String(get('followUpAssessment')) : '—'}
+													</div>
+												</div>
+												<div className="mb-8">
+													<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Treatment</h3>
+													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap min-h-[80px]">
+														{has('treatment', 'treatmentProvided') ? String(get('treatment', 'treatmentProvided')) : '—'}
+													</div>
+													{(d.completionOfOneSession === true || d.completionOfOneSession === 'true') && (
+														<div className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+															<i className="fas fa-check-circle text-sky-600" aria-hidden="true" />
+															<span>Completion of one session</span>
+														</div>
+													)}
+												</div>
+											</>
+										);
+									}
+									return (
+										<>
+								<div className="mb-4 rounded-lg bg-slate-100 border border-slate-200 px-4 py-2 text-xs text-slate-600">
+									<strong>Sections:</strong> Patient Information · Report Date · Assessment · 1–8 · Follow-up Assessment · Follow-Up Visits · Physiotherapist Signature — <em>scroll down to view all</em>
+								</div>
+								{/* 1. Patient Information */}
 								<div className="mb-8 border-b border-slate-200 pb-6">
 									<h2 className="mb-4 text-xl font-bold text-sky-600">Physiotherapy Report</h2>
 									<div className="mb-4 text-right text-sm text-slate-600">
-										<div>
-											<b>Clinic:</b> Centre For Sports Science, Kanteerava Stadium
-										</div>
-										<div>
-											<b>Report Date:</b> {viewingVersion.data.dateOfConsultation || new Date(viewingVersion.createdAt).toLocaleDateString()}
-										</div>
-										<div>
-											<b>Saved:</b> {new Date(viewingVersion.createdAt).toLocaleString()} by {viewingVersion.createdBy}
-										</div>
+										<div><b>Clinic:</b> Centre For Sports Science, Kanteerava Stadium</div>
+										{has('dateOfConsultation') && <div><b>Report Date:</b> {String(get('dateOfConsultation'))}</div>}
+										<div><b>Saved:</b> {new Date(viewingVersion.createdAt).toLocaleString()} by {viewingVersion.createdBy}</div>
 									</div>
 									<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+										{selectedPatient.name != null && String(selectedPatient.name).trim() !== '' && (
 										<div>
 											<label className="block text-xs font-medium text-slate-500">Patient Name</label>
-											<input
-												type="text"
-												value={selectedPatient.name}
-												readOnly
-												className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-											/>
+											<input type="text" value={selectedPatient.name || ''} readOnly className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800" />
 										</div>
+										)}
+										{selectedPatient.patientId != null && String(selectedPatient.patientId).trim() !== '' && (
 										<div>
 											<label className="block text-xs font-medium text-slate-500">Patient ID</label>
-											<input
-												type="text"
-												value={selectedPatient.patientId}
-												readOnly
-												className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-											/>
+											<input type="text" value={selectedPatient.patientId || ''} readOnly className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800" />
 										</div>
+										)}
+										{selectedPatient.dob != null && String(selectedPatient.dob).trim() !== '' && (
 										<div>
 											<label className="block text-xs font-medium text-slate-500">Date of Birth</label>
-											<input
-												type="date"
-												value={selectedPatient.dob}
-												readOnly
-												className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
-											/>
+											<input type="date" value={selectedPatient.dob || ''} readOnly className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800" />
 										</div>
+										)}
 									</div>
 								</div>
 
-								{/* Assessment Section - Read Only */}
-								<div className="space-y-6">
-									{viewingVersion.data.dateOfConsultation && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Date of Consultation</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-												{viewingVersion.data.dateOfConsultation}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.complaints && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Complaints</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{viewingVersion.data.complaints}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.chiefComplaint && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Chief Complaint</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{viewingVersion.data.chiefComplaint}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.presentHistory && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Present History</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{viewingVersion.data.presentHistory}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.pastHistory && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Past History</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{viewingVersion.data.pastHistory}
-											</div>
-										</div>
-									)}
-
-									{((viewingVersion.data.med_xray || viewingVersion.data.med_mri || viewingVersion.data.med_report || viewingVersion.data.med_ct) || viewingVersion.data.surgicalHistory) && (
-										<div className="grid gap-4 sm:grid-cols-2">
-											{(viewingVersion.data.med_xray || viewingVersion.data.med_mri || viewingVersion.data.med_report || viewingVersion.data.med_ct) && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Medical History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{[
-															viewingVersion.data.med_xray && 'X-RAYS',
-															viewingVersion.data.med_mri && 'MRI',
-															viewingVersion.data.med_report && 'Reports',
-															viewingVersion.data.med_ct && 'CT Scans'
-														].filter(Boolean).join(', ') || '—'}
-													</div>
-												</div>
-											)}
-											{viewingVersion.data.surgicalHistory && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Surgical History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-														{viewingVersion.data.surgicalHistory}
-													</div>
-												</div>
-											)}
-										</div>
-									)}
-
-									{((viewingVersion.data.per_smoking || viewingVersion.data.per_drinking || viewingVersion.data.per_alcohol || viewingVersion.data.per_drugs) || viewingVersion.data.sleepCycle || viewingVersion.data.hydration || viewingVersion.data.nutrition) && (
-										<div className="grid gap-4 sm:grid-cols-2">
-											{(viewingVersion.data.per_smoking || viewingVersion.data.per_drinking || viewingVersion.data.per_alcohol || viewingVersion.data.per_drugs) && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Personal History</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{[
-															viewingVersion.data.per_smoking && 'Smoking',
-															viewingVersion.data.per_drinking && 'Drinking',
-															viewingVersion.data.per_alcohol && 'Alcohol',
-															viewingVersion.data.per_drugs && `Drugs${viewingVersion.data.drugsText ? ` (${viewingVersion.data.drugsText})` : ''}`
-														].filter(Boolean).join(', ') || '—'}
-													</div>
-												</div>
-											)}
-											{viewingVersion.data.sleepCycle && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Sleep Cycle</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{viewingVersion.data.sleepCycle}
-													</div>
-												</div>
-											)}
-											{viewingVersion.data.hydration && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Hydration</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{viewingVersion.data.hydration}/8 {HYDRATION_EMOJIS[Math.min(HYDRATION_EMOJIS.length - 1, Math.max(1, Number(viewingVersion.data.hydration)) - 1)]}
-													</div>
-												</div>
-											)}
-											{viewingVersion.data.nutrition && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Nutrition</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{viewingVersion.data.nutrition}
-													</div>
-												</div>
-											)}
-										</div>
-									)}
-
-									{(viewingVersion.data.siteSide || viewingVersion.data.onset || viewingVersion.data.duration || viewingVersion.data.natureOfInjury || viewingVersion.data.typeOfPain || viewingVersion.data.aggravatingFactor || viewingVersion.data.relievingFactor) && (
-										<div>
-											<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Pain Assessment</h3>
-											<div className="grid gap-4 sm:grid-cols-2">
-												{viewingVersion.data.siteSide && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Site and Side</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{viewingVersion.data.siteSide}
-														</div>
-													</div>
-												)}
-												{viewingVersion.data.onset && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Onset</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{viewingVersion.data.onset}
-														</div>
-													</div>
-												)}
-												{viewingVersion.data.duration && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Duration</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{viewingVersion.data.duration}
-														</div>
-													</div>
-												)}
-												{viewingVersion.data.natureOfInjury && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Nature of Injury</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{viewingVersion.data.natureOfInjury}
-														</div>
-													</div>
-												)}
-												{viewingVersion.data.typeOfPain && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Type of Pain</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-															{viewingVersion.data.typeOfPain}
-														</div>
-													</div>
-												)}
-												{viewingVersion.data.aggravatingFactor && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Aggravating Factor</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{viewingVersion.data.aggravatingFactor}
-														</div>
-													</div>
-												)}
-												{viewingVersion.data.relievingFactor && (
-													<div>
-														<label className="block text-xs font-medium text-slate-500 mb-1">Relieving Factor</label>
-														<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-															{viewingVersion.data.relievingFactor}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.clinicalDiagnosis && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Clinical Diagnosis</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{viewingVersion.data.clinicalDiagnosis}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.vasScale && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">VAS Scale</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-												{viewingVersion.data.vasScale} {VAS_EMOJIS[Math.min(VAS_EMOJIS.length - 1, Math.max(1, Number(viewingVersion.data.vasScale)) - 1)]}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.rom && Object.keys(viewingVersion.data.rom).length > 0 && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-2">ROM (Range of Motion)</label>
-											<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
-												{Object.entries(viewingVersion.data.rom).map(([joint, data]: [string, any]) => (
-													<div key={joint} className="mb-4 last:mb-0">
-														<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
-														{data && typeof data === 'object' && (
-															<div className="text-xs text-slate-700 space-y-1 ml-4">
-																{Object.entries(data).map(([motion, value]: [string, any]) => (
-																	<div key={motion}>
-																		<span className="font-medium">{motion}:</span> {String(value || '—')}
-																	</div>
-																))}
-															</div>
-														)}
-													</div>
-												))}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.mmt && Object.keys(viewingVersion.data.mmt).length > 0 && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-2">MMT (Manual Muscle Testing)</label>
-											<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
-												{Object.entries(viewingVersion.data.mmt).map(([joint, data]: [string, any]) => (
-													<div key={joint} className="mb-4 last:mb-0">
-														<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
-														{data && typeof data === 'object' && (
-															<div className="text-xs text-slate-700 space-y-1 ml-4">
-																{Object.entries(data).map(([motion, value]: [string, any]) => (
-																	<div key={motion}>
-																		<span className="font-medium">{motion}:</span> {String(value || '—')}
-																	</div>
-																))}
-															</div>
-														)}
-													</div>
-												))}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.recommendations && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Recommendations</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{viewingVersion.data.recommendations}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.physiotherapistRemarks && (
-										<div>
-											<label className="block text-xs font-medium text-slate-500 mb-1">Physiotherapist Remarks</label>
-											<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">
-												{viewingVersion.data.physiotherapistRemarks}
-											</div>
-										</div>
-									)}
-
-									{viewingVersion.data.nextFollowUpDate && (
-										<div className="grid gap-4 sm:grid-cols-2">
-											<div>
-												<label className="block text-xs font-medium text-slate-500 mb-1">Next Follow-up Date</label>
-												<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-													{viewingVersion.data.nextFollowUpDate}
-												</div>
-											</div>
-											{viewingVersion.data.nextFollowUpTime && (
-												<div>
-													<label className="block text-xs font-medium text-slate-500 mb-1">Next Follow-up Time</label>
-													<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
-														{viewingVersion.data.nextFollowUpTime}
-													</div>
-												</div>
-											)}
-										</div>
-									)}
+								{(has('referredBy') || has('chiefComplaint', 'complaints')) && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Assessment</h3>
+									<div className="grid gap-4 sm:grid-cols-2">
+										{has('referredBy') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Referred by</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('referredBy'))}</div></div>}
+										{has('chiefComplaint', 'complaints') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Chief complaints</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('chiefComplaint', 'complaints'))}</div></div>}
+									</div>
 								</div>
+								)}
+								{(has('historyOfPresentIllness', 'history') || get('presentHistory') || get('pastHistory')) && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">1. Subjective Assessment</h3>
+									<label className="block text-xs font-medium text-slate-500 mb-1">History of Present Illness (HOPI)</label>
+									<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('historyOfPresentIllness', 'history') || (get('presentHistory') ? String(get('presentHistory')) + (get('pastHistory') ? '\n' + get('pastHistory') : '') : ''))}</div>
+								</div>
+								)}
+
+								{(has('painLocation', 'siteSide') || has('painType', 'typeOfPain') || has('vasScale') || has('aggravatingFactor') || has('relievingFactor')) && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">2. Pain Assessment</h3>
+									<div className="space-y-4">
+										{has('painLocation', 'siteSide') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Pain Mapping System (Location)</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('painLocation', 'siteSide'))}</div></div>}
+										<div className="grid gap-4 sm:grid-cols-2">
+											{has('painType', 'typeOfPain') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Type of Pain</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('painType', 'typeOfPain'))}</div></div>}
+											{has('vasScale') && <div><label className="block text-xs font-medium text-slate-500 mb-1">VAS Scale</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{`${get('vasScale')} ${VAS_EMOJIS[Math.min(VAS_EMOJIS.length - 1, Math.max(0, Number(get('vasScale')) - 1))]}`}</div></div>}
+											{has('aggravatingFactor') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Aggravating Factors</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('aggravatingFactor'))}</div></div>}
+											{has('relievingFactor') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Relieving Factors</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('relievingFactor'))}</div></div>}
+										</div>
+									</div>
+								</div>
+								)}
+
+								{(has('pastMedicalHistory') || has('surgicalHistory') || has('relevantHistory')) && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">3. Medical History</h3>
+									<div className="space-y-4">
+										{has('pastMedicalHistory') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Past Medical History</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('pastMedicalHistory'))}</div></div>}
+										{has('surgicalHistory') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Past Surgical History</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('surgicalHistory'))}</div></div>}
+										{has('relevantHistory') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Relevant History</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('relevantHistory'))}</div></div>}
+									</div>
+								</div>
+								)}
+
+								{([1,2,3,4].some(i => has(`localObservation${i}`) || (i === 1 && has('localObservation'))) || has('posture') || has('gait', 'gaitAnalysis')) && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">4. Objective Assessment - Observation</h3>
+									<div className="space-y-4">
+										{([1,2,3,4].some(i => has(`localObservation${i}`) || (i === 1 && has('localObservation')))) && (
+										<div><label className="block text-xs font-medium text-slate-500 mb-1">Local Observation (Area of Pain)</label><div className="space-y-2">{[1,2,3,4].map(i => { const val = get(`localObservation${i}`) ?? (i === 1 ? get('localObservation') : undefined); return val != null && String(val).trim() !== '' ? <div key={i} className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(val)}</div> : null; })}</div></div>
+										)}
+										<div className="grid gap-4 sm:grid-cols-2">
+											{has('posture') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Posture</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('posture'))}</div></div>}
+											{has('gait', 'gaitAnalysis') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Gait</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('gait', 'gaitAnalysis'))}</div></div>}
+										</div>
+									</div>
+								</div>
+								)}
+
+								{(has('tenderness1', 'tenderness') || has('tenderness2') || has('temperature', 'warmth') || has('adimaEdema', 'odema') || has('otherSignsOfInflammation')) && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">5. Objective Assessment - Palpation</h3>
+									<div className="space-y-4">
+										{(has('tenderness1', 'tenderness') || has('tenderness2')) && (
+										<div><label className="block text-xs font-medium text-slate-500 mb-1">Tenderness</label><div className="space-y-2">
+											{has('tenderness1', 'tenderness') && <div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('tenderness1', 'tenderness'))}</div>}
+											{has('tenderness2') && <div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('tenderness2'))}</div>}
+										</div></div>
+										)}
+										<div className="grid gap-4 sm:grid-cols-2">
+											{has('temperature', 'warmth') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Temperature</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('temperature', 'warmth'))}</div></div>}
+											{has('adimaEdema', 'odema') && <div><label className="block text-xs font-medium text-slate-500 mb-1">ADIMA / Edema</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('adimaEdema', 'odema'))}</div></div>}
+											{has('otherSignsOfInflammation') && <div className="sm:col-span-2"><label className="block text-xs font-medium text-slate-500 mb-1">Other Signs of Inflammation</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('otherSignsOfInflammation'))}</div></div>}
+										</div>
+									</div>
+								</div>
+								)}
+
+								{((d.rom && typeof d.rom === 'object' && Object.keys(d.rom).length > 0) || (d.mmt && typeof d.mmt === 'object' && Object.keys(d.mmt).length > 0) || has('jointPlayMovement') || has('accessoryJointMovement') || has('examinationAdditionalNotes')) && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">6. On Examination</h3>
+									<div className="space-y-6">
+									{d.rom && typeof d.rom === 'object' && Object.keys(d.rom).length > 0 && (
+									<div>
+										<h4 className="text-xs font-semibold text-slate-700 mb-2">i) Range of Motion Assessment</h4>
+									<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
+										{Object.entries(d.rom).map(([joint, data]: [string, any]) => (
+											<div key={joint} className="mb-4 last:mb-0">
+												<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
+												{data && typeof data === 'object' ? <div className="text-xs text-slate-700 space-y-1 ml-4">{Object.entries(data).map(([motion, value]: [string, any]) => <div key={motion}><span className="font-medium">{motion}:</span> {formatCell(value)}</div>)}</div> : <div className="text-sm text-slate-500 italic">No data</div>}
+											</div>
+										))}
+									</div>
+									</div>
+									)}
+									{has('jointPlayMovement') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Joint Play Movement</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('jointPlayMovement'))}</div></div>}
+									{has('accessoryJointMovement') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Accessory Joint Movement</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('accessoryJointMovement'))}</div></div>}
+									{has('examinationAdditionalNotes') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Additional Notes</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('examinationAdditionalNotes'))}</div></div>}
+									{d.mmt && typeof d.mmt === 'object' && Object.keys(d.mmt).length > 0 && (
+									<div>
+										<h4 className="text-xs font-semibold text-slate-700 mb-2">ii) Manual Muscle Testing</h4>
+									<div className="bg-slate-50 border border-slate-200 rounded-md p-4">
+										{Object.entries(d.mmt).map(([joint, data]: [string, any]) => (
+											<div key={joint} className="mb-4 last:mb-0">
+												<h6 className="text-sm font-semibold text-sky-600 mb-2">{joint}</h6>
+												{data && typeof data === 'object' ? <div className="text-xs text-slate-700 space-y-1 ml-4">{Object.entries(data).map(([motion, value]: [string, any]) => <div key={motion}><span className="font-medium">{motion}:</span> {formatCell(value)}</div>)}</div> : <div className="text-sm text-slate-500 italic">No data</div>}
+											</div>
+										))}
+									</div>
+									</div>
+									)}
+									</div>
+								</div>
+								)}
+
+								{(has('specialTest') || has('differentialDiagnosis', 'clinicalDiagnosis') || has('assessmentOfInvestigation') || has('finalDiagnosis')) && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">7. Diagnosis & Investigation</h3>
+									<div className="space-y-4">
+										{has('specialTest') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Special Tests</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('specialTest'))}</div></div>}
+										{has('differentialDiagnosis', 'clinicalDiagnosis') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Differential Diagnosis</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('differentialDiagnosis', 'clinicalDiagnosis'))}</div></div>}
+										{has('assessmentOfInvestigation') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Assessment of Investigation</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('assessmentOfInvestigation'))}</div></div>}
+										{has('finalDiagnosis') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Final Diagnosis</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('finalDiagnosis'))}</div></div>}
+									</div>
+								</div>
+								)}
+
+								{(() => {
+									const stArr = [get('shortTermGoalReducePain') && 'Reduce pain', get('shortTermGoalImproveROM') && 'Improve ROM', get('shortTermGoalImproveStrength') && 'Improve & Maintain Strength', get('shortTermGoalOthers') && `Others: ${get('shortTermGoalOthersText') || ''}`].filter(Boolean);
+									const ltArr = [get('longTermGoalReducePain') && 'Reduce pain & Maintain pain-free movement', get('longTermGoalImproveROM') && 'Improve & Maintain ROM', get('longTermGoalImproveStrength') && 'Improve & Maintain Strength', get('longTermGoalImproveStability') && 'Improve stability', get('longTermGoalRTP') && 'RTP plan', get('longTermGoalOthers') && `Others: ${get('longTermGoalOthersText') || ''}`].filter(Boolean);
+									const hasMgmt = stArr.length > 0 || has('shortTermGoals') || has('treatment', 'treatmentProvided') || ltArr.length > 0 || has('longTermGoals') || has('homeAdvice', 'advice');
+									if (!hasMgmt) return null;
+									return (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">8. Physiotherapy Management</h3>
+									<div className="space-y-6">
+										{(stArr.length > 0 || has('shortTermGoals')) && <div><label className="block text-xs font-medium text-slate-500 mb-1">Short Term Goals</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{stArr.length > 0 ? stArr.join('; ') : String(get('shortTermGoals'))}</div></div>}
+										{has('treatment', 'treatmentProvided') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Treatment</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('treatment', 'treatmentProvided'))}</div></div>}
+										{(ltArr.length > 0 || has('longTermGoals')) && <div><label className="block text-xs font-medium text-slate-500 mb-1">Long Term Goals</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{ltArr.length > 0 ? ltArr.join('; ') : String(get('longTermGoals'))}</div></div>}
+										{has('homeAdvice', 'advice') && <div><label className="block text-xs font-medium text-slate-500 mb-1">Home Advice</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('homeAdvice', 'advice'))}</div></div>}
+									</div>
+								</div>
+									);
+								})()}
+
+								{/* Follow-up Assessment (for follow-up visit reports e.g. Report #2+) */}
+								{has('followUpAssessment') && (
+								<div className="mb-8">
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-up Assessment</h3>
+									<div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 whitespace-pre-wrap">{String(get('followUpAssessment'))}</div>
+								</div>
+								)}
+
+								{/* Follow-Up Visits (for follow-up reports with visit history) */}
+								{Array.isArray(d.followUpVisits) && d.followUpVisits.length > 0 && (
+								<div className="mb-8">
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Follow-Up Visits</h3>
+									<div className="space-y-4">
+										{(d.followUpVisits as Array<{ visitDate?: string; painLevel?: string; findings?: string }>).map((visit, idx) => (
+											<div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+												<div className="grid gap-3 sm:grid-cols-3 text-sm">
+													{visit.visitDate != null && visit.visitDate !== '' && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Visit Date</label>
+															<div className="text-slate-800">{String(visit.visitDate)}</div>
+														</div>
+													)}
+													{visit.painLevel != null && visit.painLevel !== '' && (
+														<div>
+															<label className="block text-xs font-medium text-slate-500 mb-1">Pain Level</label>
+															<div className="text-slate-800">{String(visit.painLevel)}</div>
+														</div>
+													)}
+													{visit.findings != null && visit.findings !== '' && (
+														<div className="sm:col-span-3">
+															<label className="block text-xs font-medium text-slate-500 mb-1">Findings</label>
+															<div className="text-slate-800 whitespace-pre-wrap">{String(visit.findings)}</div>
+														</div>
+													)}
+												</div>
+											</div>
+										))}
+									</div>
+								</div>
+								)}
+
+								{has('physioName') && (
+								<div>
+									<h3 className="text-sm font-semibold text-sky-600 mb-3 border-b border-sky-200 pb-2">Physiotherapist Signature</h3>
+									<div className="grid gap-4 sm:grid-cols-2"><div><label className="block text-xs font-medium text-slate-500 mb-1">Physiotherapist Name</label><div className="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{String(get('physioName'))}</div></div></div>
+								</div>
+								)}
+										</>
+									);
+								})()}
 							</div>
 						</div>
 						<div className="flex items-center justify-end p-6 border-t border-slate-200">
 							<button
 								type="button"
-								onClick={() => setViewingVersion(null)}
+								onClick={() => { setViewingVersion(null); viewingVersionIdRequestedRef.current = null; }}
 								className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition"
 							>
 								Close
