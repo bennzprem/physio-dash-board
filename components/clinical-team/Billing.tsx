@@ -15,6 +15,7 @@ import {
 	serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { parseAndCapTotalSessions } from '@/lib/constants';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
 
@@ -91,7 +92,7 @@ export default function Billing() {
 							assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
 							patientType: data.patientType ? String(data.patientType) : undefined,
 							packageAmount: data.packageAmount ? Number(data.packageAmount) : undefined,
-							totalSessionsRequired: data.totalSessionsRequired ? Number(data.totalSessionsRequired) : undefined,
+							totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						} as PatientRecord & { packageAmount?: number; totalSessionsRequired?: number };
 					})
 					.filter(patient => normalize(patient.assignedDoctor) === clinicianName);

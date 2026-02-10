@@ -9,6 +9,7 @@ import {
 	type AdminPatientRecord,
 } from '@/lib/adminMockData';
 import { auth, db } from '@/lib/firebase';
+import { parseAndCapTotalSessions } from '@/lib/constants';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
 import { sendEmailNotification } from '@/lib/email';
@@ -890,12 +891,7 @@ export default function Billing() {
 								: data.packageAmount
 									? Number(data.packageAmount)
 									: undefined,
-						totalSessionsRequired:
-							typeof data.totalSessionsRequired === 'number'
-								? data.totalSessionsRequired
-								: data.totalSessionsRequired
-									? Number(data.totalSessionsRequired)
-									: undefined,
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						sessionAllowance: data.sessionAllowance
 							? normalizeSessionAllowance(data.sessionAllowance as Record<string, unknown>)
 							: undefined,

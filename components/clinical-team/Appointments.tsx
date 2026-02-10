@@ -17,6 +17,7 @@ import type { RecordSessionUsageResult } from '@/lib/sessionAllowanceClient';
 import EditReportModal from '@/components/clinical-team/EditReportModal';
 import { createInitialSessionAllowance } from '@/lib/sessionAllowance';
 import { createDYESBilling } from '@/lib/dyesBilling';
+import { MAX_TOTAL_SESSIONS_PER_PATIENT, parseAndCapTotalSessions } from '@/lib/constants';
 
 interface FrontdeskAppointment {
 	id: string;
@@ -348,12 +349,7 @@ export default function Appointments() {
 						name: data.name ? String(data.name) : '',
 						phone: data.phone ? String(data.phone) : undefined,
 						email: data.email ? String(data.email) : undefined,
-						totalSessionsRequired:
-							typeof data.totalSessionsRequired === 'number'
-								? data.totalSessionsRequired
-								: data.totalSessionsRequired
-									? Number(data.totalSessionsRequired)
-									: undefined,
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						remainingSessions:
 							typeof data.remainingSessions === 'number'
 								? data.remainingSessions
@@ -1418,6 +1414,18 @@ export default function Appointments() {
 			return;
 		}
 
+		// If adding a package, ensure package session count does not exceed limit (new package replaces patient total)
+		if (bookingForm.addPackage && bookingForm.packageSessions && bookingForm.packageAmount) {
+			const packageSessionsValue = Number(bookingForm.packageSessions);
+			if (packageSessionsValue > MAX_TOTAL_SESSIONS_PER_PATIENT) {
+				alert(
+					`Package sessions cannot exceed ${MAX_TOTAL_SESSIONS_PER_PATIENT}. ` +
+					`You entered ${packageSessionsValue}. Please reduce package sessions.`
+				);
+				return;
+			}
+		}
+
 		// Check if any selected patient has no existing appointments (consultation check)
 		// Exception: Allow booking if the patient was registered by the current user
 		const patientsWithoutAppointments = selectedPatients.filter(patient => {
@@ -1617,18 +1625,11 @@ export default function Appointments() {
 							updatedAt: serverTimestamp(),
 						});
 
-						// Update patient's totalSessionsRequired and remainingSessions
+						// Update patient's totalSessionsRequired and remainingSessions (new package replaces previous total)
 						const patientRef = doc(db, 'patients', selectedPatient.id);
-						const currentTotalSessions = typeof selectedPatient.totalSessionsRequired === 'number'
-							? selectedPatient.totalSessionsRequired
-							: 0;
-						const newTotalSessions = currentTotalSessions + packageSessionsValue;
-						
-						// Calculate remaining sessions (starts at total - 1)
-						const completedCount = appointments.filter(
-							a => a.patientId === selectedPatient.patientId && a.status === 'completed'
-						).length;
-						const newRemainingSessions = Math.max(0, newTotalSessions - 1 - completedCount);
+						const newTotalSessions = packageSessionsValue;
+						// New package has no completed sessions yet
+						const newRemainingSessions = Math.max(0, newTotalSessions - 1);
 
 						await updateDoc(patientRef, {
 							totalSessionsRequired: newTotalSessions,
@@ -1849,6 +1850,14 @@ export default function Appointments() {
 			return;
 		}
 
+		if (totalSessionsValue > MAX_TOTAL_SESSIONS_PER_PATIENT) {
+			alert(
+				`Package sessions cannot exceed ${MAX_TOTAL_SESSIONS_PER_PATIENT}. ` +
+				`You entered ${totalSessionsValue}. Please specify ${MAX_TOTAL_SESSIONS_PER_PATIENT} or fewer sessions.`
+			);
+			return;
+		}
+
 		// Calculate total amount with discount
 		const totalAmount = consultationDiscountValue && consultationDiscountValue > 0
 			? Number((packageAmountValue * (1 - consultationDiscountValue / 100)).toFixed(2))
@@ -1918,18 +1927,11 @@ export default function Appointments() {
 				createdAppointmentIds.push(appointmentId);
 			}
 
-			// Update patient's totalSessionsRequired and remainingSessions
+			// Update patient's totalSessionsRequired and remainingSessions (new package replaces previous total)
 			const patientRef = doc(db, 'patients', selectedPatient.id);
-			const currentTotalSessions = typeof selectedPatient.totalSessionsRequired === 'number'
-				? selectedPatient.totalSessionsRequired
-				: 0;
-			const newTotalSessions = currentTotalSessions + totalSessionsValue;
-			
-			// Calculate remaining sessions (starts at total - 1)
-			const completedCount = appointments.filter(
-				a => a.patientId === selectedPatient.patientId && a.status === 'completed'
-			).length;
-			const newRemainingSessions = Math.max(0, newTotalSessions - 1 - completedCount);
+			const newTotalSessions = totalSessionsValue;
+			// New package has no completed sessions yet
+			const newRemainingSessions = Math.max(0, newTotalSessions - 1);
 
 			await updateDoc(patientRef, {
 				totalSessionsRequired: newTotalSessions,
@@ -2258,13 +2260,22 @@ export default function Appointments() {
 															</p>
 														);
 													})()}
-													{patientDetails?.packageName && patientDetails?.totalSessionsRequired && (
+													{patientDetails?.packageName && patientDetails?.totalSessionsRequired && (() => {
+														// Use package's actual session count from appointments when available (fixes display when patient total was incorrectly summed)
+														const packageApts = packageAppointmentsByPatient[group.patientId] || [];
+														const packageTotalFromApts = packageApts.length
+															? Math.max(...(packageApts.map(a => a.totalSessions).filter((t): t is number => typeof t === 'number' && t > 0) || [0]))
+															: 0;
+														const displayTotal = packageTotalFromApts > 0
+															? Math.min(patientDetails.totalSessionsRequired, packageTotalFromApts)
+															: patientDetails.totalSessionsRequired;
+														return (
 														<div className="mt-2 space-y-1">
 															<p className="text-xs text-purple-600 font-medium">
-																Package: {patientDetails.packageName} ({patientDetails.totalSessionsRequired} sessions)
+																Package: {patientDetails.packageName} ({displayTotal} sessions)
 															</p>
 															<div className="flex flex-wrap gap-1 mt-1">
-																{Array.from({ length: patientDetails.totalSessionsRequired }, (_, i) => {
+																{Array.from({ length: displayTotal }, (_, i) => {
 																	const sessionNumber = i + 1;
 																	// Find appointment for this session number
 																	// Use loose comparison to handle type mismatches (number vs string)
@@ -2300,7 +2311,7 @@ export default function Appointments() {
 																							notes: null,
 																							isConsultation: false,
 																							sessionNumber: sessionNumber,
-																							totalSessions: patientDetails.totalSessionsRequired,
+																							totalSessions: displayTotal,
 																							packageBillingId: firstApt.packageBillingId,
 																							packageName: patientDetails.packageName,
 																							createdAt: serverTimestamp(),
@@ -2321,7 +2332,7 @@ export default function Appointments() {
 																						notes: null,
 																						isConsultation: false,
 																						sessionNumber: sessionNumber,
-																						totalSessions: patientDetails.totalSessionsRequired,
+																						totalSessions: displayTotal,
 																						packageBillingId: existingPackageApt.packageBillingId,
 																						packageName: patientDetails.packageName,
 																						createdAt: serverTimestamp(),
@@ -2359,7 +2370,8 @@ export default function Appointments() {
 																})}
 															</div>
 														</div>
-													)}
+														);
+													})()}
 												</td>
 												<td className="px-4 py-4 text-sm text-slate-600">
 													{nextAppointment ? (

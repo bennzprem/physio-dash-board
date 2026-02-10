@@ -9,6 +9,7 @@ import {
 	type AdminPatientStatus,
 } from '@/lib/adminMockData';
 import { db } from '@/lib/firebase';
+import { parseAndCapTotalSessions } from '@/lib/constants';
 import PageHeader from '@/components/PageHeader';
 import StatsChart from '@/components/dashboard/StatsChart';
 import { generatePhysiotherapyReportPDF, generateStrengthConditioningPDF, type StrengthConditioningData } from '@/lib/pdfGenerator';
@@ -160,12 +161,7 @@ export default function Reports() {
 						complaint: data.complaint ? String(data.complaint) : '',
 						status: (data.status as AdminPatientStatus) ?? 'pending',
 						patientType: data.patientType ? String(data.patientType) : '',
-						totalSessionsRequired:
-							typeof data.totalSessionsRequired === 'number'
-								? data.totalSessionsRequired
-								: data.totalSessionsRequired
-									? Number(data.totalSessionsRequired)
-									: undefined,
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						remainingSessions:
 							typeof data.remainingSessions === 'number'
 								? data.remainingSessions

@@ -20,6 +20,7 @@ import { createInitialSessionAllowance } from '@/lib/sessionAllowance';
 import { useAuth } from '@/contexts/AuthContext';
 import ReportModal from '@/components/frontdesk/ReportModal';
 import PatientProgressAnalytics from '@/components/patient/PatientProgressAnalytics';
+import { MAX_TOTAL_SESSIONS_PER_PATIENT, parseAndCapTotalSessions } from '@/lib/constants';
 
 type PaymentTypeOption = 'with' | 'without';
 type PatientTypeOption = 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | 'REFERRAL' | '';
@@ -596,12 +597,7 @@ export default function Patients() {
 								: data.concessionPercent
 									? Number(data.concessionPercent)
 									: null,
-						totalSessionsRequired:
-							typeof data.totalSessionsRequired === 'number'
-								? data.totalSessionsRequired
-								: data.totalSessionsRequired
-									? Number(data.totalSessionsRequired)
-									: undefined,
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						remainingSessions:
 							typeof data.remainingSessions === 'number'
 								? data.remainingSessions
@@ -1200,6 +1196,8 @@ export default function Patients() {
 			errors.totalNoOfSessions = 'Please enter the total number of sessions.';
 		} else if (Number.isNaN(totalSessionsValue) || totalSessionsValue <= 0 || !Number.isInteger(totalSessionsValue)) {
 			errors.totalNoOfSessions = 'Total number of sessions must be a positive whole number.';
+		} else if (totalSessionsValue > MAX_TOTAL_SESSIONS_PER_PATIENT) {
+			errors.totalNoOfSessions = `Total number of sessions cannot exceed ${MAX_TOTAL_SESSIONS_PER_PATIENT}.`;
 		}
 		if (!packageForm.paymentType) {
 			errors.paymentType = 'Please select a payment type.';
@@ -1353,12 +1351,7 @@ export default function Patients() {
 						: data.concessionPercent
 							? Number(data.concessionPercent)
 							: null,
-				totalSessionsRequired:
-					typeof data.totalSessionsRequired === 'number'
-						? data.totalSessionsRequired
-						: data.totalSessionsRequired
-							? Number(data.totalSessionsRequired)
-							: undefined,
+				totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 				remainingSessions:
 					typeof data.remainingSessions === 'number'
 						? data.remainingSessions

@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { collection, doc, onSnapshot, updateDoc, deleteDoc, addDoc, serverTimestamp, query, where, getDocs, getDoc, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { parseAndCapTotalSessions } from '@/lib/constants';
 import PageHeader from '@/components/PageHeader';
 import type { AdminAppointmentStatus, AdminPatientStatus } from '@/lib/adminMockData';
 import type { PatientRecord } from '@/lib/types';
@@ -193,12 +194,7 @@ export default function Appointments() {
 						name: data.name ? String(data.name) : '',
 						phone: data.phone ? String(data.phone) : undefined,
 						email: data.email ? String(data.email) : undefined,
-						totalSessionsRequired:
-							typeof data.totalSessionsRequired === 'number'
-								? data.totalSessionsRequired
-								: data.totalSessionsRequired
-									? Number(data.totalSessionsRequired)
-									: undefined,
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						remainingSessions:
 							typeof data.remainingSessions === 'number'
 								? data.remainingSessions

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, doc, query, where, orderBy, getDocs, onSnapshot, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { parseAndCapTotalSessions } from '@/lib/constants';
 import PageHeader from '@/components/PageHeader';
 import { generatePhysiotherapyReportPDF, type ReportSection, generateStrengthConditioningPDF, type StrengthConditioningData } from '@/lib/pdfGenerator';
 import type { PatientRecordFull } from '@/lib/types';
@@ -208,12 +209,7 @@ export default function Reports() {
 						managementRemarks: data.managementRemarks ? String(data.managementRemarks) : undefined,
 						nextFollowUpDate: data.nextFollowUpDate ? String(data.nextFollowUpDate) : undefined,
 						nextFollowUpTime: data.nextFollowUpTime ? String(data.nextFollowUpTime) : undefined,
-						totalSessionsRequired:
-							typeof data.totalSessionsRequired === 'number'
-								? data.totalSessionsRequired
-								: data.totalSessionsRequired
-									? Number(data.totalSessionsRequired)
-									: undefined,
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						remainingSessions:
 							typeof data.remainingSessions === 'number'
 								? data.remainingSessions

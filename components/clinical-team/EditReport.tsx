@@ -19,6 +19,7 @@ import TransferSessionDialog from '@/components/appointments/TransferSessionDial
 import TransferConfirmationDialog from '@/components/transfers/TransferConfirmationDialog';
 import PatientProgressAnalytics from '@/components/patient/PatientProgressAnalytics';
 import AnalyticsModal from '@/components/AnalyticsModal';
+import { MAX_TOTAL_SESSIONS_PER_PATIENT, parseAndCapTotalSessions } from '@/lib/constants';
 
 type PaymentTypeOption = 'with' | 'without';
 
@@ -759,13 +760,8 @@ export default function EditReport() {
 						complaint: data.complaint ? String(data.complaint) : undefined,
 						status: (data.status as AdminPatientStatus) ?? 'pending',
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined) || new Date().toISOString(),
-						// Session tracking
-						totalSessionsRequired:
-							typeof data.totalSessionsRequired === 'number'
-								? data.totalSessionsRequired
-								: data.totalSessionsRequired
-									? Number(data.totalSessionsRequired)
-									: undefined,
+						// Session tracking (cap existing packages to max)
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						remainingSessions:
 							typeof data.remainingSessions === 'number'
 								? data.remainingSessions
@@ -1756,6 +1752,8 @@ export default function EditReport() {
 			errors.totalNoOfSessions = 'Please enter the total number of sessions.';
 		} else if (Number.isNaN(totalSessionsValue) || totalSessionsValue <= 0 || !Number.isInteger(totalSessionsValue)) {
 			errors.totalNoOfSessions = 'Total number of sessions must be a positive whole number.';
+		} else if (totalSessionsValue > MAX_TOTAL_SESSIONS_PER_PATIENT) {
+			errors.totalNoOfSessions = `Total number of sessions cannot exceed ${MAX_TOTAL_SESSIONS_PER_PATIENT}.`;
 		}
 		if (!packageForm.paymentType) {
 			errors.paymentType = 'Please select a payment type.';
@@ -3185,35 +3183,30 @@ export default function EditReport() {
 															<p className="text-sm text-slate-700 truncate mt-0.5">{patient.name}</p>
 														</div>
 													</div>
-													{patient.totalSessionsRequired && typeof patient.totalSessionsRequired === 'number' && (
-														<div className="flex-shrink-0 w-48">
+													{patient.totalSessionsRequired && typeof patient.totalSessionsRequired === 'number' && (() => {
+																// Use package's actual session count from appointments when available (fixes display when patient total was incorrectly summed)
+																const patientApts = patientAppointments[patient.id];
+																const packageTotalFromApts = patientApts?.length
+																	? Math.max(...(patientApts.map(a => a.totalSessions).filter((t): t is number => typeof t === 'number' && t > 0) || [0]))
+																	: 0;
+																const rawTotal = patient.totalSessionsRequired;
+																const displayTotal = packageTotalFromApts > 0 ? Math.min(rawTotal, packageTotalFromApts) : rawTotal;
+																return (
+														<div key={`sessions-${patient.id}`} className="flex-shrink-0 w-48">
 															<div className="flex items-center justify-between mb-1">
 																<span className="text-xs font-medium text-slate-600">Sessions</span>
 																<span className="text-xs font-semibold text-slate-700">
 																	{(() => {
-																		const total = patient.totalSessionsRequired;
-																		// Count completed package sessions from appointments
-																		// patientAppointments is keyed by patient document ID (patient.id), not patientId
-																		const patientApts = patientAppointments[patient.id];
-																		
-																		// If appointments are loaded, count from them
+																		const total = displayTotal;
 																		if (patientApts && patientApts.length > 0) {
-																			// Filter for completed appointments that are part of the package
-																			// If patient has a package, count completed non-consultation appointments as package sessions
-																			// Exclude consultations
 																			const completedPackageSessions = patientApts.filter(apt => {
 																				if (apt.status !== 'completed') return false;
 																				if (apt.isConsultation) return false;
-																				// If appointment has sessionNumber or packageBillingId, it's definitely a package session
 																				if (apt.sessionNumber !== undefined || apt.packageBillingId) return true;
-																				// If patient has a package and appointment is not a consultation, count it as package session
-																				// (this handles legacy appointments that might not have sessionNumber set)
 																				return true;
 																			}).length;
 																			return `${completedPackageSessions} / ${total}`;
 																		}
-																		
-																		// Fallback: calculate from remainingSessions if appointments not loaded yet
 																		const remaining = typeof patient.remainingSessions === 'number' ? patient.remainingSessions : total;
 																		const completed = total - remaining;
 																		return `${completed} / ${total}`;
@@ -3225,25 +3218,16 @@ export default function EditReport() {
 																	className="bg-gradient-to-r from-sky-500 to-blue-600 h-2 rounded-full transition-all duration-300"
 																	style={{
 																		width: `${(() => {
-																			const total = patient.totalSessionsRequired;
-																			// Count completed package sessions from appointments
-																			// patientAppointments is keyed by patient document ID (patient.id), not patientId
-																			const patientApts = patientAppointments[patient.id];
-																			
-																			// If appointments are loaded, count from them
+																			const total = displayTotal;
 																			if (patientApts && patientApts.length > 0) {
 																				const completedPackageSessions = patientApts.filter(apt => {
 																					if (apt.status !== 'completed') return false;
 																					if (apt.isConsultation) return false;
-																					// If appointment has sessionNumber or packageBillingId, it's definitely a package session
 																					if (apt.sessionNumber !== undefined || apt.packageBillingId) return true;
-																					// If patient has a package and appointment is not a consultation, count it as package session
 																					return true;
 																				}).length;
 																				return total > 0 ? Math.min((completedPackageSessions / total) * 100, 100) : 0;
 																			}
-																			
-																			// Fallback: calculate from remainingSessions if appointments not loaded yet
 																			const remaining = typeof patient.remainingSessions === 'number' ? patient.remainingSessions : total;
 																			const completed = total - remaining;
 																			return total > 0 ? Math.min((completed / total) * 100, 100) : 0;
@@ -3252,7 +3236,8 @@ export default function EditReport() {
 																/>
 															</div>
 														</div>
-													)}
+																);
+															})()}
 												</button>
 														{patient.patientId && (
 													<div className="flex items-center gap-2 flex-shrink-0">
@@ -3341,9 +3326,16 @@ export default function EditReport() {
 													{/* Appointments Section - display list matches session count when patient has totalSessionsRequired */}
 													{(() => {
 														const apts = patientAppointments[patient.id];
-														const totalRequired = typeof patient.totalSessionsRequired === 'number' && patient.totalSessionsRequired > 0
+														// Use package's actual session count from appointments when available (fixes display when patient total was incorrectly summed)
+														const packageTotalFromApts = apts?.length
+															? Math.max(...(apts.map(a => a.totalSessions).filter((t): t is number => typeof t === 'number' && t > 0) || [0]))
+															: 0;
+														const rawTotal = typeof patient.totalSessionsRequired === 'number' && patient.totalSessionsRequired > 0
 															? patient.totalSessionsRequired
 															: null;
+														const totalRequired = rawTotal != null
+															? (packageTotalFromApts > 0 ? Math.min(rawTotal, packageTotalFromApts) : rawTotal)
+															: (packageTotalFromApts > 0 ? packageTotalFromApts : null);
 														const hasLoaded = apts !== undefined;
 														const displayList: Array<{
 															id: string;

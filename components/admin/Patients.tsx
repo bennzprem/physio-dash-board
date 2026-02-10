@@ -26,6 +26,7 @@ import {
 	type AdminPatientStatus,
 } from '@/lib/adminMockData';
 import { db } from '@/lib/firebase';
+import { parseAndCapTotalSessions } from '@/lib/constants';
 import PageHeader from '@/components/PageHeader';
 import { sendSMSNotification, isValidPhoneNumber } from '@/lib/sms';
 import { sendEmailNotification } from '@/lib/email';
@@ -303,7 +304,7 @@ export default function Patients() {
 						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
 						transferredFromDoctor: data.transferredFromDoctor ? String(data.transferredFromDoctor) : undefined,
 						transferReason: data.transferReason ? String(data.transferReason) : undefined,
-						totalSessionsRequired: typeof data.totalSessionsRequired === 'number' ? data.totalSessionsRequired : (data.totalSessionsRequired ? Number(data.totalSessionsRequired) : undefined),
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						remainingSessions: typeof data.remainingSessions === 'number' ? data.remainingSessions : (data.remainingSessions ? Number(data.remainingSessions) : undefined),
 						feedback: data.feedback ? String(data.feedback) : undefined,
 					} as AdminPatientRecord;

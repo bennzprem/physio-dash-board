@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { db } from '@/lib/firebase';
+import { parseAndCapTotalSessions } from '@/lib/constants';
 import PageHeader from '@/components/PageHeader';
 import {
 	getCurrentBillingCycle,
@@ -2110,7 +2111,7 @@ export default function Billing() {
 						progressNotes: data.progressNotes ? String(data.progressNotes) : '',
 						patientType: data.patientType ? String(data.patientType) : '',
 						packageAmount: data.packageAmount ? Number(data.packageAmount) : undefined,
-						totalSessionsRequired: data.totalSessionsRequired ? Number(data.totalSessionsRequired) : undefined,
+						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						registeredAt,
 					};
 				});
