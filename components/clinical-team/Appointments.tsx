@@ -943,6 +943,24 @@ export default function Appointments() {
 							});
 							
 							await Promise.all(updatePromises);
+						} else {
+							// No billing record exists (e.g. patient booked by clinician without frontdesk billing). Create one so completed payments list and frontdesk "Booked" state are correct.
+							const billingId = `BILL-${appointment.appointmentId}`;
+							await addDoc(collection(db, 'billing'), {
+								billingId,
+								appointmentId: appointment.appointmentId,
+								patientId: appointment.patientId,
+								patient: appointment.patient || patientDetails?.name || '',
+								doctor: appointment.doctor || '',
+								amount: 0,
+								amountPaid: 0,
+								date: appointment.date || new Date().toISOString().split('T')[0],
+								status: 'Completed',
+								paymentMode: 'Auto-Paid',
+								utr: null,
+								createdAt: serverTimestamp(),
+								updatedAt: serverTimestamp(),
+							});
 						}
 					} catch (vipBillingError) {
 						console.error('Failed to auto-complete VIP payment:', vipBillingError);

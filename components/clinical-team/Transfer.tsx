@@ -1322,10 +1322,40 @@ export default function Transfer() {
 												return null;
 											})()}
 										</div>
-										<div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-											<i className="fas fa-info-circle mr-2 text-slate-500" />
-											Please respond to this transfer request from the Notifications panel. Actions have been moved there so that
-											all therapists receive and handle requests in one consistent place.
+										<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+											<button
+												type="button"
+												onClick={() => checkAppointmentConflicts(request).then(() => {})}
+												disabled={checkingConflicts[request.id!]}
+												className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+											>
+												{checkingConflicts[request.id!] ? (
+													<><i className="fas fa-spinner fa-spin mr-1.5" aria-hidden="true" /> Checking...</>
+												) : (
+													<><i className="fas fa-calendar-check mr-1.5" aria-hidden="true" /> Check schedule</>
+												)}
+											</button>
+											<button
+												type="button"
+												onClick={() => handleAcceptTransfer(request)}
+												disabled={isProcessing}
+												className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+											>
+												{isProcessing ? (
+													<><i className="fas fa-spinner fa-spin mr-1.5" aria-hidden="true" /> Accepting...</>
+												) : (
+													<><i className="fas fa-check mr-1.5" aria-hidden="true" /> Accept</>
+												)}
+											</button>
+											<button
+												type="button"
+												onClick={() => handleRejectTransfer(request)}
+												disabled={isProcessing}
+												className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+											>
+												<i className="fas fa-times mr-1.5" aria-hidden="true" />
+												Reject
+											</button>
 										</div>
 									</div>
 								);

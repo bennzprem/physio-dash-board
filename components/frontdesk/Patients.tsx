@@ -856,7 +856,7 @@ export default function Patients() {
 			return completedConsultationBills[0];
 		}
 
-		// Fallback: find by first appointment (for backward compatibility)
+		// Fallback: find by first appointment (for backward compatibility and VIP auto-created billing)
 		const patientAppointments = appointments.filter(apt => apt.patientId === patientId);
 		if (patientAppointments.length === 0) return null;
 
@@ -869,12 +869,13 @@ export default function Patients() {
 		const firstAppointment = sortedAppointments[0];
 		if (!firstAppointment.appointmentId) return null;
 
+		// Match by first appointment: standard consultation (1500) or any completed bill for this appointment (e.g. VIP auto-created with amount 0)
 		const consultationBill =
 			billing.find(
 				bill =>
 					bill.appointmentId === firstAppointment.appointmentId &&
 					bill.patientId === patientId &&
-					bill.amount === APPOINTMENT_BOOKING_CHARGE
+					(bill.amount === APPOINTMENT_BOOKING_CHARGE || bill.status === 'Completed')
 			) ?? null;
 
 		return consultationBill;
