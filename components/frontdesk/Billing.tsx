@@ -54,6 +54,29 @@ interface BillingRecord {
 	packageSessions?: number;
 }
 
+/** Deduplicate billing records that display amount as N/A (VIP/Referral or amount 0): show only one per patient. */
+function deduplicateNABills<T extends BillingRecord>(bills: T[], patients: { patientId?: string; patientType?: string }[]): T[] {
+	const naBillsByPatient = new Map<string, T[]>();
+	const nonNABills: T[] = [];
+	for (const bill of bills) {
+		const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType?.toUpperCase();
+		const isNA = patientType === 'VIP' || patientType === 'REFERRAL' || (typeof bill.amount === 'number' && bill.amount === 0);
+		if (!isNA) {
+			nonNABills.push(bill);
+			continue;
+		}
+		const key = bill.patientId || bill.billingId || bill.id || '';
+		if (!naBillsByPatient.has(key)) naBillsByPatient.set(key, []);
+		naBillsByPatient.get(key)!.push(bill);
+	}
+	const onePerPatient: T[] = [];
+	naBillsByPatient.forEach((billsForPatient) => {
+		const sorted = [...billsForPatient].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+		onePerPatient.push(sorted[0]);
+	});
+	return [...nonNABills, ...onePerPatient];
+}
+
 function getCurrentMonthYear() {
 	const now = new Date();
 	return `${now.getFullYear()}-${now.getMonth() + 1}`;
@@ -1529,7 +1552,7 @@ export default function Billing() {
 	}, [billing]);
 
 	const pending = useMemo(() => {
-		return filteredBilling.filter(bill => {
+		const list = filteredBilling.filter(bill => {
 			// Only include bills with status 'Pending'
 			if (bill.status !== 'Pending') return false;
 
@@ -1547,7 +1570,8 @@ export default function Billing() {
 			// Exclude individual session bills for package patients
 			return !patientHasPackage;
 		});
-	}, [filteredBilling, patientsWithPackages, patientsWithPackageBills]);
+		return deduplicateNABills(list, patients);
+	}, [filteredBilling, patientsWithPackages, patientsWithPackageBills, patients]);
 
 	// Calculate today's statistics
 	const todayStats = useMemo(() => {
@@ -1606,7 +1630,10 @@ export default function Billing() {
 			bill.date?.toLowerCase().includes(query)
 		);
 	}, [pending, pendingSearchQuery]);
-	const completed = useMemo(() => filteredBilling.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid'), [filteredBilling]);
+	const completed = useMemo(() => {
+		const list = filteredBilling.filter(b => b.status === 'Completed' || b.status === 'Auto-Paid');
+		return deduplicateNABills(list, patients);
+	}, [filteredBilling, patients]);
 
 	// Filtered DYES billing records based on date range
 	const filteredDyesBillingRecords = useMemo(() => {
@@ -2990,7 +3017,7 @@ export default function Billing() {
 																{isReferral || isVIP ? 'N/A' : `Rs. ${bill.amount}`}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
-																{bill.paymentMode || '--'}
+																{isReferral || isVIP ? 'N/A' : (bill.paymentMode || '--')}
 															</td>
 															<td className="px-3 py-3">
 																<div className="flex items-center justify-end gap-2">

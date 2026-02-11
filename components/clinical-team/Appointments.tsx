@@ -670,11 +670,14 @@ export default function Appointments() {
 	const groupedByPatient = useMemo(() => {
 		const query = searchTerm.trim().toLowerCase();
 		
-		// Filter by user if not showing all appointments
+		// Filter by user if not showing all appointments: include appointments where doctor matches OR patient is assigned to this clinician (so assigned patients always appear in their clinician's queue)
 		let userFiltered = appointments;
 		if (!showAllAppointments && clinicianName) {
-			userFiltered = appointments.filter(appointment => 
-				normalize(appointment.doctor) === clinicianName
+			const assignedPatientIds = new Set(
+				patients.filter(p => p.assignedDoctor && normalize(p.assignedDoctor) === clinicianName).map(p => p.patientId)
+			);
+			userFiltered = appointments.filter(appointment =>
+				normalize(appointment.doctor) === clinicianName || assignedPatientIds.has(appointment.patientId)
 			);
 		}
 		
@@ -714,13 +717,35 @@ export default function Appointments() {
 			});
 		});
 
-		// Sort groups by most recent appointment
+		// Include patients assigned to this clinician who have no (matching) appointments yet, so they appear in the queue
+		if (!showAllAppointments && clinicianName) {
+			const existingPatientIds = new Set(result.map(r => r.patientId));
+			patients.forEach(patient => {
+				if (!patient.patientId || !patient.assignedDoctor || normalize(patient.assignedDoctor) !== clinicianName) return;
+				if (existingPatientIds.has(patient.patientId)) return;
+				existingPatientIds.add(patient.patientId);
+				result.push({
+					patientId: patient.patientId,
+					patientName: patient.name || 'Unnamed',
+					appointments: [],
+				});
+			});
+		}
+
+		// Sort groups: with appointments by most recent first, then assigned-only patients by name
 		return result.sort((a, b) => {
-			const aDate = new Date(`${a.appointments[0].date}T${a.appointments[0].time}`).getTime();
-			const bDate = new Date(`${b.appointments[0].date}T${b.appointments[0].time}`).getTime();
-			return bDate - aDate;
+			const aHasAppointments = a.appointments.length > 0;
+			const bHasAppointments = b.appointments.length > 0;
+			if (aHasAppointments && bHasAppointments) {
+				const aDate = new Date(`${a.appointments[0].date}T${a.appointments[0].time}`).getTime();
+				const bDate = new Date(`${b.appointments[0].date}T${b.appointments[0].time}`).getTime();
+				return bDate - aDate;
+			}
+			if (aHasAppointments && !bHasAppointments) return -1;
+			if (!aHasAppointments && bHasAppointments) return 1;
+			return (a.patientName || '').localeCompare(b.patientName || '');
 		});
-	}, [appointments, searchTerm, showAllAppointments, clinicianName]);
+	}, [appointments, patients, searchTerm, showAllAppointments, clinicianName]);
 
 	// Group package appointments by patient
 	const packageAppointmentsByPatient = useMemo(() => {

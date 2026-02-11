@@ -2950,6 +2950,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 												: null;
 										const consultationPaid = consultationBill?.status === 'Completed';
 										const canBook = canBookNewConsultation(patient.patientId, patient);
+										const hasAnyAppointment = appointments.some(a => a.patientId === patient.patientId);
 										const pendingPackageBill = getPendingPackageBill(patient.patientId, patient);
 										const paidPackageBill = getPaidPackageBill(patient.patientId, patient);
 										// Show "Setup Package" button whenever no active package exists
@@ -2990,7 +2991,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 														disabled={!canBook || (!!pendingConsultationBill && !isDyesPatient)}
 													>
 														<i className="fas fa-calendar-plus text-[10px]" aria-hidden="true" />
-														{canBook && !pendingConsultationBill ? 'Book' : 'Booked'}
+														{canBook && !pendingConsultationBill && !hasAnyAppointment ? 'Book' : 'Booked'}
 													</button>
 													{pendingConsultationBill && (
 														<button
