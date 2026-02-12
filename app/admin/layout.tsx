@@ -33,7 +33,7 @@ const baseAdminLinks: SidebarLink[] = [
 	{ href: '#patients', label: 'Patient Management', icon: 'fas fa-user-injured' },
 	{ href: '#calendar-appointments', label: 'Calendar & Appointments', icon: 'fas fa-calendar-check' },
 	{ href: '#analytics', label: 'Analytics', icon: 'fas fa-chart-pie' },
-	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
+	{ href: '#notifications', label: 'Messages', icon: 'fas fa-bell' },
 	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
 	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
 	{ href: '#internship', label: 'Internship', icon: 'fas fa-graduation-cap' },

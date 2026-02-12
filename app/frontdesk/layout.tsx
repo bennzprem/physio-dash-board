@@ -26,7 +26,7 @@ const baseFrontdeskLinks: SidebarLink[] = [
 	{ href: '#requests', label: 'Requests', icon: 'fas fa-inbox' },
 	{ href: '#calendar', label: 'Calendar', icon: 'fas fa-calendar-alt' },
 	{ href: '#billing', label: 'Billing', icon: 'fas fa-file-invoice-dollar' },
-	{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
+	{ href: '#notifications', label: 'Messages', icon: 'fas fa-bell' },
 	{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
 	{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
 	{ href: '#internships', label: 'Internships', icon: 'fas fa-graduation-cap' },

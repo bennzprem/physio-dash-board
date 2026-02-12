@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, doc, query, orderBy, serverTimestamp, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, doc, query, where, orderBy, serverTimestamp, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
@@ -24,6 +24,20 @@ interface Intern {
 	utrNumber?: string;
 	createdAt: any;
 	updatedAt: any;
+}
+
+/** Submissions from QR code form – pending review by front desk. */
+interface InternRegistration {
+	id: string;
+	name: string;
+	college: string;
+	degree: string;
+	dateOfJoining: string;
+	dateOfLeaving: string;
+	amount?: number;
+	status: 'pending' | 'approved' | 'rejected';
+	createdAt: any;
+	updatedAt?: any;
 }
 
 type DegreeType = "Bachelor's Degree (BPT)" | "Master's Degree (MPT)" | "Clinical";
@@ -51,6 +65,13 @@ export default function InternshipManagement() {
 	const [searchTerm, setSearchTerm] = useState('');
 	// Default to current month so Total Amount Paid and list show current month's revenue/counts
 	const [filterMonth, setFilterMonth] = useState<string>(getCurrentMonthYYYYMM);
+	// Tab: 'list' | 'registration'
+	const [activeTab, setActiveTab] = useState<'list' | 'registration'>('list');
+	// QR-code submissions pending approval
+	const [registrations, setRegistrations] = useState<InternRegistration[]>([]);
+	const [loadingRegistrations, setLoadingRegistrations] = useState(true);
+	const [approvingId, setApprovingId] = useState<string | null>(null);
+	const [registrationSearch, setRegistrationSearch] = useState('');
 
 	// Form state
 	const [formData, setFormData] = useState({
@@ -104,6 +125,47 @@ export default function InternshipManagement() {
 			}
 		);
 
+		return () => unsubscribe();
+	}, []);
+
+	// Load pending intern registrations (from QR code submissions)
+	useEffect(() => {
+		const q = query(
+			collection(db, 'internRegistrations'),
+			where('status', '==', 'pending')
+		);
+		const unsubscribe = onSnapshot(
+			q,
+			(snapshot: QuerySnapshot) => {
+				const list = snapshot.docs.map(docSnap => {
+					const data = docSnap.data();
+					return {
+						id: docSnap.id,
+						name: data.name || '',
+						college: data.college || '',
+						degree: data.degree || '',
+						dateOfJoining: data.dateOfJoining || '',
+						dateOfLeaving: data.dateOfLeaving || '',
+						amount: typeof data.amount === 'number' ? data.amount : undefined,
+						status: (data.status as 'pending' | 'approved' | 'rejected') || 'pending',
+						createdAt: data.createdAt,
+						updatedAt: data.updatedAt,
+					} as InternRegistration;
+				});
+				// Sort by createdAt descending (newest first)
+				list.sort((a, b) => {
+					const tA = a.createdAt?.toDate?.()?.getTime() ?? (typeof a.createdAt === 'string' ? new Date(a.createdAt).getTime() : 0);
+					const tB = b.createdAt?.toDate?.()?.getTime() ?? (typeof b.createdAt === 'string' ? new Date(b.createdAt).getTime() : 0);
+					return tB - tA;
+				});
+				setRegistrations(list);
+				setLoadingRegistrations(false);
+			},
+			(err) => {
+				console.error('Failed to load intern registrations:', err);
+				setLoadingRegistrations(false);
+			}
+		);
 		return () => unsubscribe();
 	}, []);
 
@@ -361,6 +423,57 @@ export default function InternshipManagement() {
 		}
 	};
 
+	const handleApproveRegistration = async (reg: InternRegistration) => {
+		if (!reg.id) return;
+		setApprovingId(reg.id);
+		try {
+			const amount = reg.amount ?? getDegreeAmount(reg.degree);
+			const nextSerialNumber = interns.length > 0
+				? Math.max(...interns.map(i => i.serialNumber)) + 1
+				: 1;
+			const normalizedDegree = formatDegree(reg.degree) as DegreeType;
+			await addDoc(collection(db, 'interns'), {
+				serialNumber: nextSerialNumber,
+				name: reg.name.trim(),
+				college: reg.college.trim(),
+				degree: normalizedDegree in DEGREE_AMOUNTS ? normalizedDegree : "Bachelor's Degree (BPT)",
+				dateOfJoining: reg.dateOfJoining,
+				dateOfLeaving: reg.dateOfLeaving,
+				amount: Math.round(amount),
+				isPaid: false,
+				paymentMode: 'Cash',
+				createdAt: serverTimestamp(),
+				updatedAt: serverTimestamp(),
+			});
+			await updateDoc(doc(db, 'internRegistrations', reg.id), {
+				status: 'approved',
+				updatedAt: serverTimestamp(),
+				approvedAt: serverTimestamp(),
+				approvedBy: user?.uid || null,
+			});
+			alert(`${reg.name} has been approved and added to the Interns List.`);
+		} catch (err) {
+			console.error('Failed to approve registration', err);
+			alert(`Failed to approve: ${err instanceof Error ? err.message : 'Unknown error'}`);
+		} finally {
+			setApprovingId(null);
+		}
+	};
+
+	const handleRejectRegistration = async (reg: InternRegistration) => {
+		if (!reg.id || !confirm(`Reject registration for ${reg.name}? They will not be added to the Interns List.`)) return;
+		try {
+			await updateDoc(doc(db, 'internRegistrations', reg.id), {
+				status: 'rejected',
+				updatedAt: serverTimestamp(),
+				rejectedBy: user?.uid || null,
+			});
+		} catch (err) {
+			console.error('Failed to reject registration', err);
+			alert(`Failed to reject: ${err instanceof Error ? err.message : 'Unknown error'}`);
+		}
+	};
+
 	const isExpired = (dateOfLeaving: string): boolean => {
 		if (!dateOfLeaving) return false;
 		const today = new Date();
@@ -464,6 +577,16 @@ export default function InternshipManagement() {
 			(intern.receiptNumber && intern.receiptNumber.toLowerCase().includes(term))
 		);
 	}, [monthFilteredInterns, searchTerm]);
+
+	const filteredRegistrations = useMemo(() => {
+		if (!registrationSearch.trim()) return registrations;
+		const term = registrationSearch.toLowerCase().trim();
+		return registrations.filter(r =>
+			r.name.toLowerCase().includes(term) ||
+			r.college.toLowerCase().includes(term) ||
+			formatDegree(r.degree).toLowerCase().includes(term)
+		);
+	}, [registrations, registrationSearch]);
 
 	// Export function for Excel/CSV
 	const handleExport = (format: 'csv' | 'excel' = 'excel') => {
@@ -569,8 +692,127 @@ export default function InternshipManagement() {
 					</div>
 				</div>
 			</div>
+
+			{/* Tabs: Interns List | Intern Registration */}
+			<div className="mt-6 border-b border-slate-200">
+				<nav className="flex gap-1" aria-label="Internship sections">
+					<button
+						type="button"
+						onClick={() => setActiveTab('list')}
+						className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+							activeTab === 'list'
+								? 'bg-white border border-slate-200 border-b-0 text-blue-600 -mb-px'
+								: 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+						}`}
+					>
+						Interns List
+					</button>
+					<button
+						type="button"
+						onClick={() => setActiveTab('registration')}
+						className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors flex items-center gap-2 ${
+							activeTab === 'registration'
+								? 'bg-white border border-slate-200 border-b-0 text-blue-600 -mb-px'
+								: 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+						}`}
+					>
+						Intern Registration
+						{registrations.length > 0 && (
+							<span className="bg-amber-500 text-white text-xs font-semibold rounded-full px-2 py-0.5">
+								{registrations.length}
+							</span>
+						)}
+					</button>
+				</nav>
+			</div>
 			
 			<div className="mt-6">
+				{activeTab === 'registration' ? (
+					<>
+						<div className="mb-4 flex justify-between items-center flex-wrap gap-3">
+							<h2 className="text-xl font-semibold text-slate-800">QR code submissions – pending review</h2>
+						</div>
+						<p className="mb-4 text-sm text-slate-600">
+							Submissions from the intern registration QR code appear here. Approve to add the intern to the Interns List.
+						</p>
+						<div className="mb-4">
+							<div className="relative">
+								<i className="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" aria-hidden="true" />
+								<input
+									type="text"
+									placeholder="Search by name or college..."
+									value={registrationSearch}
+									onChange={(e) => setRegistrationSearch(e.target.value)}
+									className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+								/>
+							</div>
+						</div>
+						{loadingRegistrations ? (
+							<div className="bg-white rounded-lg shadow p-8 text-center text-slate-500">Loading submissions...</div>
+						) : filteredRegistrations.length === 0 ? (
+							<div className="bg-white rounded-lg shadow p-8 text-center text-slate-500">
+								<p>{registrations.length === 0 ? 'No pending submissions from the QR code.' : 'No submissions match your search.'}</p>
+								<p className="mt-2 text-sm">New submissions will appear here when candidates fill the intern registration form via QR code.</p>
+							</div>
+						) : (
+							<div className="bg-white rounded-lg shadow overflow-hidden">
+								<div className="max-h-[calc(100vh-400px)] overflow-y-auto overflow-x-hidden">
+									<table className="w-full divide-y divide-slate-200" style={{ tableLayout: 'fixed' }}>
+										<thead className="bg-slate-50 sticky top-0 z-10">
+											<tr>
+												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '14%' }}>Name</th>
+												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '18%' }}>College</th>
+												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '14%' }}>Degree</th>
+												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '11%' }}>Date of Joining</th>
+												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '11%' }}>Date of Leaving</th>
+												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '8%' }}>Amount (₹)</th>
+												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '14%' }}>Submitted</th>
+												<th className="px-2 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider" style={{ width: '10%' }}>Actions</th>
+											</tr>
+										</thead>
+										<tbody className="bg-white divide-y divide-slate-200">
+											{filteredRegistrations.map((reg) => {
+												const amount = reg.amount ?? getDegreeAmount(reg.degree);
+												const submittedAt = reg.createdAt?.toDate?.() ?? (typeof reg.createdAt === 'string' ? new Date(reg.createdAt) : null);
+												return (
+													<tr key={reg.id} className="hover:bg-slate-50">
+														<td className="px-2 py-3 text-sm font-medium text-slate-900 truncate" title={reg.name}>{reg.name}</td>
+														<td className="px-2 py-3 text-sm text-slate-700 truncate" title={reg.college}>{reg.college}</td>
+														<td className="px-2 py-3 text-sm text-slate-700 truncate" title={formatDegree(reg.degree)}>{formatDegree(reg.degree)}</td>
+														<td className="px-2 py-3 text-sm text-slate-700 whitespace-nowrap">{formatDate(reg.dateOfJoining)}</td>
+														<td className="px-2 py-3 text-sm text-slate-700 whitespace-nowrap">{formatDate(reg.dateOfLeaving)}</td>
+														<td className="px-2 py-3 text-sm text-slate-900 font-medium whitespace-nowrap">₹{amount.toLocaleString('en-IN')}</td>
+														<td className="px-2 py-3 text-sm text-slate-600 whitespace-nowrap">
+															{submittedAt ? formatDate(submittedAt.toISOString().split('T')[0]) : '—'}
+														</td>
+														<td className="px-2 py-3 text-sm">
+															<div className="flex items-center gap-2">
+																<button
+																	onClick={() => handleApproveRegistration(reg)}
+																	disabled={approvingId === reg.id}
+																	className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+																>
+																	{approvingId === reg.id ? '...' : 'Approve'}
+																</button>
+																<button
+																	onClick={() => handleRejectRegistration(reg)}
+																	className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 transition-colors text-xs font-medium"
+																>
+																	Reject
+																</button>
+															</div>
+														</td>
+													</tr>
+												);
+											})}
+										</tbody>
+									</table>
+								</div>
+							</div>
+						)}
+					</>
+				) : (
+					<>
 				<div className="mb-4 flex justify-between items-center">
 					<h2 className="text-xl font-semibold text-slate-800">Interns List</h2>
 					<div className="flex items-center gap-3">
@@ -741,6 +983,8 @@ export default function InternshipManagement() {
 							</table>
 						</div>
 					</div>
+				)}
+					</>
 				)}
 			</div>
 

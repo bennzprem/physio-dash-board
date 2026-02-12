@@ -284,6 +284,11 @@ service cloud.firestore {
     match /interns/{id} {
       allow read, write: if isLoggedIn() && (isFrontdesk() || isAdmin() || isSuperAdmin());
     }
+    // Intern registrations from QR form: API creates (admin SDK); frontdesk reads and updates status
+    match /internRegistrations/{id} {
+      allow read, update: if isLoggedIn() && (isFrontdesk() || isAdmin() || isSuperAdmin());
+      allow create, delete: if false;
+    }
     match /workshopEnrolments/{id} {
       allow read, write: if isLoggedIn() && (isFrontdesk() || isAdmin() || isSuperAdmin());
     }

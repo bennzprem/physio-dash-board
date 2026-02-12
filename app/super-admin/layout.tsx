@@ -38,7 +38,7 @@ const getSuperAdminLinks = (isExclusiveSuperAdmin: boolean): SidebarLink[] => {
 		{ href: '#calendar-appointments', label: 'Calendar & Appointments', icon: 'fas fa-calendar-check' },
 		{ href: '#billing', label: 'Billing & Payments', icon: 'fas fa-file-invoice-dollar' },
 		{ href: '#analytics', label: 'Analytics', icon: 'fas fa-chart-pie' },
-		{ href: '#notifications', label: 'Notifications & Messaging', icon: 'fas fa-bell' },
+		{ href: '#notifications', label: 'Messages', icon: 'fas fa-bell' },
 		{ href: '#inventory', label: 'Inventory Management', icon: 'fas fa-boxes' },
 		{ href: '#leave', label: 'Leave Management', icon: 'fas fa-calendar-times' },
 		{ href: '#internship', label: 'Internship', icon: 'fas fa-graduation-cap' },

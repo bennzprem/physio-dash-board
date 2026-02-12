@@ -7,26 +7,6 @@ import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/PageHeader';
 
-// App Notifications Interfaces
-interface AppNotification {
-	id: string;
-	type: 'birthday' | 'patient_deleted' | 'employee_deleted';
-	title: string;
-	message: string;
-	createdAt: string;
-	read: boolean;
-	metadata?: {
-		patientId?: string;
-		patientName?: string;
-		employeeId?: string;
-		employeeName?: string;
-		deletedBy?: string;
-		deletedByName?: string;
-		birthdayDate?: string;
-		personName?: string;
-	};
-}
-
 // Messaging Interfaces
 interface StaffMember {
 	id: string;
@@ -74,11 +54,6 @@ interface Conversation {
 export default function Notifications() {
 	const { user } = useAuth();
 	
-	// App Notifications State
-	const [notifications, setNotifications] = useState<AppNotification[]>([]);
-	const [notificationsLoading, setNotificationsLoading] = useState(true);
-	const [notificationFilter, setNotificationFilter] = useState<'all' | 'birthday' | 'patient_deleted' | 'employee_deleted'>('all');
-	
 	// Messaging State
 	const [staff, setStaff] = useState<StaffMember[]>([]);
 	const [selectedEmployee, setSelectedEmployee] = useState<StaffMember | null>(null);
@@ -92,45 +67,6 @@ export default function Notifications() {
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
-
-	// Load app notifications
-	useEffect(() => {
-		if (!user?.uid) {
-			setNotificationsLoading(false);
-			return;
-		}
-
-		const unsubscribe = onSnapshot(
-			query(
-				collection(db, 'appNotifications'),
-				orderBy('createdAt', 'desc')
-			),
-			(snapshot: QuerySnapshot) => {
-				const mapped = snapshot.docs.map(docSnap => {
-					const data = docSnap.data();
-					const created = (data.createdAt as Timestamp | undefined)?.toDate?.();
-					return {
-						id: docSnap.id,
-						type: (data.type as 'birthday' | 'patient_deleted' | 'employee_deleted') || 'other',
-						title: data.title ? String(data.title) : '',
-						message: data.message ? String(data.message) : '',
-						createdAt: created ? created.toISOString() : (data.createdAt as string | undefined) || new Date().toISOString(),
-						read: data.read || false,
-						metadata: data.metadata || {},
-					} as AppNotification;
-				});
-				setNotifications([...mapped]);
-				setNotificationsLoading(false);
-			},
-			error => {
-				console.error('Failed to load app notifications', error);
-				setNotifications([]);
-				setNotificationsLoading(false);
-			}
-		);
-
-		return () => unsubscribe();
-	}, [user]);
 
 	// Load staff for messaging
 	useEffect(() => {
@@ -491,118 +427,16 @@ export default function Notifications() {
 		return date.toLocaleDateString();
 	};
 
-	const filteredNotifications = useMemo(() => {
-		if (notificationFilter === 'all') return notifications;
-		return notifications.filter(n => n.type === notificationFilter);
-	}, [notifications, notificationFilter]);
-
-	const unreadCount = useMemo(() => {
-		return notifications.filter(n => !n.read).length;
-	}, [notifications]);
-
-	const getNotificationIcon = (type: string) => {
-		switch (type) {
-			case 'birthday':
-				return 'fas fa-birthday-cake text-pink-500';
-			case 'patient_deleted':
-				return 'fas fa-user-times text-red-500';
-			case 'employee_deleted':
-				return 'fas fa-user-slash text-orange-500';
-			default:
-				return 'fas fa-bell text-slate-500';
-		}
-	};
-
-	const getNotificationColor = (type: string) => {
-		switch (type) {
-			case 'birthday':
-				return 'bg-pink-50 border-pink-200';
-			case 'patient_deleted':
-				return 'bg-red-50 border-red-200';
-			case 'employee_deleted':
-				return 'bg-orange-50 border-orange-200';
-			default:
-				return 'bg-slate-50 border-slate-200';
-		}
-	};
-
 	return (
 		<div className="min-h-svh bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 px-6 py-10">
 			<div className="mx-auto max-w-7xl">
 			<PageHeader
-					title="Notifications & Messaging"
+					title="Messaging"
 				/>
 
-				<div className="mt-6 grid h-[calc(100vh-12rem)] grid-cols-12 gap-4">
-					{/* Left Side: App Notifications */}
-					<div className="col-span-12 lg:col-span-5 flex flex-col rounded-2xl bg-white/80 backdrop-blur-sm shadow-lg border border-white/20 overflow-hidden">
-						<div className="p-4 border-b border-slate-200/50 bg-gradient-to-r from-purple-50 to-blue-50 flex items-center justify-between">
-							<div>
-								<h3 className="text-lg font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">App Notifications</h3>
-								<p className="text-sm text-slate-600 font-medium">
-									{unreadCount} unread · {notifications.length} total
-								</p>
-							</div>
-							<select
-								value={notificationFilter}
-								onChange={e => setNotificationFilter(e.target.value as typeof notificationFilter)}
-								className="rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 shadow-sm"
-							>
-								<option value="all">All types</option>
-								<option value="birthday">Birthdays</option>
-								<option value="patient_deleted">Patient Deletions</option>
-								<option value="employee_deleted">Employee Deletions</option>
-							</select>
-						</div>
-						<div className="flex-1 overflow-y-auto divide-y divide-slate-100/50 bg-white/50">
-							{notificationsLoading ? (
-								<div className="p-8 text-center text-sm text-slate-500">
-									<div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-purple-600 border-t-transparent"></div>
-									<p className="mt-2">Loading notifications...</p>
-								</div>
-							) : filteredNotifications.length === 0 ? (
-								<div className="p-8 text-center">
-									<i className="fas fa-bell-slash text-3xl text-slate-300 mb-3" aria-hidden="true" />
-									<p className="text-slate-500 text-sm">No notifications to show.</p>
-								</div>
-							) : (
-								filteredNotifications.map(notification => (
-									<div
-										key={notification.id}
-										className={`p-4 hover:bg-gradient-to-r hover:from-purple-50/50 hover:to-blue-50/50 transition-all duration-200 ${!notification.read ? 'bg-gradient-to-r from-purple-50/70 to-blue-50/70 border-l-3 border-purple-500' : ''} ${getNotificationColor(notification.type)}`}
-									>
-										<div className="flex items-start gap-3">
-											<div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-md ${getNotificationColor(notification.type)}`}>
-												<i className={`${getNotificationIcon(notification.type)} text-base`} aria-hidden="true" />
-											</div>
-											<div className="flex-1 min-w-0">
-												<h4 className="font-bold text-sm text-slate-900">{notification.title}</h4>
-												<p className="text-xs text-slate-700 mt-1 font-medium">{notification.message}</p>
-												{notification.metadata && (
-													<div className="mt-1 text-xs text-slate-600">
-														{notification.metadata.deletedBy && (
-															<p>Deleted by: {notification.metadata.deletedByName || notification.metadata.deletedBy}</p>
-														)}
-													</div>
-												)}
-											</div>
-											<div className="flex-shrink-0 text-xs text-slate-600 font-medium">
-												{formatTime(notification.createdAt)}
-											</div>
-											{!notification.read && (
-												<div className="flex-shrink-0">
-													<div className="w-3 h-3 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 animate-pulse"></div>
-												</div>
-											)}
-										</div>
-									</div>
-								))
-							)}
-						</div>
-					</div>
-
-					{/* Right Side: Messaging */}
-					<div className="col-span-12 lg:col-span-7 flex flex-col rounded-2xl bg-white/80 backdrop-blur-sm shadow-lg border border-white/20 overflow-hidden">
+				<div className="mt-6 h-[calc(100vh-12rem)]">
+					{/* Messaging - full width */}
+					<div className="h-full flex flex-col rounded-2xl bg-white/80 backdrop-blur-sm shadow-lg border border-white/20 overflow-hidden">
 						<div className="p-4 border-b border-slate-200/50 bg-gradient-to-r from-indigo-50 to-purple-50 flex items-center justify-between">
 							<h3 className="text-lg font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Messaging</h3>
 						</div>
