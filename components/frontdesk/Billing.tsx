@@ -7,6 +7,7 @@ import {
 	onSnapshot,
 	addDoc,
 	updateDoc,
+	setDoc,
 	deleteDoc,
 	query,
 	where,
@@ -1151,6 +1152,11 @@ export default function Billing() {
 	const [dyesDateFilterFrom, setDyesDateFilterFrom] = useState<string>('');
 	const [dyesDateFilterTo, setDyesDateFilterTo] = useState<string>('');
 	const [showDyesInvoiceModal, setShowDyesInvoiceModal] = useState(false);
+	// Package patients: display installments (1 = one row, N = N rows). Key = patientId.
+	const [billingDisplayInstallments, setBillingDisplayInstallments] = useState<Record<string, number>>({});
+	const [installmentModal, setInstallmentModal] = useState<{ patientId: string; patientName: string } | null>(null);
+	const [installmentInput, setInstallmentInput] = useState<string>('1');
+	const [savingInstallment, setSavingInstallment] = useState(false);
 	const [editableDyesInvoice, setEditableDyesInvoice] = useState<{
 		invoiceNo: string;
 		invoiceDate: string;
@@ -1238,6 +1244,27 @@ export default function Billing() {
 			}
 		);
 
+		return () => unsubscribe();
+	}, []);
+
+	// Load billing display config (installments per package patient)
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'billingDisplayConfig'),
+			(snapshot: QuerySnapshot) => {
+				const map: Record<string, number> = {};
+				snapshot.docs.forEach(docSnap => {
+					const data = docSnap.data();
+					const patientId = docSnap.id;
+					const n = typeof data.installments === 'number' ? data.installments : 0;
+					if (patientId && n > 0) map[patientId] = n;
+				});
+				setBillingDisplayInstallments(map);
+			},
+			error => {
+				console.error('Failed to load billing display config', error);
+			}
+		);
 		return () => unsubscribe();
 	}, []);
 
@@ -1556,22 +1583,16 @@ export default function Billing() {
 			// Only include bills with status 'Pending'
 			if (bill.status !== 'Pending') return false;
 
-			// If this is a package bill itself (has packageAmount > 0 or billingId starts with PKG-), include it
-			const isPackageBill = (bill.packageAmount && bill.packageAmount > 0) || 
+			// Include package bills
+			const isPackageBill = (bill.packageAmount && bill.packageAmount > 0) ||
 				(bill.billingId && bill.billingId.startsWith('PKG-'));
-			if (isPackageBill) {
-				return true; // Package bills should show in pending payments
-			}
+			if (isPackageBill) return true;
 
-			// For individual session bills, exclude if patient has a package
-			const patientHasPackage = patientsWithPackages.has(bill.patientId) || 
-				patientsWithPackageBills.has(bill.patientId);
-			
-			// Exclude individual session bills for package patients
-			return !patientHasPackage;
+			// Include all other pending bills (package patients appear via display grouping with PKG badge)
+			return true;
 		});
 		return deduplicateNABills(list, patients);
-	}, [filteredBilling, patientsWithPackages, patientsWithPackageBills, patients]);
+	}, [filteredBilling, patients]);
 
 	// Calculate today's statistics
 	const todayStats = useMemo(() => {
@@ -1620,14 +1641,14 @@ export default function Billing() {
 	}, [patients, billing]);
 	const filteredPending = useMemo(() => {
 		if (!pendingSearchQuery.trim()) return pending;
-		const query = pendingSearchQuery.toLowerCase().trim();
-		return pending.filter(bill => 
-			bill.billingId?.toLowerCase().includes(query) ||
-			bill.patient?.toLowerCase().includes(query) ||
-			bill.patientId?.toLowerCase().includes(query) ||
-			bill.doctor?.toLowerCase().includes(query) ||
-			bill.amount?.toString().includes(query) ||
-			bill.date?.toLowerCase().includes(query)
+		const q = pendingSearchQuery.toLowerCase().trim();
+		return pending.filter(bill =>
+			bill.billingId?.toLowerCase().includes(q) ||
+			bill.patient?.toLowerCase().includes(q) ||
+			bill.patientId?.toLowerCase().includes(q) ||
+			bill.doctor?.toLowerCase().includes(q) ||
+			bill.amount?.toString().includes(q) ||
+			bill.date?.toLowerCase().includes(q)
 		);
 	}, [pending, pendingSearchQuery]);
 	const completed = useMemo(() => {
@@ -1672,17 +1693,189 @@ export default function Billing() {
 
 	const filteredCompleted = useMemo(() => {
 		if (!completedSearchQuery.trim()) return completed;
-		const query = completedSearchQuery.toLowerCase().trim();
-		return completed.filter(bill => 
-			bill.billingId?.toLowerCase().includes(query) ||
-			bill.patient?.toLowerCase().includes(query) ||
-			bill.patientId?.toLowerCase().includes(query) ||
-			bill.doctor?.toLowerCase().includes(query) ||
-			bill.amount?.toString().includes(query) ||
-			bill.date?.toLowerCase().includes(query) ||
-			bill.paymentMode?.toLowerCase().includes(query)
+		const q = completedSearchQuery.toLowerCase().trim();
+		return completed.filter(bill =>
+			bill.billingId?.toLowerCase().includes(q) ||
+			bill.patient?.toLowerCase().includes(q) ||
+			bill.patientId?.toLowerCase().includes(q) ||
+			bill.doctor?.toLowerCase().includes(q) ||
+			bill.amount?.toString().includes(q) ||
+			bill.date?.toLowerCase().includes(q) ||
+			bill.paymentMode?.toLowerCase().includes(q)
 		);
 	}, [completed, completedSearchQuery]);
+
+	type BillingDisplayRow = {
+		bill: BillingRecord;
+		packageInfo: {
+			patientId: string;
+			patientName: string;
+			completedSessions: number;
+			totalSessions: number;
+			installmentIndex?: number;
+			installmentTotal?: number;
+		} | null;
+		isPlaceholder?: boolean;
+	};
+
+	const packagePatientIds = useMemo(() => new Set<string>([
+		...Array.from(patientsWithPackages.keys()),
+		...patientsWithPackageBills,
+	]), [patientsWithPackages, patientsWithPackageBills]);
+
+	// Build pending display rows from full pending list (so placeholders are always included), then filter by search
+	const pendingDisplayRows = useMemo((): BillingDisplayRow[] => {
+		const rows: BillingDisplayRow[] = [];
+		const billsForPackagePatients = pending.filter(b => b.patientId && packagePatientIds.has(b.patientId));
+		const billsForNonPackagePatients = pending.filter(b => !b.patientId || !packagePatientIds.has(b.patientId));
+		for (const bill of billsForNonPackagePatients) rows.push({ bill, packageInfo: null });
+		const representedPackagePatients = new Set<string>();
+		const byPatient = new Map<string, BillingRecord[]>();
+		for (const bill of billsForPackagePatients) {
+			const key = bill.patientId || bill.billingId;
+			if (!byPatient.has(key)) byPatient.set(key, []);
+			byPatient.get(key)!.push(bill);
+		}
+		byPatient.forEach((bills, patientId) => {
+			representedPackagePatients.add(patientId);
+			const rep = bills[0];
+			const patient = patients.find(p => p.patientId === patientId);
+			const totalSessions = patient?.totalSessionsRequired ?? rep.packageSessions ?? 0;
+			const completedSessions = appointments.filter(a => a.patientId === patientId && a.status === 'completed').length;
+			const n = Math.max(1, billingDisplayInstallments[patientId] || 1);
+			for (let i = 1; i <= n; i++) {
+				rows.push({
+					bill: rep,
+					packageInfo: {
+						patientId,
+						patientName: rep.patient || patient?.name || '—',
+						completedSessions,
+						totalSessions: Number(totalSessions) || 0,
+						installmentIndex: i,
+						installmentTotal: n,
+					},
+				});
+			}
+		});
+		// Show package patients who have no pending bills (so they always appear in the list)
+		patients.forEach(p => {
+			if (!p.patientId || !packagePatientIds.has(p.patientId) || representedPackagePatients.has(p.patientId)) return;
+			const totalSessions = p.totalSessionsRequired ?? 0;
+			const completedSessions = appointments.filter(a => a.patientId === p.patientId && a.status === 'completed').length;
+			// Use real values for placeholder: package amount, last activity date, PKG label
+			const patientAppointments = appointments.filter(a => a.patientId === p.patientId && a.date);
+			const lastAppointmentDate = patientAppointments.length > 0
+				? patientAppointments.reduce((latest, a) => (a.date && (!latest || (a.date > latest)) ? a.date : latest), '')
+				: '';
+			const displayDate = lastAppointmentDate || (p.registeredAt ? (p.registeredAt.slice(0, 10)) : '');
+			const placeholderBill: BillingRecord = {
+				billingId: `PKG-${p.patientId}`,
+				patient: p.name || p.patientId || '—',
+				patientId: p.patientId,
+				amount: typeof p.packageAmount === 'number' && p.packageAmount > 0 ? p.packageAmount : 0,
+				date: displayDate || '—',
+				status: 'Pending',
+			};
+			rows.push({
+				bill: placeholderBill,
+				packageInfo: {
+					patientId: p.patientId,
+					patientName: p.name || p.patientId || '—',
+					completedSessions,
+					totalSessions: Number(totalSessions) || 0,
+					installmentIndex: 1,
+					installmentTotal: 1,
+				},
+				isPlaceholder: true,
+			});
+		});
+		return rows;
+	}, [pending, patients, appointments, billingDisplayInstallments, packagePatientIds]);
+
+	// Apply search to display rows (so searching finds placeholders by patient name too)
+	const pendingDisplayRowsFiltered = useMemo((): BillingDisplayRow[] => {
+		if (!pendingSearchQuery.trim()) return pendingDisplayRows;
+		const q = pendingSearchQuery.toLowerCase().trim();
+		return pendingDisplayRows.filter(row => {
+			const { bill, packageInfo } = row;
+			const patientName = (packageInfo?.patientName ?? bill.patient ?? '').toLowerCase();
+			return (
+				bill.billingId?.toLowerCase().includes(q) ||
+				patientName.includes(q) ||
+				bill.patientId?.toLowerCase().includes(q) ||
+				bill.doctor?.toLowerCase().includes(q) ||
+				bill.amount?.toString().includes(q) ||
+				bill.date?.toLowerCase().includes(q)
+			);
+		});
+	}, [pendingDisplayRows, pendingSearchQuery]);
+
+	const completedDisplayRows = useMemo((): BillingDisplayRow[] => {
+		const rows: BillingDisplayRow[] = [];
+		const billsForPackagePatients = filteredCompleted.filter(b => b.patientId && packagePatientIds.has(b.patientId));
+		const billsForNonPackagePatients = filteredCompleted.filter(b => !b.patientId || !packagePatientIds.has(b.patientId));
+		for (const bill of billsForNonPackagePatients) rows.push({ bill, packageInfo: null });
+		const representedPackagePatients = new Set<string>();
+		const byPatient = new Map<string, BillingRecord[]>();
+		for (const bill of billsForPackagePatients) {
+			const key = bill.patientId || bill.billingId;
+			if (!byPatient.has(key)) byPatient.set(key, []);
+			byPatient.get(key)!.push(bill);
+		}
+		byPatient.forEach((bills, patientId) => {
+			representedPackagePatients.add(patientId);
+			const rep = bills[0];
+			const patient = patients.find(p => p.patientId === patientId);
+			const totalSessions = patient?.totalSessionsRequired ?? rep.packageSessions ?? 0;
+			const completedSessions = appointments.filter(a => a.patientId === patientId && a.status === 'completed').length;
+			const n = Math.max(1, billingDisplayInstallments[patientId] || 1);
+			for (let i = 1; i <= n; i++) {
+				rows.push({
+					bill: rep,
+					packageInfo: {
+						patientId,
+						patientName: rep.patient || patient?.name || '—',
+						completedSessions,
+						totalSessions: Number(totalSessions) || 0,
+						installmentIndex: i,
+						installmentTotal: n,
+					},
+				});
+			}
+		});
+		// Show package patients who have no completed bills (so they always appear in the list)
+		patients.forEach(p => {
+			if (!p.patientId || !packagePatientIds.has(p.patientId) || representedPackagePatients.has(p.patientId)) return;
+			const totalSessions = p.totalSessionsRequired ?? 0;
+			const completedSessions = appointments.filter(a => a.patientId === p.patientId && a.status === 'completed').length;
+			const patientAppointments = appointments.filter(a => a.patientId === p.patientId && a.date);
+			const lastAppointmentDate = patientAppointments.length > 0
+				? patientAppointments.reduce((latest, a) => (a.date && (!latest || (a.date > latest)) ? a.date : latest), '')
+				: '';
+			const displayDate = lastAppointmentDate || (p.registeredAt ? p.registeredAt.slice(0, 10) : '');
+			const placeholderBill: BillingRecord = {
+				billingId: `PKG-${p.patientId}`,
+				patient: p.name || p.patientId || '—',
+				patientId: p.patientId,
+				amount: typeof p.packageAmount === 'number' && p.packageAmount > 0 ? p.packageAmount : 0,
+				date: displayDate || '—',
+				status: 'Completed',
+			};
+			rows.push({
+				bill: placeholderBill,
+				packageInfo: {
+					patientId: p.patientId,
+					patientName: p.name || p.patientId || '—',
+					completedSessions,
+					totalSessions: Number(totalSessions) || 0,
+					installmentIndex: 1,
+					installmentTotal: 1,
+				},
+				isPlaceholder: true,
+			});
+		});
+		return rows;
+	}, [filteredCompleted, patients, appointments, billingDisplayInstallments, packagePatientIds]);
 
 	// Calculate cycle summary based on selected cycle
 	type CycleRange = ReturnType<typeof getCurrentBillingCycle>;
@@ -1736,6 +1929,49 @@ export default function Billing() {
 		setShowPayModal(true);
 	};
 
+	// For placeholder rows (no bill yet): create a pending package bill then open Pay modal
+	const handlePayForPlaceholder = async (bill: BillingRecord) => {
+		if (bill.id) {
+			handlePay(bill);
+			return;
+		}
+		const patient = patients.find(p => p.patientId === bill.patientId);
+		const amount = typeof bill.amount === 'number' && bill.amount > 0 ? bill.amount : (patient?.packageAmount ?? 0);
+		const dateStr = bill.date && bill.date !== '—' ? bill.date : new Date().toISOString().split('T')[0];
+		try {
+			const ref = await addDoc(collection(db, 'billing'), {
+				billingId: bill.billingId || `PKG-${bill.patientId}`,
+				patient: bill.patient || patient?.name || '',
+				patientId: bill.patientId || '',
+				packageAmount: amount,
+				amount,
+				date: dateStr,
+				status: 'Pending',
+				paymentMode: null,
+				utr: null,
+				createdAt: serverTimestamp(),
+				updatedAt: serverTimestamp(),
+			});
+			const newBill: BillingRecord = {
+				...bill,
+				id: ref.id,
+				billingId: bill.billingId || `PKG-${bill.patientId}`,
+				amount,
+				date: dateStr,
+			};
+			setSelectedBill(newBill);
+			setPaymentMode('Cash');
+			setUtr('');
+			const isReferral = (patient?.patientType || '').toUpperCase() === 'REFERRAL';
+			setPaymentAmount(isReferral ? 'N/A' : amount);
+			setPaymentDate(formatDateForInput(dateStr));
+			setShowPayModal(true);
+		} catch (err) {
+			console.error('Failed to create package bill', err);
+			alert('Failed to create billing record. Please try again.');
+		}
+	};
+
 	const handleSubmitPayment = async () => {
 		if (!selectedBill || !selectedBill.id) return;
 
@@ -1785,6 +2021,22 @@ export default function Billing() {
 		} catch (error) {
 			console.error('Failed to delete billing record', error);
 			alert(`Failed to delete billing record: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		}
+	};
+
+	const handleSaveInstallment = async () => {
+		if (!installmentModal) return;
+		const n = Math.min(24, Math.max(1, parseInt(installmentInput, 10) || 1));
+		setSavingInstallment(true);
+		try {
+			await setDoc(doc(db, 'billingDisplayConfig', installmentModal.patientId), { installments: n });
+			setInstallmentModal(null);
+			setInstallmentInput('1');
+		} catch (err) {
+			console.error('Failed to save installment count', err);
+			alert('Failed to save. Please try again.');
+		} finally {
+			setSavingInstallment(false);
 		}
 	};
 
@@ -2861,43 +3113,68 @@ export default function Billing() {
 									</div>
 								</div>
 								<div className="overflow-y-auto overflow-x-auto flex-1">
-									{filteredPending.length === 0 ? (
+{pendingDisplayRowsFiltered.length === 0 ? (
 										<div className="p-6">
 											<p className="py-8 text-center text-sm text-slate-500">
 												{pendingSearchQuery.trim() ? 'No pending payments match your search.' : 'No pending payments.'}
 											</p>
 										</div>
 									) : (
-										<table className="min-w-full divide-y divide-slate-200 text-left text-sm m-6">
+										<table className="w-full divide-y divide-slate-200 text-left text-sm m-6" style={{ minWidth: '720px' }}>
+											<colgroup>
+												<col className="w-auto" />
+												<col className="w-auto" />
+												<col className="w-auto" />
+												<col className="w-auto" />
+												<col style={{ width: '280px', minWidth: '280px' }} />
+											</colgroup>
 											<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0 z-10">
 												<tr>
-														<th className="px-3 py-2 font-semibold bg-slate-50">Bill ID</th>
-														<th className="px-3 py-2 font-semibold bg-slate-50">Patient</th>
-														<th className="px-3 py-2 font-semibold bg-slate-50">Amount</th>
-														<th className="px-3 py-2 font-semibold bg-slate-50">Date</th>
-														<th className="px-3 py-2 text-right font-semibold bg-slate-50">
-															Action
-														</th>
-													</tr>
-												</thead>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Bill ID</th>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Patient</th>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Amount</th>
+													<th className="px-3 py-2 font-semibold bg-slate-50">Date</th>
+													<th className="px-3 py-2 pr-4 text-right font-semibold bg-slate-50 whitespace-nowrap">
+														Actions
+													</th>
+												</tr>
+											</thead>
 												<tbody className="divide-y divide-slate-100">
-													{filteredPending.map(bill => {
+													{pendingDisplayRowsFiltered.map((row, idx) => {
+														const { bill, packageInfo, isPlaceholder } = row;
 														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
 														const isDyes = (patientType || '').toUpperCase() === 'DYES';
 														const isReferral = (patientType || '').toUpperCase() === 'REFERRAL';
 														const isVIP = (patientType || '').toUpperCase() === 'VIP';
 														const payLabel = isDyes ? 'Bill' : 'Pay';
+														const rowKey = isPlaceholder
+															? `pkg-placeholder-pending-${bill.patientId}`
+															: packageInfo
+															? `pkg-${bill.patientId}-${packageInfo.installmentIndex}-${packageInfo.installmentTotal}`
+															: bill.billingId;
 														return (
-															<tr key={bill.billingId}>
+															<tr key={rowKey}>
 															<td className="px-3 py-3 text-sm font-medium text-slate-800">
-																{bill.billingId}
+																{packageInfo ? (packageInfo.installmentTotal && packageInfo.installmentTotal > 1 ? `—` : bill.billingId) : bill.billingId}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
-																<div className="flex items-center gap-2">
-																	{bill.patient}
-																	{isVIP && (
-																		<span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800">
-																			VIP
+																<div className="flex flex-col gap-0.5">
+																	<div className="flex items-center gap-2">
+																		{packageInfo ? packageInfo.patientName : bill.patient}
+																		{packageInfo && (
+																			<span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800">
+																				PKG
+																			</span>
+																		)}
+																		{isVIP && !packageInfo && (
+																			<span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800">
+																				VIP
+																			</span>
+																		)}
+																	</div>
+																	{packageInfo && (
+																		<span className="text-xs text-slate-500">
+																			{packageInfo.completedSessions}/{packageInfo.totalSessions} sessions
 																		</span>
 																	)}
 																</div>
@@ -2908,29 +3185,42 @@ export default function Billing() {
 															<td className="px-3 py-3 text-sm text-slate-600">
 																{bill.date}
 															</td>
-															<td className="px-3 py-3">
-																<div className="flex items-center justify-end gap-2">
-																	{isDyes && (
+															<td className="px-3 py-3 pr-4">
+																<div className="flex items-center justify-end gap-2 flex-wrap">
+																	{packageInfo && (
+																		<button
+																			type="button"
+																			onClick={() => {
+																				setInstallmentModal({ patientId: packageInfo.patientId, patientName: packageInfo.patientName });
+																				setInstallmentInput(String(packageInfo.installmentTotal || 1));
+																			}}
+																			className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200 shrink-0"
+																		>
+																			Installment
+																		</button>
+																	)}
+																	{isDyes && !isPlaceholder && (
 																		<button
 																			type="button"
 																			onClick={() => handleShowInvoicePreview(bill)}
-																			className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
+																			className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200 shrink-0"
 																		>
 																			Invoice
 																		</button>
 																	)}
 																	<button
 																		type="button"
-																		onClick={() => handlePay(bill)}
-																		className="inline-flex items-center rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+																		onClick={() => handlePayForPlaceholder(bill)}
+																		className="inline-flex items-center rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 shrink-0"
 																	>
 																		{payLabel}
 																	</button>
 																	<button
 																		type="button"
-																		onClick={() => handleDeleteBilling(bill)}
-																		className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-rose-600 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
-																		title="Delete billing record"
+																		onClick={() => !isPlaceholder && handleDeleteBilling(bill)}
+																		disabled={isPlaceholder}
+																		title={isPlaceholder ? 'No bill to delete' : 'Delete billing record'}
+																		className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-rose-600 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-50 disabled:hover:border-rose-200 shrink-0"
 																	>
 																		<i className="fas fa-trash text-xs" aria-hidden="true" />
 																	</button>
@@ -2976,39 +3266,64 @@ export default function Billing() {
 									</div>
 								</div>
 								<div className="overflow-y-auto overflow-x-auto flex-1">
-									{filteredCompleted.length === 0 ? (
+									{completedDisplayRows.length === 0 ? (
 										<div className="p-6">
 											<p className="py-8 text-center text-sm text-slate-500">
 												{completedSearchQuery.trim() ? 'No completed payments match your search.' : 'No completed payments.'}
 											</p>
 										</div>
 									) : (
-										<table className="min-w-full divide-y divide-slate-200 text-left text-sm m-6">
+										<table className="w-full divide-y divide-slate-200 text-left text-sm m-6" style={{ minWidth: '760px' }}>
+											<colgroup>
+												<col className="w-auto" />
+												<col className="w-auto" />
+												<col className="w-auto" />
+												<col className="w-auto" />
+												<col style={{ width: '280px', minWidth: '280px' }} />
+											</colgroup>
 											<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0 z-10">
 												<tr>
 													<th className="px-3 py-2 font-semibold bg-slate-50">Bill ID</th>
 													<th className="px-3 py-2 font-semibold bg-slate-50">Patient</th>
 													<th className="px-3 py-2 font-semibold bg-slate-50">Amount</th>
 													<th className="px-3 py-2 font-semibold bg-slate-50">Paid By</th>
-													<th className="px-3 py-2 font-semibold bg-slate-50">Actions</th>
+													<th className="px-3 py-2 pr-4 text-right font-semibold bg-slate-50 whitespace-nowrap">Actions</th>
 												</tr>
 											</thead>
 												<tbody className="divide-y divide-slate-100">
-													{filteredCompleted.map(bill => {
+													{completedDisplayRows.map((row) => {
+														const { bill, packageInfo, isPlaceholder } = row;
 														const patientType = patients.find(p => p.patientId === bill.patientId)?.patientType;
 														const isReferral = (patientType || '').toUpperCase() === 'REFERRAL';
 														const isVIP = (patientType || '').toUpperCase() === 'VIP';
+														const rowKey = isPlaceholder
+															? `pkg-placeholder-completed-${bill.patientId}`
+															: packageInfo
+															? `pkg-${bill.patientId}-${packageInfo.installmentIndex}-${packageInfo.installmentTotal}`
+															: bill.billingId;
 														return (
-														<tr key={bill.billingId}>
+														<tr key={rowKey}>
 															<td className="px-3 py-3 text-sm font-medium text-slate-800">
-																{bill.billingId}
+																{packageInfo && packageInfo.installmentTotal && packageInfo.installmentTotal > 1 ? '—' : bill.billingId}
 															</td>
 															<td className="px-3 py-3 text-sm text-slate-600">
-																<div className="flex items-center gap-2">
-																	{bill.patient}
-																	{isVIP && (
-																		<span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800">
-																			VIP
+																<div className="flex flex-col gap-0.5">
+																	<div className="flex items-center gap-2">
+																		{packageInfo ? packageInfo.patientName : bill.patient}
+																		{packageInfo && (
+																			<span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-800">
+																				PKG
+																			</span>
+																		)}
+																		{isVIP && !packageInfo && (
+																			<span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800">
+																				VIP
+																			</span>
+																		)}
+																	</div>
+																	{packageInfo && (
+																		<span className="text-xs text-slate-500">
+																			{packageInfo.completedSessions}/{packageInfo.totalSessions} sessions
 																		</span>
 																	)}
 																</div>
@@ -3019,32 +3334,36 @@ export default function Billing() {
 															<td className="px-3 py-3 text-sm text-slate-600">
 																{isReferral || isVIP ? 'N/A' : (bill.paymentMode || '--')}
 															</td>
-															<td className="px-3 py-3">
-																<div className="flex items-center justify-end gap-2">
-																	<button
-																		type="button"
-																		onClick={() =>
-																			handleViewPaymentSlip(bill)
-																		}
-																		className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
-																	>
-																		Receipt
-																	</button>
-																	<button
-																		type="button"
-																		onClick={() => handleShowInvoicePreview(bill)}
-																		className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
-																	>
-																		Invoice
-																	</button>
-																	<button
-																		type="button"
-																		onClick={() => handleDeleteBilling(bill)}
-																		className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-rose-600 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
-																		title="Delete billing record"
-																	>
-																		<i className="fas fa-trash text-xs" aria-hidden="true" />
-																	</button>
+															<td className="px-3 py-3 pr-4">
+																<div className="flex items-center justify-end gap-2 flex-wrap">
+																	{isPlaceholder ? (
+																		<span className="text-xs text-slate-400">No payments yet</span>
+																	) : (
+																		<>
+																			<button
+																				type="button"
+																				onClick={() => handleViewPaymentSlip(bill)}
+																				className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 shrink-0"
+																			>
+																				Receipt
+																			</button>
+																			<button
+																				type="button"
+																				onClick={() => handleShowInvoicePreview(bill)}
+																				className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200 shrink-0"
+																			>
+																				Invoice
+																			</button>
+																			<button
+																				type="button"
+																				onClick={() => handleDeleteBilling(bill)}
+																				className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-rose-600 transition hover:border-rose-400 hover:bg-rose-100 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200 shrink-0"
+																				title="Delete billing record"
+																			>
+																				<i className="fas fa-trash text-xs" aria-hidden="true" />
+																			</button>
+																		</>
+																	)}
 																</div>
 															</td>
 														</tr>
@@ -3808,6 +4127,46 @@ export default function Billing() {
 									</>
 								)}
 							</footer>
+						</div>
+					</div>
+				)}
+
+				{/* Installment modal (package patients) */}
+				{installmentModal && (
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+						<div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
+							<h3 className="text-lg font-semibold text-slate-900">Display installments</h3>
+							<p className="text-sm text-slate-600 mt-1">
+								How many rows to show for <strong>{installmentModal.patientName}</strong> in Pending and Completed payments?
+							</p>
+							<div className="mt-4">
+								<label className="block text-sm font-medium text-slate-700">Number of installments (1–24)</label>
+								<input
+									type="number"
+									min={1}
+									max={24}
+									value={installmentInput}
+									onChange={e => setInstallmentInput(e.target.value)}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+								/>
+							</div>
+							<div className="mt-6 flex justify-end gap-2">
+								<button
+									type="button"
+									onClick={() => { setInstallmentModal(null); setInstallmentInput('1'); }}
+									className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={handleSaveInstallment}
+									disabled={savingInstallment}
+									className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+								>
+									{savingInstallment ? 'Saving…' : 'Save'}
+								</button>
+							</div>
 						</div>
 					</div>
 				)}

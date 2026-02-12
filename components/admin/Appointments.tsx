@@ -5,9 +5,12 @@ import {
 	addDoc,
 	collection,
 	doc,
+	getDocs,
 	onSnapshot,
+	query,
 	serverTimestamp,
 	updateDoc,
+	where,
 	type QuerySnapshot,
 	type Timestamp,
 } from 'firebase/firestore';
@@ -63,6 +66,12 @@ interface StaffMember {
 	dateSpecificAvailability?: DateSpecificAvailability;
 }
 
+interface ApprovedLeaveRange {
+	userName: string;
+	startDate: string;
+	endDate: string;
+}
+
 type FirestoreAppointmentRecord = AdminAppointmentRecord & {
 	id: string;
 	appointmentId?: string;
@@ -97,6 +106,7 @@ export default function Appointments() {
 	const [showPatientAppointmentsModal, setShowPatientAppointmentsModal] = useState(false);
 	const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
 	const [bookingLoading, setBookingLoading] = useState(false);
+	const [approvedLeaveRanges, setApprovedLeaveRanges] = useState<ApprovedLeaveRange[]>([]);
 	const [bookingForm, setBookingForm] = useState({
 		patientId: '',
 		doctor: '',
@@ -202,6 +212,38 @@ export default function Appointments() {
 		return () => unsubscribe();
 	}, []);
 
+	// Load approved leave so clinicians on leave are not available for booking
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const q = query(
+					collection(db, 'leaveRequests'),
+					where('status', '==', 'approved')
+				);
+				const snapshot = await getDocs(q);
+				if (cancelled) return;
+				const ranges: ApprovedLeaveRange[] = [];
+				snapshot.forEach(docSnap => {
+					const data = docSnap.data();
+					const startDate = data.startDate ? String(data.startDate) : '';
+					const endDate = data.endDate ? String(data.endDate) : '';
+					const userName = data.userName ? String(data.userName) : '';
+					if (userName && startDate && endDate) {
+						ranges.push({ userName, startDate, endDate });
+					}
+				});
+				setApprovedLeaveRanges(ranges);
+			} catch (err) {
+				if (!cancelled) {
+					console.error('Failed to load approved leave:', err);
+					setApprovedLeaveRanges([]);
+				}
+			}
+		})();
+		return () => { cancelled = true; };
+	}, []);
+
 	const patientLookup = useMemo(() => {
 		const map = new Map<string, AdminPatientRecord & { id?: string; patientType?: string }>();
 		for (const patient of patients) {
@@ -217,11 +259,25 @@ export default function Appointments() {
 			.filter(Boolean)
 			.sort((a, b) => a.localeCompare(b));
 
+		// Exclude clinicians on approved leave for the selected date
+		const dateOnly = bookingForm.date ? bookingForm.date.slice(0, 10) : '';
+		const notOnLeave = dateOnly
+			? base.filter(name => {
+					const isOnApprovedLeave = approvedLeaveRanges.some(
+						(l) =>
+							l.userName === name &&
+							dateOnly >= (l.startDate || '').slice(0, 10) &&
+							dateOnly <= (l.endDate || '').slice(0, 10)
+					);
+					return !isOnApprovedLeave;
+				})
+			: base;
+
 		if (!bookingForm.date || !bookingForm.time) {
-			return base;
+			return notOnLeave;
 		}
 
-		return base.filter(name => {
+		return notOnLeave.filter(name => {
 			const member = staff.find(staffMember => staffMember.userName === name);
 			if (!member) return false;
 			const availability = checkAvailabilityConflict(
@@ -231,7 +287,7 @@ export default function Appointments() {
 			);
 			return availability.isAvailable;
 		});
-	}, [staff, bookingForm.date, bookingForm.time]);
+	}, [staff, bookingForm.date, bookingForm.time, approvedLeaveRanges]);
 
 	const patientSelectOptions = useMemo(() => {
 		return [...patients]

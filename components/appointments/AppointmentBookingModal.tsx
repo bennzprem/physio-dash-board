@@ -36,6 +36,12 @@ interface StaffMember {
 	dateSpecificAvailability?: DateSpecificAvailability;
 }
 
+interface ApprovedLeaveRange {
+	userName: string;
+	startDate: string;
+	endDate: string;
+}
+
 interface Appointment {
 	id?: string;
 	patientId?: string;
@@ -166,6 +172,7 @@ export default function AppointmentBookingModal({
 	const [clinicianTypeFilter, setClinicianTypeFilter] = useState<'all' | 'Physiotherapist' | 'StrengthAndConditioning'>('all');
 	const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
 	const [allClinicianAppointments, setAllClinicianAppointments] = useState<Array<{ id?: string; doctor: string; date: string; time: string; status: string; duration?: number }>>([]);
+	const [approvedLeaveRanges, setApprovedLeaveRanges] = useState<ApprovedLeaveRange[]>([]);
 
 	const filteredClinicians = useMemo(() => {
 		if (clinicianTypeFilter === 'all') {
@@ -263,6 +270,42 @@ export default function AppointmentBookingModal({
 		return () => unsubscribe();
 	}, [isOpen, form.doctor, hideClinicianSelection, defaultClinician]);
 
+	// Load approved leave so clinicians on leave are not available for booking
+	useEffect(() => {
+		if (!isOpen) {
+			setApprovedLeaveRanges([]);
+			return;
+		}
+		let cancelled = false;
+		(async () => {
+			try {
+				const q = query(
+					collection(db, 'leaveRequests'),
+					where('status', '==', 'approved')
+				);
+				const snapshot = await getDocs(q);
+				if (cancelled) return;
+				const ranges: ApprovedLeaveRange[] = [];
+				snapshot.forEach(docSnap => {
+					const data = docSnap.data();
+					const startDate = data.startDate ? String(data.startDate) : '';
+					const endDate = data.endDate ? String(data.endDate) : '';
+					const userName = data.userName ? String(data.userName) : '';
+					if (userName && startDate && endDate) {
+						ranges.push({ userName, startDate, endDate });
+					}
+				});
+				setApprovedLeaveRanges(ranges);
+			} catch (err) {
+				if (!cancelled) {
+					console.error('Failed to load approved leave:', err);
+					setApprovedLeaveRanges([]);
+				}
+			}
+		})();
+		return () => { cancelled = true; };
+	}, [isOpen]);
+
 	// Default availability: 9 AM to 7 PM for all days except Sunday
 	const DEFAULT_START_TIME = '09:00';
 	const DEFAULT_END_TIME = '19:00';
@@ -280,6 +323,19 @@ export default function AppointmentBookingModal({
 		
 		// Sunday is always unavailable
 		if (isSunday) {
+			return { enabled: false, slots: [] };
+		}
+
+		// Clinician on approved leave is not available for booking
+		const staffDisplayName = staffMember.name || (staffMember as { userName?: string }).userName;
+		const dateOnly = dateString.slice(0, 10);
+		const isOnApprovedLeave = approvedLeaveRanges.some(
+			(l) =>
+				l.userName === staffDisplayName &&
+				dateOnly >= (l.startDate || '').slice(0, 10) &&
+				dateOnly <= (l.endDate || '').slice(0, 10)
+		);
+		if (isOnApprovedLeave) {
 			return { enabled: false, slots: [] };
 		}
 		

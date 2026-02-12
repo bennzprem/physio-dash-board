@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, updateDoc, deleteDoc, query, where, getDocs, addDoc, serverTimestamp, orderBy, writeBatch, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
+import { collection, doc, onSnapshot, updateDoc, setDoc, deleteDoc, query, where, getDocs, addDoc, serverTimestamp, orderBy, writeBatch, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 
 import {
@@ -826,6 +826,10 @@ export default function Billing() {
 	const [importFile, setImportFile] = useState<File | null>(null);
 	const [importing, setImporting] = useState(false);
 	const [importPreview, setImportPreview] = useState<any[]>([]);
+	const [billingDisplayInstallments, setBillingDisplayInstallments] = useState<Record<string, number>>({});
+	const [installmentModal, setInstallmentModal] = useState<{ patientId: string; patientName: string } | null>(null);
+	const [installmentInput, setInstallmentInput] = useState<string>('1');
+	const [savingInstallment, setSavingInstallment] = useState(false);
 
 	// Load appointments from Firestore
 	useEffect(() => {
@@ -931,6 +935,27 @@ export default function Billing() {
 			}
 		);
 
+		return () => unsubscribe();
+	}, []);
+
+	// Load billing display config (installments per package patient)
+	useEffect(() => {
+		const unsubscribe = onSnapshot(
+			collection(db, 'billingDisplayConfig'),
+			(snapshot: QuerySnapshot) => {
+				const map: Record<string, number> = {};
+				snapshot.docs.forEach(docSnap => {
+					const data = docSnap.data();
+					const patientId = docSnap.id;
+					const n = typeof data.installments === 'number' ? data.installments : 0;
+					if (patientId && n > 0) map[patientId] = n;
+				});
+				setBillingDisplayInstallments(map);
+			},
+			error => {
+				console.error('Failed to load billing display config', error);
+			}
+		);
 		return () => unsubscribe();
 	}, []);
 
@@ -1628,6 +1653,22 @@ export default function Billing() {
 		}
 	};
 
+	const handleSaveInstallment = async () => {
+		if (!installmentModal) return;
+		const n = Math.min(24, Math.max(1, parseInt(installmentInput, 10) || 1));
+		setSavingInstallment(true);
+		try {
+			await setDoc(doc(db, 'billingDisplayConfig', installmentModal.patientId), { installments: n });
+			setInstallmentModal(null);
+			setInstallmentInput('1');
+		} catch (err) {
+			console.error('Failed to save installment count', err);
+			alert('Failed to save. Please try again.');
+		} finally {
+			setSavingInstallment(false);
+		}
+	};
+
 	// Parse Excel file
 	const parseExcelFile = async (file: File): Promise<any[]> => {
 		return new Promise((resolve, reject) => {
@@ -2106,27 +2147,10 @@ export default function Billing() {
 		return packageBillPatients;
 	}, [billing]);
 
-	// Pending payments from billing collection
+	// Pending payments from billing collection (include all pending so package patients appear)
 	const pending = useMemo(() => {
-		return billing.filter(bill => {
-			// Only include bills with status 'Pending'
-			if (bill.status !== 'Pending') return false;
-
-			// If this is a package bill itself (has packageAmount > 0 or billingId starts with PKG-), include it
-			const isPackageBill = (bill.packageAmount && bill.packageAmount > 0) || 
-				(bill.billingId && bill.billingId.startsWith('PKG-'));
-			if (isPackageBill) {
-				return true; // Package bills should show in pending payments
-			}
-
-			// For individual session bills, exclude if patient has a package
-			const patientHasPackage = patientsWithPackages.has(bill.patientId) || 
-				patientsWithPackageBills.has(bill.patientId);
-			
-			// Exclude individual session bills for package patients
-			return !patientHasPackage;
-		});
-	}, [billing, patientsWithPackages, patientsWithPackageBills]);
+		return billing.filter(bill => bill.status === 'Pending');
+	}, [billing]);
 	const filteredPending = useMemo(() => {
 		if (!pendingSearchQuery.trim()) return pending;
 		const query = pendingSearchQuery.toLowerCase().trim();
@@ -2152,19 +2176,104 @@ export default function Billing() {
 	}, [billing, departmentFilter, patientLookup]);
 	const filteredCompleted = useMemo(() => {
 		if (!completedSearchQuery.trim()) return completed;
-		const query = completedSearchQuery.toLowerCase().trim();
-		return completed.filter(bill => 
-			bill.billingId?.toLowerCase().includes(query) ||
-			bill.patient?.toLowerCase().includes(query) ||
-			bill.patientId?.toLowerCase().includes(query) ||
-			bill.doctor?.toLowerCase().includes(query) ||
-			bill.amount?.toString().includes(query) ||
-			bill.date?.toLowerCase().includes(query) ||
-			bill.paymentMode?.toLowerCase().includes(query) ||
-			bill.createdByFrontdeskName?.toLowerCase().includes(query) ||
-			bill.paymentRegisteredByFrontdeskName?.toLowerCase().includes(query)
+		const q = completedSearchQuery.toLowerCase().trim();
+		return completed.filter(bill =>
+			bill.billingId?.toLowerCase().includes(q) ||
+			bill.patient?.toLowerCase().includes(q) ||
+			bill.patientId?.toLowerCase().includes(q) ||
+			bill.doctor?.toLowerCase().includes(q) ||
+			bill.amount?.toString().includes(q) ||
+			bill.date?.toLowerCase().includes(q) ||
+			bill.paymentMode?.toLowerCase().includes(q) ||
+			bill.createdByFrontdeskName?.toLowerCase().includes(q) ||
+			bill.paymentRegisteredByFrontdeskName?.toLowerCase().includes(q)
 		);
 	}, [completed, completedSearchQuery]);
+
+	type BillingDisplayRow = {
+		bill: BillingRecord;
+		packageInfo: {
+			patientId: string;
+			patientName: string;
+			completedSessions: number;
+			totalSessions: number;
+			installmentIndex?: number;
+			installmentTotal?: number;
+		} | null;
+	};
+
+	const packagePatientIds = useMemo(() => new Set<string>([
+		...Array.from(patientsWithPackages.keys()),
+		...patientsWithPackageBills,
+	]), [patientsWithPackages, patientsWithPackageBills]);
+
+	const pendingDisplayRows = useMemo((): BillingDisplayRow[] => {
+		const rows: BillingDisplayRow[] = [];
+		const billsForPackagePatients = filteredPending.filter(b => b.patientId && packagePatientIds.has(b.patientId));
+		const billsForNonPackagePatients = filteredPending.filter(b => !b.patientId || !packagePatientIds.has(b.patientId));
+		for (const bill of billsForNonPackagePatients) rows.push({ bill, packageInfo: null });
+		const byPatient = new Map<string, BillingRecord[]>();
+		for (const bill of billsForPackagePatients) {
+			const key = bill.patientId || bill.billingId;
+			if (!byPatient.has(key)) byPatient.set(key, []);
+			byPatient.get(key)!.push(bill);
+		}
+		byPatient.forEach((bills, patientId) => {
+			const rep = bills[0];
+			const patient = patientLookup.get(patientId);
+			const totalSessions = patient?.totalSessionsRequired ?? 0;
+			const completedSessions = appointments.filter(a => a.patientId === patientId && a.status === 'completed').length;
+			const n = Math.max(1, billingDisplayInstallments[patientId] || 1);
+			for (let i = 1; i <= n; i++) {
+				rows.push({
+					bill: rep,
+					packageInfo: {
+						patientId,
+						patientName: rep.patient || patient?.name || '—',
+						completedSessions,
+						totalSessions: Number(totalSessions) || 0,
+						installmentIndex: i,
+						installmentTotal: n,
+					},
+				});
+			}
+		});
+		return rows;
+	}, [filteredPending, patientLookup, appointments, billingDisplayInstallments, packagePatientIds]);
+
+	const completedDisplayRows = useMemo((): BillingDisplayRow[] => {
+		const rows: BillingDisplayRow[] = [];
+		const billsForPackagePatients = filteredCompleted.filter(b => b.patientId && packagePatientIds.has(b.patientId));
+		const billsForNonPackagePatients = filteredCompleted.filter(b => !b.patientId || !packagePatientIds.has(b.patientId));
+		for (const bill of billsForNonPackagePatients) rows.push({ bill, packageInfo: null });
+		const byPatient = new Map<string, BillingRecord[]>();
+		for (const bill of billsForPackagePatients) {
+			const key = bill.patientId || bill.billingId;
+			if (!byPatient.has(key)) byPatient.set(key, []);
+			byPatient.get(key)!.push(bill);
+		}
+		byPatient.forEach((bills, patientId) => {
+			const rep = bills[0];
+			const patient = patientLookup.get(patientId);
+			const totalSessions = patient?.totalSessionsRequired ?? 0;
+			const completedSessions = appointments.filter(a => a.patientId === patientId && a.status === 'completed').length;
+			const n = Math.max(1, billingDisplayInstallments[patientId] || 1);
+			for (let i = 1; i <= n; i++) {
+				rows.push({
+					bill: rep,
+					packageInfo: {
+						patientId,
+						patientName: rep.patient || patient?.name || '—',
+						completedSessions,
+						totalSessions: Number(totalSessions) || 0,
+						installmentIndex: i,
+						installmentTotal: n,
+					},
+				});
+			}
+		});
+		return rows;
+	}, [filteredCompleted, patientLookup, appointments, billingDisplayInstallments, packagePatientIds]);
 
 	return (
 		<div className="min-h-svh bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 px-6 py-10">
@@ -2674,16 +2783,31 @@ export default function Billing() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-amber-100">
-								{filteredPending.length === 0 ? (
+								{pendingDisplayRows.length === 0 ? (
 									<tr>
 										<td colSpan={7} className="px-2 py-4 text-center text-xs text-slate-500">
 											{pendingSearchQuery.trim() ? 'No pending payments match your search.' : 'No pending payments.'}
 										</td>
 									</tr>
 								) : (
-									filteredPending.map(bill => (
-										<tr key={bill.id}>
-											<td className="px-2 py-2 text-xs font-medium text-slate-800">{bill.patient}</td>
+									pendingDisplayRows.map((row) => {
+										const { bill, packageInfo } = row;
+										const rowKey = packageInfo ? `pkg-${bill.patientId}-${packageInfo.installmentIndex}-${packageInfo.installmentTotal}` : (bill.id || bill.billingId);
+										return (
+										<tr key={rowKey}>
+											<td className="px-2 py-2 text-xs font-medium text-slate-800">
+												<div className="flex flex-col gap-0.5">
+													<div className="flex items-center gap-1.5">
+														{packageInfo ? packageInfo.patientName : bill.patient}
+														{packageInfo && (
+															<span className="inline-flex items-center rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800">PKG</span>
+														)}
+													</div>
+													{packageInfo && (
+														<span className="text-[10px] text-slate-500">{packageInfo.completedSessions}/{packageInfo.totalSessions} sessions</span>
+													)}
+												</div>
+											</td>
 											<td className="px-2 py-2 text-xs text-slate-600">{bill.patientId}</td>
 											<td className="px-2 py-2 text-xs text-slate-600">{bill.doctor || '—'}</td>
 											<td className="px-2 py-2 text-xs text-slate-700">Rs. {bill.amount.toFixed(2)}</td>
@@ -2691,6 +2815,15 @@ export default function Billing() {
 											<td className="px-2 py-2 text-xs text-slate-600">{bill.date || '—'}</td>
 											<td className="px-2 py-2 text-right">
 												<div className="flex items-center justify-end gap-1.5">
+													{packageInfo && (
+														<button
+															type="button"
+															onClick={() => { setInstallmentModal({ patientId: packageInfo.patientId, patientName: packageInfo.patientName }); setInstallmentInput(String(packageInfo.installmentTotal || 1)); }}
+															className="inline-flex items-center rounded-lg border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-700 transition hover:bg-slate-50"
+														>
+															Installment
+														</button>
+													)}
 													<button
 														type="button"
 														onClick={() => handlePay(bill)}
@@ -2709,7 +2842,8 @@ export default function Billing() {
 												</div>
 											</td>
 										</tr>
-									))
+										);
+									})
 								)}
 							</tbody>
 						</table>
@@ -2769,25 +2903,37 @@ export default function Billing() {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-emerald-100">
-								{filteredCompleted.length === 0 ? (
+								{completedDisplayRows.length === 0 ? (
 									<tr>
 										<td colSpan={9} className="px-2 py-4 text-center text-xs text-slate-500">
 											{completedSearchQuery.trim() ? 'No completed payments match your search.' : 'No completed payments.'}
 										</td>
 									</tr>
 								) : (
-									filteredCompleted.map(bill => {
+									completedDisplayRows.map((row) => {
+										const { bill, packageInfo } = row;
 										const patient = bill.patientId ? patientLookup.get(bill.patientId) : undefined;
 										const patientType = patient?.patientType || '';
 										const isReferral = patientType.toUpperCase() === 'REFERRAL';
 										const isVIP = patientType.toUpperCase() === 'VIP';
+										const rowKey = packageInfo ? `pkg-${bill.patientId}-${packageInfo.installmentIndex}-${packageInfo.installmentTotal}` : (bill.id || bill.billingId);
 										return (
-										<tr key={bill.id}>
+										<tr key={rowKey}>
 												<td className="px-2 py-2 text-xs font-medium text-slate-800">
-													<div>{bill.patient}</div>
-													{patient?.department && (
-														<p className="mt-0.5 text-[10px] text-indigo-600 font-medium">{patient.department}</p>
-													)}
+													<div className="flex flex-col gap-0.5">
+														<div className="flex items-center gap-1.5">
+															{packageInfo ? packageInfo.patientName : bill.patient}
+															{packageInfo && (
+																<span className="inline-flex items-center rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800">PKG</span>
+															)}
+														</div>
+														{packageInfo && (
+															<span className="text-[10px] text-slate-500">{packageInfo.completedSessions}/{packageInfo.totalSessions} sessions</span>
+														)}
+														{patient?.department && !packageInfo && (
+															<p className="mt-0.5 text-[10px] text-indigo-600 font-medium">{patient.department}</p>
+														)}
+													</div>
 												</td>
 											<td className="px-2 py-2 text-xs text-slate-600">{bill.patientId}</td>
 											<td className="px-2 py-2 text-xs text-slate-600">{bill.doctor || '—'}</td>
@@ -3009,6 +3155,46 @@ export default function Billing() {
 			)}
 
 			{/* Import Excel Modal */}
+			{/* Installment modal (package patients) */}
+			{installmentModal && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+					<div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6">
+						<h3 className="text-lg font-semibold text-slate-900">Display installments</h3>
+						<p className="text-sm text-slate-600 mt-1">
+							How many rows to show for <strong>{installmentModal.patientName}</strong> in Pending and Completed payments?
+						</p>
+						<div className="mt-4">
+							<label className="block text-sm font-medium text-slate-700">Number of installments (1–24)</label>
+							<input
+								type="number"
+								min={1}
+								max={24}
+								value={installmentInput}
+								onChange={e => setInstallmentInput(e.target.value)}
+								className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+							/>
+						</div>
+						<div className="mt-6 flex justify-end gap-2">
+							<button
+								type="button"
+								onClick={() => { setInstallmentModal(null); setInstallmentInput('1'); }}
+								className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleSaveInstallment}
+								disabled={savingInstallment}
+								className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+							>
+								{savingInstallment ? 'Saving…' : 'Save'}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
 			{showImportModal && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
 					<div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">

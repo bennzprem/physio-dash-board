@@ -111,6 +111,11 @@ service cloud.firestore {
       allow read: if isLoggedIn();
       allow create, update, delete: if isFrontdesk() || isAdmin();
     }
+    match /billingDisplayConfig/{patientId} {
+      allow read: if isLoggedIn();
+      allow create, update: if isFrontdesk() || isAdmin();
+      allow delete: if isFrontdesk() || isAdmin();
+    }
 
     // AUDIT LOGS
     match /auditLogs/{id} {

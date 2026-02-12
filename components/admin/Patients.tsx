@@ -261,6 +261,7 @@ export default function Patients() {
 		};
 	}>>([]);
 	const [appointments, setAppointments] = useState<Array<AdminAppointmentRecord & { id?: string }>>([]);
+	const [approvedLeaveRanges, setApprovedLeaveRanges] = useState<Array<{ userName: string; startDate: string; endDate: string }>>([]);
 	const [registerForm, setRegisterForm] = useState({
 		fullName: '',
 		dob: '',
@@ -354,6 +355,38 @@ export default function Patients() {
 		return () => unsubscribe();
 	}, []);
 
+	// Load approved leave so clinicians on leave are not available for booking
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const q = query(
+					collection(db, 'leaveRequests'),
+					where('status', '==', 'approved')
+				);
+				const snapshot = await getDocs(q);
+				if (cancelled) return;
+				const ranges: Array<{ userName: string; startDate: string; endDate: string }> = [];
+				snapshot.forEach(docSnap => {
+					const data = docSnap.data();
+					const startDate = data.startDate ? String(data.startDate) : '';
+					const endDate = data.endDate ? String(data.endDate) : '';
+					const userName = data.userName ? String(data.userName) : '';
+					if (userName && startDate && endDate) {
+						ranges.push({ userName, startDate, endDate });
+					}
+				});
+				setApprovedLeaveRanges(ranges);
+			} catch (err) {
+				if (!cancelled) {
+					console.error('Failed to load approved leave:', err);
+					setApprovedLeaveRanges([]);
+				}
+			}
+		})();
+		return () => { cancelled = true; };
+	}, []);
+
 	// Load appointments from Firestore for conflict checking
 	useEffect(() => {
 		const unsubscribe = onSnapshot(
@@ -392,11 +425,25 @@ export default function Patients() {
 			.filter(Boolean)
 			.sort((a, b) => a.localeCompare(b));
 
+		// Exclude clinicians on approved leave for the selected date
+		const dateOnly = bookingForm.date ? bookingForm.date.slice(0, 10) : '';
+		const notOnLeave = dateOnly
+			? base.filter(name => {
+					const isOnApprovedLeave = approvedLeaveRanges.some(
+						(l) =>
+							l.userName === name &&
+							dateOnly >= (l.startDate || '').slice(0, 10) &&
+							dateOnly <= (l.endDate || '').slice(0, 10)
+					);
+					return !isOnApprovedLeave;
+				})
+			: base;
+
 		if (!bookingForm.date || !bookingForm.time) {
-			return base;
+			return notOnLeave;
 		}
 
-		return base.filter(name => {
+		return notOnLeave.filter(name => {
 			const member = staff.find(staffMember => staffMember.userName === name);
 			if (!member) return false;
 			const availability = checkAvailabilityConflict(
@@ -406,7 +453,7 @@ export default function Patients() {
 			);
 			return availability.isAvailable;
 		});
-	}, [staff, bookingForm.date, bookingForm.time]);
+	}, [staff, bookingForm.date, bookingForm.time, approvedLeaveRanges]);
 
 	const doctorOptions = useMemo(() => {
 		const doctors = new Set<string>();

@@ -69,6 +69,12 @@ interface StaffMember {
 	dateSpecificAvailability?: DateSpecificAvailability;
 }
 
+interface ApprovedLeaveRange {
+	userName: string;
+	startDate: string;
+	endDate: string;
+}
+
 type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 
 type PatientRecordWithSessions = PatientRecord & {
@@ -245,6 +251,7 @@ export default function Appointments() {
 	const [newlyRegisteredPatientId, setNewlyRegisteredPatientId] = useState<string | null>(null);
 	const [patientSearchTerm, setPatientSearchTerm] = useState('');
 	const [billingRecords, setBillingRecords] = useState<Array<{ appointmentId?: string; status: 'Pending' | 'Completed' | 'Auto-Paid'; amount?: number }>>([]);
+	const [approvedLeaveRanges, setApprovedLeaveRanges] = useState<ApprovedLeaveRange[]>([]);
 
 	// Load billing records from Firestore
 	useEffect(() => {
@@ -268,6 +275,38 @@ export default function Appointments() {
 		);
 
 		return () => unsubscribe();
+	}, []);
+
+	// Load approved leave so clinicians on leave are not available for booking
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const q = query(
+					collection(db, 'leaveRequests'),
+					where('status', '==', 'approved')
+				);
+				const snapshot = await getDocs(q);
+				if (cancelled) return;
+				const ranges: ApprovedLeaveRange[] = [];
+				snapshot.forEach(docSnap => {
+					const data = docSnap.data();
+					const startDate = data.startDate ? String(data.startDate) : '';
+					const endDate = data.endDate ? String(data.endDate) : '';
+					const userName = data.userName ? String(data.userName) : '';
+					if (userName && startDate && endDate) {
+						ranges.push({ userName, startDate, endDate });
+					}
+				});
+				setApprovedLeaveRanges(ranges);
+			} catch (err) {
+				if (!cancelled) {
+					console.error('Failed to load approved leave:', err);
+					setApprovedLeaveRanges([]);
+				}
+			}
+		})();
+		return () => { cancelled = true; };
 	}, []);
 
 	// Load appointments from Firestore
@@ -493,6 +532,18 @@ export default function Appointments() {
 		
 		// Sunday is always unavailable
 		if (isSunday) {
+			return { enabled: false, slots: [] };
+		}
+
+		// Clinician on approved leave is not available for booking
+		const dateOnly = dateString.slice(0, 10);
+		const isOnApprovedLeave = approvedLeaveRanges.some(
+			(l) =>
+				l.userName === staffMember.userName &&
+				dateOnly >= (l.startDate || '').slice(0, 10) &&
+				dateOnly <= (l.endDate || '').slice(0, 10)
+		);
+		if (isOnApprovedLeave) {
 			return { enabled: false, slots: [] };
 		}
 		

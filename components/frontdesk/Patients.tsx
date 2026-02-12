@@ -222,6 +222,12 @@ interface StaffMember {
 	dateSpecificAvailability?: DateSpecificAvailability;
 }
 
+interface ApprovedLeaveRange {
+	userName: string;
+	startDate: string;
+	endDate: string;
+}
+
 interface AppointmentRecord {
 	id: string;
 	appointmentId: string;
@@ -496,6 +502,7 @@ export default function Patients() {
 	const [editingRegisterSlotTime, setEditingRegisterSlotTime] = useState<string | null>(null);
 	const [editedRegisterSlotTime, setEditedRegisterSlotTime] = useState<string>('');
 	const [customRegisterTimeSlots, setCustomRegisterTimeSlots] = useState<Map<string, string>>(new Map());
+	const [approvedLeaveRanges, setApprovedLeaveRanges] = useState<ApprovedLeaveRange[]>([]);
 	const [showRegisterModal, setShowRegisterModal] = useState(false);
 	const [registerForm, setRegisterForm] = useState<RegisterFormState>(REGISTER_FORM_INITIAL_STATE);
 	const [registerFormErrors, setRegisterFormErrors] = useState<Partial<Record<keyof RegisterFormState, string>>>({});
@@ -687,6 +694,38 @@ export default function Patients() {
 		);
 
 		return () => unsubscribe();
+	}, []);
+
+	// Load approved leave so clinicians on leave are not available for booking
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const q = query(
+					collection(db, 'leaveRequests'),
+					where('status', '==', 'approved')
+				);
+				const snapshot = await getDocs(q);
+				if (cancelled) return;
+				const ranges: ApprovedLeaveRange[] = [];
+				snapshot.forEach(docSnap => {
+					const data = docSnap.data();
+					const startDate = data.startDate ? String(data.startDate) : '';
+					const endDate = data.endDate ? String(data.endDate) : '';
+					const userName = data.userName ? String(data.userName) : '';
+					if (userName && startDate && endDate) {
+						ranges.push({ userName, startDate, endDate });
+					}
+				});
+				setApprovedLeaveRanges(ranges);
+			} catch (err) {
+				if (!cancelled) {
+					console.error('Failed to load approved leave:', err);
+					setApprovedLeaveRanges([]);
+				}
+			}
+		})();
+		return () => { cancelled = true; };
 	}, []);
 
 	// Load billing records
@@ -1403,6 +1442,18 @@ export default function Patients() {
 			return [];
 		}
 
+		// Clinician on approved leave is not available for booking
+		const dateOnly = bookingForm.date.slice(0, 10);
+		const isOnApprovedLeave = approvedLeaveRanges.some(
+			(l) =>
+				l.userName === bookingForm.doctor &&
+				dateOnly >= (l.startDate || '').slice(0, 10) &&
+				dateOnly <= (l.endDate || '').slice(0, 10)
+		);
+		if (isOnApprovedLeave) {
+			return [];
+		}
+
 		// Default availability: 9 AM to 7 PM for all days except Sunday
 		const DEFAULT_START_TIME = '09:00';
 		const DEFAULT_END_TIME = '19:00';
@@ -1518,7 +1569,7 @@ export default function Patients() {
 		});
 
 		return [...new Set(slots)].sort();
-	}, [appointments, bookingForm.date, bookingForm.doctor, staff]);
+	}, [appointments, bookingForm.date, bookingForm.doctor, staff, approvedLeaveRanges]);
 
 	// Available slots for registration appointment form
 	const registerAvailableSlots = useMemo<string[]>(() => {
@@ -1528,6 +1579,18 @@ export default function Patients() {
 
 		const staffMember = staff.find(member => member.userName === registerAppointmentForm.doctor);
 		if (!staffMember) {
+			return [];
+		}
+
+		// Clinician on approved leave is not available for booking
+		const dateOnly = registerAppointmentForm.date.slice(0, 10);
+		const isOnApprovedLeave = approvedLeaveRanges.some(
+			(l) =>
+				l.userName === registerAppointmentForm.doctor &&
+				dateOnly >= (l.startDate || '').slice(0, 10) &&
+				dateOnly <= (l.endDate || '').slice(0, 10)
+		);
+		if (isOnApprovedLeave) {
 			return [];
 		}
 
@@ -1646,7 +1709,7 @@ export default function Patients() {
 		});
 
 		return [...new Set(slots)].sort();
-	}, [appointments, registerAppointmentForm.date, registerAppointmentForm.doctor, staff]);
+	}, [appointments, registerAppointmentForm.date, registerAppointmentForm.doctor, staff, approvedLeaveRanges]);
 
 	useEffect(() => {
 		if (!bookingForm.doctor) return;
@@ -1765,27 +1828,6 @@ export default function Patients() {
 	};
 
 	const handleBookFirstAppointment = (patientId: string) => {
-		const patient = patients.find(p => p.patientId === patientId);
-		const isDYES = ((patient?.patientType || '') as string).toUpperCase() === 'DYES';
-		
-		// DYES patients: No paywall - skip payment checks
-		if (!isDYES) {
-		// Check if there's a pending consultation - if so, don't allow new booking
-		if (hasPendingConsultation(patientId)) {
-			alert(
-				'This patient has a pending consultation payment. Please complete the payment before booking a new consultation.'
-			);
-			return;
-		}
-
-		// Allow booking only if no consultation exists or patient has been reset via "New Appointment"
-		if (!canBookNewConsultation(patientId, patient)) {
-			alert(
-				'This patient already has a consultation. Please use "New Appointment" from the dropdown menu to reset for a new appointment cycle.'
-			);
-			return;
-			}
-		}
 		setBookingForm({
 			patientId,
 			doctor: '',
@@ -2165,23 +2207,6 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 		if (!selectedPatient) {
 			alert('Unable to find the selected patient.');
 			return;
-		}
-
-		const isDYES = ((selectedPatient.patientType || '') as string).toUpperCase() === 'DYES';
-		
-		// DYES patients: No paywall - skip payment checks
-		if (!isDYES) {
-		// Check if there's a pending consultation - if so, don't allow new booking
-		if (hasPendingConsultation(selectedPatient.patientId)) {
-			alert('This patient has a pending consultation payment. Please complete the payment before booking a new consultation.');
-			return;
-		}
-
-		// Allow booking only if no consultation exists or patient has been reset via "New Appointment"
-		if (!canBookNewConsultation(selectedPatient.patientId, selectedPatient)) {
-			alert('This patient already has a consultation. Please use "New Appointment" from the dropdown menu to reset for a new appointment cycle.');
-			return;
-			}
 		}
 
 		if (!staffMember) {
@@ -2953,6 +2978,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 										const hasAnyAppointment = appointments.some(a => a.patientId === patient.patientId);
 										const pendingPackageBill = getPendingPackageBill(patient.patientId, patient);
 										const paidPackageBill = getPaidPackageBill(patient.patientId, patient);
+										const bookingDisabled = false;
 										// Show "Setup Package" button whenever no active package exists
 										const showPackageSetupButton =
 											!canBook &&
@@ -2960,7 +2986,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 											(isDyesPatient || (!pendingConsultationBill && consultationPaid));
 										const bookingButtonClasses = [
 											'inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold',
-											!canBook || pendingConsultationBill
+											bookingDisabled
 												? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
 												: 'border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 focus-visible:border-emerald-300 focus-visible:bg-emerald-100 focus-visible:outline-none',
 										].join(' ');
@@ -2988,10 +3014,10 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 														type="button"
 														onClick={() => handleBookFirstAppointment(patient.patientId)}
 														className={bookingButtonClasses}
-														disabled={!canBook || (!!pendingConsultationBill && !isDyesPatient)}
+														disabled={bookingDisabled}
 													>
 														<i className="fas fa-calendar-plus text-[10px]" aria-hidden="true" />
-														{canBook && !pendingConsultationBill && !hasAnyAppointment ? 'Book' : 'Booked'}
+														{!hasAnyAppointment ? 'Book' : 'Booked'}
 													</button>
 													{pendingConsultationBill && (
 														<button
@@ -3073,20 +3099,18 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 																	<i className="fas fa-edit text-xs" aria-hidden="true" />
 																	Edit
 																</button>
-																{!canBookNewConsultation(patient.patientId, patient) && (
 																	<button
-																		type="button"
-																		onClick={event => {
-																			event.stopPropagation();
-																			setOpenMenuId(null);
-																			handleResetForNewAppointment(patient);
-																		}}
-																		className="flex w-full items-center gap-2 px-4 py-2 text-sky-600 transition hover:bg-sky-50 hover:text-sky-700"
-																	>
-																		<i className="fas fa-calendar-plus text-xs" aria-hidden="true" />
-																		New Appointment
-																	</button>
-																)}
+																	type="button"
+																	onClick={event => {
+																		event.stopPropagation();
+																		setOpenMenuId(null);
+																		handleBookFirstAppointment(patient.patientId);
+																	}}
+																	className="flex w-full items-center gap-2 px-4 py-2 text-sky-600 transition hover:bg-sky-50 hover:text-sky-700"
+																>
+																	<i className="fas fa-calendar-plus text-xs" aria-hidden="true" />
+																	New Appointment
+																</button>
 																<button
 																	type="button"
 																	onClick={event => {

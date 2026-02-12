@@ -6,7 +6,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import type { DateSelectArg, EventClickArg, EventChangeArg, ViewApi, ViewMountArg } from '@fullcalendar/core';
-import { collection, doc, onSnapshot, updateDoc, type QuerySnapshot } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, query, updateDoc, where, type QuerySnapshot } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
 import PageHeader from '@/components/PageHeader';
@@ -97,6 +97,7 @@ export default function Calendar() {
 	const [isRescheduling, setIsRescheduling] = useState<string | null>(null);
 
 	const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
+	const [approvedLeaveRanges, setApprovedLeaveRanges] = useState<Array<{ userName: string; startDate: string; endDate: string }>>([]);
 	const calendarRef = useRef<FullCalendar>(null);
 
 	useEffect(() => {
@@ -212,6 +213,38 @@ export default function Calendar() {
 		};
 	}, []);
 
+	// Load approved leave to show on calendar (red)
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const q = query(
+					collection(db, 'leaveRequests'),
+					where('status', '==', 'approved')
+				);
+				const snapshot = await getDocs(q);
+				if (cancelled) return;
+				const ranges: Array<{ userName: string; startDate: string; endDate: string }> = [];
+				snapshot.forEach(docSnap => {
+					const data = docSnap.data();
+					const startDate = data.startDate ? String(data.startDate).slice(0, 10) : '';
+					const endDate = data.endDate ? String(data.endDate).slice(0, 10) : '';
+					const userName = data.userName ? String(data.userName) : '';
+					if (userName && startDate && endDate) {
+						ranges.push({ userName, startDate, endDate });
+					}
+				});
+				setApprovedLeaveRanges(ranges);
+			} catch (err) {
+				if (!cancelled) {
+					console.error('Failed to load approved leave:', err);
+					setApprovedLeaveRanges([]);
+				}
+			}
+		})();
+		return () => { cancelled = true; };
+	}, []);
+
 	const patientLookup = useMemo(() => {
 		const map = new Map<string, PatientRecordBasic>();
 		for (const patient of patients) {
@@ -315,10 +348,12 @@ export default function Calendar() {
 	const handleEventClick = (clickInfo: EventClickArg) => {
 		clickInfo.jsEvent.preventDefault();
 		const eventData = clickInfo.event.extendedProps as {
-			appointment: AppointmentRecord;
-			patient: PatientRecordBasic | undefined;
+			appointment?: AppointmentRecord;
+			patient?: PatientRecordBasic | undefined;
+					isLeave?: boolean;
 		};
-		if (eventData) {
+		if (eventData?.isLeave) return; // Leave events are display-only
+		if (eventData?.appointment) {
 			const event: CalendarEvent = {
 				id: clickInfo.event.id,
 				appointment: eventData.appointment,
@@ -426,6 +461,47 @@ export default function Calendar() {
 		console.log('Final calendar events count:', calendarEvents.length);
 		return calendarEvents;
 	}, [events]);
+
+	// Approved leave as red all-day events (one per day per leave)
+	const LEAVE_RED = '#dc2626';
+	const leaveEvents = useMemo(() => {
+		const result: Array<{
+			id: string;
+			title: string;
+			start: string;
+			allDay: boolean;
+			backgroundColor: string;
+			borderColor: string;
+			editable: boolean;
+			extendedProps: { isLeave: true; userName: string };
+		}> = [];
+		approvedLeaveRanges.forEach((range, rangeIndex) => {
+			if (therapistFilter !== 'all' && normalize(range.userName) !== normalize(therapistFilter)) return;
+			const start = new Date(range.startDate + 'T00:00:00');
+			const end = new Date(range.endDate + 'T00:00:00');
+			const d = new Date(start);
+			while (d <= end) {
+				const dateStr = d.toISOString().slice(0, 10);
+				result.push({
+					id: `leave-${rangeIndex}-${dateStr}-${range.userName.replace(/\s/g, '-')}`,
+					title: `${range.userName} - Leave`,
+					start: dateStr,
+					allDay: true,
+					backgroundColor: LEAVE_RED,
+					borderColor: LEAVE_RED,
+					editable: false,
+					extendedProps: { isLeave: true as const, userName: range.userName },
+				});
+				d.setDate(d.getDate() + 1);
+			}
+		});
+		return result;
+	}, [approvedLeaveRanges, therapistFilter]);
+
+	const allCalendarEvents = useMemo(
+		() => [...leaveEvents, ...calendarEvents],
+		[leaveEvents, calendarEvents]
+	);
 
 	const handleViewChange = (view: ViewMountArg) => {
 		setCurrentView(view.view.type);
@@ -709,7 +785,7 @@ export default function Calendar() {
 									slotMaxTime: '20:00:00',
 								},
 							}}
-							events={calendarEvents}
+							events={allCalendarEvents}
 							select={handleDateSelect}
 							eventClick={handleEventClick}
 							eventDrop={handleEventDrop}
