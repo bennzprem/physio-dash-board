@@ -63,6 +63,7 @@ export interface AdminPatientRecord {
 	transferredFromDoctor?: string;
 	transferReason?: string;
 	feedback?: string;
+	referredBy?: string;
 }
 
 export const DEFAULT_ADMIN_PATIENTS: AdminPatientRecord[] = [

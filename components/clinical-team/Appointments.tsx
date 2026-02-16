@@ -63,6 +63,7 @@ interface StaffMember {
 	role: string;
 	status: string;
 	userEmail?: string;
+	displayName?: string;
 	availability?: {
 		[day: string]: DayAvailability;
 	};
@@ -244,7 +245,9 @@ export default function Appointments() {
 		email: '',
 		address: '',
 		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
+		referredBy: '',
 	});
+	const [referrableStaff, setReferrableStaff] = useState<StaffMember[]>([]);
 	const [registerFormErrors, setRegisterFormErrors] = useState<Partial<Record<keyof typeof registerForm, string>>>({});
 	const [registerSubmitting, setRegisterSubmitting] = useState(false);
 	const [registerNotice, setRegisterNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -436,7 +439,7 @@ export default function Appointments() {
 		return () => unsubscribe();
 	}, []);
 
-	// Load staff from Firestore
+	// Load staff from Firestore (clinicians for booking; referrableStaff for "Referred by" dropdown)
 	useEffect(() => {
 		const unsubscribe = onSnapshot(
 			collection(db, 'staff'),
@@ -449,6 +452,7 @@ export default function Appointments() {
 						role: data.role ? String(data.role) : '',
 						status: data.status ? String(data.status) : '',
 						userEmail: data.userEmail ? String(data.userEmail) : undefined,
+						displayName: data.displayName ? String(data.displayName) : (data.name ? String(data.name) : undefined),
 						availability: data.availability as StaffMember['availability'],
 						dateSpecificAvailability: data.dateSpecificAvailability as DateSpecificAvailability | undefined,
 					} as StaffMember;
@@ -458,10 +462,23 @@ export default function Appointments() {
 					s.status === 'Active' && 
 					['Physiotherapist', 'StrengthAndConditioning', 'ClinicalTeam'].includes(s.role)
 				)]);
+				const isFrontdeskRole = (role: string) => (role || '').trim().toLowerCase().replace(/\s+/g, '') === 'frontdesk';
+				const excludedFromReferredBy = ['Bennz prem kumar'];
+				const isExcludedName = (n: string) =>
+					excludedFromReferredBy.some(ex => (ex || '').trim().toLowerCase() === (n || '').trim().toLowerCase());
+				setReferrableStaff(
+					mapped.filter(member => {
+						const name = (member.userName || member.displayName || '').trim();
+						const status = (member.status || '').trim().toLowerCase();
+						const active = status === 'active' || status === '';
+						return active && name.length > 0 && !isFrontdeskRole(member.role || '') && !isExcludedName(name);
+					})
+				);
 			},
 			error => {
 				console.error('Failed to load staff', error);
 				setStaff([]);
+				setReferrableStaff([]);
 			}
 		);
 
@@ -1821,6 +1838,7 @@ export default function Appointments() {
 			const clinicianId = user?.uid || '';
 			const clinicianEmail = user?.email || '';
 
+			const referredByValue = registerForm.referredBy?.trim() || null;
 			const patientData = {
 				patientId,
 				name: registerForm.fullName.trim(),
@@ -1837,6 +1855,7 @@ export default function Appointments() {
 				paymentDescription: null,
 				packageAmount: null,
 				sessionAllowance: registerForm.patientType === 'DYES' ? createInitialSessionAllowance() : null,
+				referredBy: referredByValue,
 				// Add registeredBy fields
 				registeredBy: clinicianId,
 				registeredByName: clinicianName,
@@ -1901,6 +1920,7 @@ export default function Appointments() {
 				email: '',
 				address: '',
 				patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
+				referredBy: '',
 			});
 			setRegisterFormErrors({});
 			setShowRegisterModal(false);
@@ -3708,6 +3728,7 @@ export default function Appointments() {
 										email: '',
 										address: '',
 										patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
+										referredBy: '',
 									});
 									setRegisterFormErrors({});
 									setRegisterNotice(null);
@@ -3853,6 +3874,32 @@ export default function Appointments() {
 
 							<div className="grid gap-4 md:grid-cols-12">
 								<div className="md:col-span-12">
+									<label className="block text-sm font-medium text-slate-700">Referred by</label>
+									<select
+										value={registerForm.referredBy}
+										onChange={(e) => setRegisterForm(prev => ({ ...prev, referredBy: e.target.value }))}
+										className="select-base mt-2"
+										disabled={registerSubmitting}
+									>
+										<option value="">Select</option>
+										<option value="walk-in">walk-in</option>
+										{referrableStaff
+											.filter(m => (m.userName || m.displayName || '').trim())
+											.sort((a, b) => (a.userName || a.displayName || '').localeCompare(b.userName || b.displayName || ''))
+											.map(member => {
+												const name = (member.userName || member.displayName || '').trim();
+												return (
+													<option key={member.id} value={name}>
+														{name}
+													</option>
+												);
+											})}
+									</select>
+								</div>
+							</div>
+
+							<div className="grid gap-4 md:grid-cols-12">
+								<div className="md:col-span-12">
 									<label className="block text-sm font-medium text-slate-700">
 										Type of Organization <span className="text-rose-600">*</span>
 									</label>
@@ -3902,6 +3949,7 @@ export default function Appointments() {
 											email: '',
 											address: '',
 											patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
+											referredBy: '',
 										});
 										setRegisterFormErrors({});
 										setRegisterNotice(null);

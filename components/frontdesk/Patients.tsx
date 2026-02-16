@@ -200,6 +200,7 @@ interface FrontdeskPatient {
 	registeredBy?: string;
 	registeredByName?: string;
 	registeredByEmail?: string;
+	referredBy?: string; // 'walk-in' or userName of referring user; determines revenue attribution
 }
 
 interface DayAvailability {
@@ -218,6 +219,7 @@ interface StaffMember {
 	role: string;
 	status: string;
 	userEmail?: string;
+	displayName?: string;
 	availability?: Record<string, DayAvailability>;
 	dateSpecificAvailability?: DateSpecificAvailability;
 }
@@ -274,6 +276,7 @@ interface RegisterFormState {
 	email: string;
 	address: string;
 	patientType: PatientTypeOption;
+	referredBy: string; // '' | 'walk-in' | userName of referring user
 }
 
 interface PackageSetupFormState {
@@ -351,6 +354,7 @@ const REGISTER_FORM_INITIAL_STATE: RegisterFormState = {
 	email: '',
 	address: '',
 	patientType: '' as PatientTypeOption,
+	referredBy: '',
 };
 
 const PACKAGE_FORM_INITIAL_STATE: PackageSetupFormState = {
@@ -460,6 +464,7 @@ export default function Patients() {
 	const [patients, setPatients] = useState<FrontdeskPatient[]>([]);
 	const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
 	const [staff, setStaff] = useState<StaffMember[]>([]);
+	const [referrableStaff, setReferrableStaff] = useState<StaffMember[]>([]); // All active users except Frontdesk (for "Referred by" dropdown)
 	const [loading, setLoading] = useState(true);
 	const [searchTerm, setSearchTerm] = useState('');
 	const [statusFilter, setStatusFilter] = useState<'all' | AdminPatientStatus>('all');
@@ -617,6 +622,7 @@ export default function Patients() {
 						registeredBy: data.registeredBy ? String(data.registeredBy) : undefined,
 						registeredByName: data.registeredByName ? String(data.registeredByName) : undefined,
 						registeredByEmail: data.registeredByEmail ? String(data.registeredByEmail) : undefined,
+						referredBy: data.referredBy ? String(data.referredBy) : undefined,
 					} as FrontdeskPatient & { deleted?: boolean; deletedAt?: string | null };
 				});
 				setPatients([...mapped]);
@@ -662,7 +668,7 @@ export default function Patients() {
 		return () => unsubscribe();
 	}, []);
 
-	// Load staff for booking options
+	// Load staff for booking options and referrable users (all except Frontdesk for "Referred by" dropdown)
 	useEffect(() => {
 		const unsubscribe = onSnapshot(
 			collection(db, 'staff'),
@@ -675,6 +681,7 @@ export default function Patients() {
 						role: data.role ? String(data.role) : '',
 						status: data.status ? String(data.status) : '',
 						userEmail: data.userEmail ? String(data.userEmail) : undefined,
+						displayName: data.displayName ? String(data.displayName) : (data.name ? String(data.name) : undefined),
 						availability: data.availability as Record<string, DayAvailability> | undefined,
 						dateSpecificAvailability: data.dateSpecificAvailability as DateSpecificAvailability | undefined,
 					} as StaffMember;
@@ -686,10 +693,31 @@ export default function Patients() {
 							['Physiotherapist', 'StrengthAndConditioning', 'ClinicalTeam'].includes(member.role)
 					)
 				);
+				// For "Referred by" dropdown: all active users except Frontdesk (any role spelling)
+				const isFrontdeskRole = (role: string) => {
+					const r = (role || '').trim().toLowerCase().replace(/\s+/g, '');
+					return r === 'frontdesk';
+				};
+				const excludedFromReferredBy = ['Bennz prem kumar']; // names to hide from "Referred by" dropdown
+				const isExcludedName = (n: string) =>
+					excludedFromReferredBy.some(
+						ex => (ex || '').trim().toLowerCase() === (n || '').trim().toLowerCase()
+					);
+				setReferrableStaff(
+					mapped.filter(
+						member => {
+							const name = (member.userName || member.displayName || '').trim();
+							const status = (member.status || '').trim().toLowerCase();
+							const active = status === 'active' || status === ''; // include when status missing
+							return active && name.length > 0 && !isFrontdeskRole(member.role || '') && !isExcludedName(name);
+						}
+					)
+				);
 			},
 			error => {
 				console.error('Failed to load staff', error);
 				setStaff([]);
+				setReferrableStaff([]);
 			}
 		);
 
@@ -1294,6 +1322,10 @@ export default function Patients() {
 				typeof concessionPercentValue === 'number' && concessionPercentValue > 0
 					? Number((packageAmountValue * (1 - concessionPercentValue / 100)).toFixed(2))
 					: packageAmountValue;
+			const pkgRevenueAttributedTo =
+				packageModalPatient.referredBy === 'walk-in' || !packageModalPatient.referredBy
+					? packageModalPatient.assignedDoctor ?? undefined
+					: packageModalPatient.referredBy;
 
 			await addDoc(collection(db, 'billing'), {
 				billingId,
@@ -1302,6 +1334,7 @@ export default function Patients() {
 				amount: payableAmount,
 				packageAmount: packageAmountValue,
 				concessionPercent: concessionPercentValue,
+				...(pkgRevenueAttributedTo && { revenueAttributedTo: pkgRevenueAttributedTo }),
 				amountPaid: 0,
 				date: new Date().toISOString().split('T')[0],
 				status: 'Pending',
@@ -1404,6 +1437,7 @@ export default function Patients() {
 				registeredBy: data.registeredBy ? String(data.registeredBy) : undefined,
 				registeredByName: data.registeredByName ? String(data.registeredByName) : undefined,
 				registeredByEmail: data.registeredByEmail ? String(data.registeredByEmail) : undefined,
+				referredBy: data.referredBy ? String(data.referredBy) : undefined,
 			};
 			setViewingPatient(fresh);
 		} catch (e) {
@@ -1984,6 +2018,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 
 		const patientId = await generatePatientId();
 		const trimmedEmail = registerForm.email.trim();
+		const referredByValue = registerForm.referredBy?.trim() || null;
 		const patientData = {
 			patientId,
 			name: registerForm.fullName.trim(),
@@ -2000,6 +2035,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 			paymentDescription: null,
 			packageAmount: null,
 			sessionAllowance: registerForm.patientType === 'DYES' ? createInitialSessionAllowance() : null,
+			referredBy: referredByValue,
 		};
 
 		await addDoc(collection(db, 'patients'), patientData);
@@ -2072,12 +2108,18 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 
 					try {
 						const billingId = `BILL-${appointmentId}`;
+						// Revenue: walk-in → treating clinician; referred → referring user
+						const revenueAttributedTo =
+							referredByValue === 'walk-in' || !referredByValue
+								? registerAppointmentForm.doctor
+								: referredByValue;
 						await addDoc(collection(db, 'billing'), {
 							billingId,
 							appointmentId,
 							patient: registerForm.fullName.trim(),
 							patientId,
 							doctor: registerAppointmentForm.doctor,
+							revenueAttributedTo,
 							amount: registerForm.patientType === 'REFERRAL' ? 0 : APPOINTMENT_BOOKING_CHARGE,
 							amountPaid: 0,
 							date: registerAppointmentForm.date,
@@ -2273,12 +2315,17 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 
 			try {
 				const billingId = `BILL-${appointmentId}`;
+				const revenueAttributedTo =
+					selectedPatient.referredBy === 'walk-in' || !selectedPatient.referredBy
+						? bookingForm.doctor
+						: selectedPatient.referredBy;
 				await addDoc(collection(db, 'billing'), {
 					billingId,
 					appointmentId,
 					patient: selectedPatient.name,
 					patientId: selectedPatient.patientId,
 					doctor: bookingForm.doctor,
+					revenueAttributedTo,
 					amount: selectedPatient.patientType === 'REFERRAL' ? 0 : APPOINTMENT_BOOKING_CHARGE,
 					amountPaid: 0,
 					date: bookingForm.date,
@@ -3253,6 +3300,35 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 										rows={2}
 										autoComplete="street-address"
 									/>
+								</div>
+							</div>
+
+							<div className="grid gap-4 md:grid-cols-12">
+								<div className="md:col-span-12">
+									<label className="block text-sm font-medium text-slate-700">Referred by</label>
+									<select
+										value={registerForm.referredBy}
+										onChange={handleRegisterFormChange('referredBy')}
+										className="select-base mt-2"
+										disabled={registerSubmitting}
+									>
+										<option value="">Select</option>
+										<option value="walk-in">walk-in</option>
+										{referrableStaff
+											.filter(m => (m.userName || m.displayName || '').trim())
+											.sort((a, b) => (a.userName || a.displayName || '').localeCompare(b.userName || b.displayName || ''))
+											.map(member => {
+												const name = (member.userName || member.displayName || '').trim();
+												return (
+													<option key={member.id} value={name}>
+														{name}
+													</option>
+												);
+											})}
+									</select>
+									<p className="mt-1 text-xs text-slate-500">
+										Walk-in: revenue goes to assigned therapist. Otherwise revenue goes to the referring user.
+									</p>
 								</div>
 							</div>
 

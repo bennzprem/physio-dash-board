@@ -272,7 +272,9 @@ export default function Patients() {
 		patientType: '' as 'DYES' | 'VIP' | 'GETHNA' | 'PAID' | 'OTHERS' | 'STAFF' | '',
 		paymentType: '' as 'with' | 'without' | '',
 		paymentDescription: '',
+		referredBy: '',
 	});
+	const [referrableStaff, setReferrableStaff] = useState<Array<{ id: string; userName: string; displayName?: string; role: string; status: string }>>([]);
 	const [registerFormErrors, setRegisterFormErrors] = useState<Partial<Record<keyof typeof registerForm, string>>>({});
 	const [isRegistering, setIsRegistering] = useState(false);
 	const restoreFileInputRef = useRef<HTMLInputElement>(null);
@@ -308,6 +310,7 @@ export default function Patients() {
 						totalSessionsRequired: parseAndCapTotalSessions(data.totalSessionsRequired),
 						remainingSessions: typeof data.remainingSessions === 'number' ? data.remainingSessions : (data.remainingSessions ? Number(data.remainingSessions) : undefined),
 						feedback: data.feedback ? String(data.feedback) : undefined,
+						referredBy: data.referredBy ? String(data.referredBy) : undefined,
 					} as AdminPatientRecord;
 				});
 				setPatients([...mapped]);
@@ -323,7 +326,7 @@ export default function Patients() {
 		return () => unsubscribe();
 	}, []);
 
-	// Load staff from Firestore for booking appointments
+	// Load staff from Firestore for booking appointments and for "Referred by" dropdown
 	useEffect(() => {
 		const unsubscribe = onSnapshot(
 			collection(db, 'staff'),
@@ -336,6 +339,7 @@ export default function Patients() {
 						role: data.role ? String(data.role) : '',
 						status: data.status ? String(data.status) : '',
 						userEmail: data.userEmail ? String(data.userEmail) : undefined,
+						displayName: data.displayName ? String(data.displayName) : (data.name ? String(data.name) : undefined),
 						dateSpecificAvailability: data.dateSpecificAvailability as {
 							[date: string]: {
 								enabled: boolean;
@@ -345,10 +349,23 @@ export default function Patients() {
 					};
 				});
 				setStaff([...mapped]);
+				const isFrontdeskRole = (role: string) => (role || '').trim().toLowerCase().replace(/\s+/g, '') === 'frontdesk';
+				const excludedFromReferredBy = ['Bennz prem kumar'];
+				const isExcludedName = (n: string) =>
+					excludedFromReferredBy.some(ex => (ex || '').trim().toLowerCase() === (n || '').trim().toLowerCase());
+				setReferrableStaff(
+					mapped.filter(member => {
+						const name = (member.userName || member.displayName || '').trim();
+						const status = (member.status || '').trim().toLowerCase();
+						const active = status === 'active' || status === '';
+						return active && name.length > 0 && !isFrontdeskRole(member.role || '') && !isExcludedName(name);
+					})
+				);
 			},
 			error => {
 				console.error('Failed to load staff', error);
 				setStaff([]);
+				setReferrableStaff([]);
 			}
 		);
 
@@ -1520,6 +1537,7 @@ export default function Patients() {
 
 			const patientId = await generatePatientId();
 			
+			const referredByValue = registerForm.referredBy?.trim() || null;
 			const patientData = {
 				patientId,
 				name: registerForm.fullName.trim(),
@@ -1535,6 +1553,7 @@ export default function Patients() {
 				paymentType: registerForm.patientType === 'PAID' ? (registerForm.paymentType as 'with' | 'without') : 'without' as 'with' | 'without',
 				paymentDescription: registerForm.patientType === 'PAID' ? (registerForm.paymentDescription.trim() || null) : null,
 				sessionAllowance: registerForm.patientType === 'DYES' ? createInitialSessionAllowance() : null,
+				referredBy: referredByValue,
 			};
 
 			await addDoc(collection(db, 'patients'), patientData);
@@ -1613,6 +1632,7 @@ export default function Patients() {
 				patientType: '',
 				paymentType: '',
 				paymentDescription: '',
+				referredBy: '',
 			});
 			setRegisterFormErrors({});
 			setShowRegisterModal(false);
@@ -2180,8 +2200,8 @@ export default function Patients() {
 						</div>
 				</section>
 
-				<section className="mx-auto mt-8 max-w-6xl">
-					<div className="section-card">
+				<section className="mx-auto mt-8 max-w-6xl min-w-0">
+					<div className="section-card min-w-0">
 						{loading ? (
 							<div className="py-12 text-center text-sm text-slate-500">
 								<div className="loading-spinner h-10 w-10" aria-hidden="true" />
@@ -2193,11 +2213,11 @@ export default function Patients() {
 								<p className="mt-1">Try adjusting the search or add a new profile to keep testing data fresh.</p>
 							</div>
 						) : (
-							<div className="w-full">
-								<table className="w-full divide-y divide-slate-200 text-left text-sm text-slate-700 table-fixed">
+							<div className="w-full min-w-0 overflow-x-auto">
+								<table className="w-full min-w-[960px] divide-y divide-slate-200 text-left text-sm text-slate-700">
 									<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
 										<tr>
-											<th className="w-12 px-2 py-3 font-semibold">
+											<th className="w-12 shrink-0 px-2 py-3 font-semibold">
 												<input
 													type="checkbox"
 													checked={selectedPatientIds.size === filteredPatients.length && filteredPatients.length > 0}
@@ -2205,16 +2225,17 @@ export default function Patients() {
 													className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
 												/>
 											</th>
-											<th className="w-10 px-2 py-3 font-semibold">#</th>
-											<th className="w-32 px-2 py-3 font-semibold">Patient ID</th>
-											<th className="w-28 px-2 py-3 font-semibold">Name</th>
-											<th className="w-24 px-2 py-3 font-semibold">Department</th>
-											<th className="w-20 px-2 py-3 font-semibold">Gender</th>
-											<th className="w-28 px-2 py-3 font-semibold">Phone</th>
-											<th className="w-32 px-2 py-3 font-semibold">Assigned Therapist</th>
-											<th className="w-24 px-2 py-3 font-semibold">Status</th>
-											<th className="w-36 px-2 py-3 font-semibold">Registered</th>
-											<th className="w-24 px-2 py-3 font-semibold text-center">Actions</th>
+											<th className="w-10 shrink-0 px-2 py-3 font-semibold">#</th>
+											<th className="min-w-[7rem] px-2 py-3 font-semibold">Patient ID</th>
+											<th className="min-w-[6rem] px-2 py-3 font-semibold">Name</th>
+											<th className="min-w-[5rem] px-2 py-3 font-semibold">Department</th>
+											<th className="min-w-[4rem] px-2 py-3 font-semibold">Gender</th>
+											<th className="min-w-[6rem] px-2 py-3 font-semibold">Phone</th>
+											<th className="min-w-[7rem] px-2 py-3 font-semibold">Assigned Therapist</th>
+											<th className="min-w-[6rem] px-2 py-3 font-semibold">Referred by</th>
+											<th className="min-w-[5rem] px-2 py-3 font-semibold">Status</th>
+											<th className="min-w-[8rem] px-2 py-3 font-semibold">Registered</th>
+											<th className="sticky right-0 z-10 min-w-[5rem] shrink-0 bg-slate-50 px-2 py-3 font-semibold text-center shadow-[-4px_0_8px_rgba(0,0,0,0.06)]">Actions</th>
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-slate-100">
@@ -2262,6 +2283,9 @@ export default function Patients() {
 														return assignedDoctor || '—';
 													})()}
 												</td>
+												<td className="px-2 py-4 text-xs text-slate-600 truncate" title={patient.referredBy || '—'}>
+													{patient.referredBy || '—'}
+												</td>
 												<td className="px-2 py-4">
 													<span
 														className={[
@@ -2285,7 +2309,7 @@ export default function Patients() {
 														? `Removed: ${formatDateTime(patient.deletedAt)}`
 														: formatDateTime(patient.registeredAt)}
 												</td>
-												<td className="px-2 py-4 text-center">
+												<td className="sticky right-0 z-10 shrink-0 bg-white px-2 py-4 text-center shadow-[-4px_0_8px_rgba(0,0,0,0.06)]">
 													<div className="inline-flex items-center gap-1">
 														<button
 															type="button"
@@ -2748,6 +2772,32 @@ export default function Patients() {
 									</div>
 								</div>
 
+								{/* Referred by */}
+								<div className="grid gap-4 md:grid-cols-12">
+									<div className="md:col-span-12">
+										<label className="block text-sm font-medium text-slate-700">Referred by</label>
+										<select
+											value={registerForm.referredBy}
+											onChange={e => setRegisterForm(prev => ({ ...prev, referredBy: e.target.value }))}
+											className="input-base mt-2"
+										>
+											<option value="">Select</option>
+											<option value="walk-in">walk-in</option>
+											{referrableStaff
+												.filter(m => (m.userName || m.displayName || '').trim())
+												.sort((a, b) => (a.userName || a.displayName || '').localeCompare(b.userName || b.displayName || ''))
+												.map(member => {
+													const name = (member.userName || member.displayName || '').trim();
+													return (
+														<option key={member.id} value={name}>
+															{name}
+														</option>
+													);
+												})}
+										</select>
+									</div>
+								</div>
+
 								{/* Row 4: Type of Organization */}
 								<div className="grid gap-4 md:grid-cols-12">
 									<div className="md:col-span-12">
@@ -2841,6 +2891,7 @@ export default function Patients() {
 												patientType: '',
 												paymentType: '',
 												paymentDescription: '',
+												referredBy: '',
 											});
 											setRegisterFormErrors({});
 										}}

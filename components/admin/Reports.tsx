@@ -98,6 +98,8 @@ interface BillingRecord {
 	patient: string;
 	patientId: string;
 	doctor?: string;
+	/** When set, revenue is attributed to this user (e.g. referrer); otherwise to doctor (treating clinician). */
+	revenueAttributedTo?: string;
 	amount: number;
 	status: 'Pending' | 'Completed' | 'Auto-Paid';
 	date: string;
@@ -259,6 +261,7 @@ export default function Reports() {
 						patient: data.patient ? String(data.patient) : '',
 						patientId: data.patientId ? String(data.patientId) : '',
 						doctor: data.doctor ? String(data.doctor) : undefined,
+						revenueAttributedTo: data.revenueAttributedTo ? String(data.revenueAttributedTo) : undefined,
 						amount: typeof data.amount === 'number' ? data.amount : Number(data.amount) || 0,
 						status: (data.status as 'Pending' | 'Completed' | 'Auto-Paid') ?? 'Pending',
 						date: data.date ? String(data.date) : '',
@@ -403,9 +406,9 @@ export default function Reports() {
 		});
 
 		// Calculate total revenue from billing collection (same source as My Performance)
-		// Match physician by doctor name; include Completed and Auto-Paid; optionally filter by date range; exclude VIP/Referral
+		// Match by revenueAttributedTo (referrer) or doctor (treating clinician); include Completed and Auto-Paid; exclude VIP/Referral
 		const physicianBilling = billing.filter(bill => {
-			const d = bill.doctor?.toLowerCase().trim();
+			const d = (bill.revenueAttributedTo || bill.doctor)?.toLowerCase().trim();
 			if (!d) return false;
 			if (d === sel) return true;
 			if (d.includes(sel) || sel.includes(d)) return true;
@@ -461,7 +464,7 @@ export default function Reports() {
 		}
 		const sel = selectedPhysician.toLowerCase().trim();
 		const physicianBilling = billing.filter(bill => {
-			const d = bill.doctor?.toLowerCase().trim();
+			const d = (bill.revenueAttributedTo || bill.doctor)?.toLowerCase().trim();
 			if (!d) return false;
 			if (d === sel) return true;
 			return d.includes(sel) || sel.includes(d);
@@ -880,11 +883,11 @@ export default function Reports() {
 		}
 
 		const teamRevenue = clinicalTeamMembers.map(member => {
-			// Calculate total revenue from billing records for this member
+			// Calculate total revenue from billing records for this member (revenueAttributedTo or doctor)
 			// Include both 'Completed' and 'Auto-Paid' statuses as they represent actual revenue
 			const memberBilling = filteredBilling.filter(bill => {
-				const doctorMatch = bill.doctor?.toLowerCase().trim() === member.userName.toLowerCase().trim() ||
-					bill.doctor?.toLowerCase().trim() === member.userName?.toLowerCase().trim();
+				const attrib = (bill.revenueAttributedTo || bill.doctor)?.toLowerCase().trim();
+				const doctorMatch = attrib === member.userName.toLowerCase().trim() || attrib === member.userName?.toLowerCase().trim();
 				const statusMatch = bill.status === 'Completed' || bill.status === 'Auto-Paid';
 				return doctorMatch && statusMatch;
 			});
@@ -1411,9 +1414,9 @@ export default function Reports() {
 				}
 			});
 
-			// Calculate total revenue from billing collection (same as Clinician Performance Analytics)
+			// Calculate total revenue from billing collection (same as Clinician Performance Analytics; use revenueAttributedTo when set)
 			let physicianBilling = billing.filter(bill => {
-				const d = bill.doctor?.toLowerCase().trim();
+				const d = (bill.revenueAttributedTo || bill.doctor)?.toLowerCase().trim();
 				if (!d) return false;
 				if (d === sel) return true;
 				return d.includes(sel) || sel.includes(d);
