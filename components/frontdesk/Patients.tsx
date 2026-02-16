@@ -703,13 +703,17 @@ export default function Patients() {
 					excludedFromReferredBy.some(
 						ex => (ex || '').trim().toLowerCase() === (n || '').trim().toLowerCase()
 					);
+				// Exclude "Dr Dharanjay Dubey" only when role is Admin (so Admin doesn't appear in Referred by)
+				const isAdminRole = (r: string) => (r || '').trim().toLowerCase() === 'admin';
+				const isDrDharanjayDubeyAdmin = (name: string, role: string) =>
+					(name || '').trim().toLowerCase() === 'dr dharanjay dubey' && isAdminRole(role);
 				setReferrableStaff(
 					mapped.filter(
 						member => {
 							const name = (member.userName || member.displayName || '').trim();
 							const status = (member.status || '').trim().toLowerCase();
 							const active = status === 'active' || status === ''; // include when status missing
-							return active && name.length > 0 && !isFrontdeskRole(member.role || '') && !isExcludedName(name);
+							return active && name.length > 0 && !isFrontdeskRole(member.role || '') && !isExcludedName(name) && !isDrDharanjayDubeyAdmin(name, member.role || '');
 						}
 					)
 				);
