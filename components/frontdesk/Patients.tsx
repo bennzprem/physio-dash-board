@@ -468,6 +468,7 @@ export default function Patients() {
 	const [loading, setLoading] = useState(true);
 	const [searchTerm, setSearchTerm] = useState('');
 	const [statusFilter, setStatusFilter] = useState<'all' | AdminPatientStatus>('all');
+	const [packageFilter, setPackageFilter] = useState<'all' | 'with-package'>('all');
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [deletingId, setDeletingId] = useState<string | null>(null);
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -810,6 +811,19 @@ export default function Patients() {
 		return () => unsubscribe();
 	}, []);
 
+	const patientHasPackagePlan = (patientId: string, patient?: FrontdeskPatient) => {
+		// Check if patient has package fields set (current cycle)
+		if (patient && (patient.packageAmount != null && patient.packageAmount > 0)) {
+			return true;
+		}
+		if (patient && (patient.packageAmount == null || patient.packageAmount === 0)) {
+			return false;
+		}
+		return billing.some(
+			bill => bill.patientId === patientId && typeof bill.packageAmount === 'number' && bill.packageAmount > 0
+		);
+	};
+
 	const filteredPatients = useMemo(() => {
 		const query = searchTerm.trim().toLowerCase();
 		return patients.filter(patient => {
@@ -838,10 +852,15 @@ export default function Patients() {
 				// For other status filters, match exactly
 				matchesStatus = patient.status === statusFilter;
 			}
-			
-			return matchesSearch && matchesStatus;
+
+			// Package filter: when "With package" is selected, only show patients who have a package
+			const hasPackage = patientHasPackagePlan(patient.patientId, patient);
+			const matchesPackage =
+				packageFilter === 'all' || (packageFilter === 'with-package' && hasPackage);
+
+			return matchesSearch && matchesStatus && matchesPackage;
 		});
-	}, [patients, searchTerm, statusFilter, showDeletedPatients]);
+	}, [patients, searchTerm, statusFilter, packageFilter, showDeletedPatients, billing]);
 
 	// Check if patient has any appointments (for first booking check)
 	// Button should only show for patients who haven't done their first booking
@@ -959,25 +978,6 @@ export default function Patients() {
 			return consultationBill;
 		}
 		return null;
-	};
-
-	const patientHasPackagePlan = (patientId: string, patient?: FrontdeskPatient) => {
-		// Check if patient has package fields set (current cycle)
-		// After an automatic reset, package fields are cleared, so this will return false even if old bills exist
-		// This is the primary check - if patient has packageAmount set, they have a package plan
-		if (patient && (patient.packageAmount != null && patient.packageAmount > 0)) {
-			return true;
-		}
-		// If patient object is provided and packageAmount is explicitly null/0, they don't have a package plan
-		// (even if old bills exist from previous cycles)
-		if (patient && (patient.packageAmount == null || patient.packageAmount === 0)) {
-			return false;
-		}
-		// Fallback: if patient object not available, check if there are any package bills
-		// This is only for backward compatibility when patient object is not passed
-		return billing.some(
-			bill => bill.patientId === patientId && typeof bill.packageAmount === 'number' && bill.packageAmount > 0
-		);
 	};
 
 	useEffect(() => {
@@ -2949,10 +2949,21 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 								))}
 							</select>
 						</div>
+						<div className="w-full md:w-48">
+							<label className="block text-sm font-medium text-slate-700">Packages</label>
+							<select
+								value={packageFilter}
+								onChange={event => setPackageFilter(event.target.value as 'all' | 'with-package')}
+								className="select-base"
+							>
+								<option value="all">All patients</option>
+								<option value="with-package">With package</option>
+							</select>
+						</div>
 					</div>
 					<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 						<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-							<button type="button" onClick={() => { setSearchTerm(''); setStatusFilter('all'); }} className="btn-secondary">
+							<button type="button" onClick={() => { setSearchTerm(''); setStatusFilter('all'); setPackageFilter('all'); }} className="btn-secondary">
 								<i className="fas fa-eraser text-xs" aria-hidden="true" />
 								Clear filters
 							</button>
@@ -3013,6 +3024,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 										<th className="px-4 py-3 font-semibold">Type</th>
 										<th className="px-4 py-3 font-semibold">Therapist</th>
 										<th className="px-4 py-3 font-semibold">Registered</th>
+										<th className="px-4 py-3 font-semibold">Packages</th>
 										<th className="px-4 py-3 font-semibold text-right">Actions</th>
 									</tr>
 								</thead>
@@ -3059,6 +3071,11 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 											<td className="px-4 py-4 text-sm text-slate-600">{patient.patientType || '—'}</td>
 											<td className="px-4 py-4 text-sm text-slate-600">{patient.assignedDoctor || '—'}</td>
 											<td className="px-4 py-4 text-xs text-slate-500">{formatDateLabel(patient.registeredAt)}</td>
+											<td className="px-4 py-4 text-sm text-slate-600">
+												{typeof patient.totalSessionsRequired === 'number' && patient.totalSessionsRequired > 0
+													? `${Math.max(0, patient.totalSessionsRequired - (patient.remainingSessions ?? 0))}/${patient.totalSessionsRequired}`
+													: '—'}
+											</td>
 											<td className="px-4 py-4 text-right">
 												<div className="flex items-center justify-end gap-2" data-patient-actions>
 													<button
