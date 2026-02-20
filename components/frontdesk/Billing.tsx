@@ -551,7 +551,7 @@ async function generateInvoiceHtml(
 
 	const buyerName = escapeHtml(options?.patientName || bill.patient);
 	const buyerAddress = options?.patientAddress || `Patient ID: ${escapeHtml(bill.patientId)}`;
-	const buyerCity = options?.patientCity || (bill.doctor ? `Doctor: ${escapeHtml(bill.doctor)}` : '');
+	const buyerCity = options?.patientCity || (bill.doctor ? `Specialist: ${escapeHtml(bill.doctor)}` : '');
 	const description = options?.description || 'Physiotherapy / Strength & Conditioning Sessions';
 	const hsnSac = options?.hsnSac || '9993';
 
@@ -969,22 +969,26 @@ async function generateReceiptHtml(bill: BillingRecord, receiptNo: string, optio
 				.details-box {
 					border: 1px solid #000;
 					padding: 15px;
-					height: 120px;
-					position: relative;
+					min-height: 100px;
 					font-size: 14px;
 					line-height: 1.5;
 					color: #000;
 				}
 				.details-box strong {
 					display: block;
-					margin-bottom: 5px;
+					margin-bottom: 8px;
 					color: #000;
 				}
+				.details-content {
+					display: flex;
+					flex-direction: column;
+					gap: 4px;
+					margin-bottom: 12px;
+				}
 				.digitally-signed {
-					position: absolute;
-					bottom: 10px;
-					left: 0;
-					right: 0;
+					margin-top: 10px;
+					padding-top: 10px;
+					border-top: 1px solid #000;
 					text-align: center;
 					font-weight: bold;
 					font-size: 12px;
@@ -1033,9 +1037,12 @@ async function generateReceiptHtml(bill: BillingRecord, receiptNo: string, optio
 				</div>
 				<div class="details-box">
 					<strong>For</strong>
-					${escapeHtml(bill.appointmentId || '')}<br>
-					${bill.doctor ? `Doctor: ${escapeHtml(bill.doctor)}<br>` : ''}
-					Payment Mode: ${escapeHtml(paymentModeDisplay)}
+					<div class="details-content">
+						<div>${escapeHtml(bill.appointmentId || '')}</div>
+						${bill.doctor ? `<div>Specialist: ${escapeHtml(bill.doctor)}</div>` : ''}
+						<div>Payment Mode: ${escapeHtml(paymentModeDisplay)}</div>
+						${bill.utr ? `<div>UTR: ${escapeHtml(bill.utr)}</div>` : ''}
+					</div>
 					<div class="digitally-signed">Digitally Signed</div>
 				</div>
 				<div class="footer">
@@ -4000,10 +4007,7 @@ export default function Billing() {
 											{numberToWords(editableReceiptData?.amount || selectedBill.amount)}
 										</span>
 									</div>
-									<div
-										className="border border-black p-4 relative"
-										style={{ height: '120px' }}
-									>
+									<div className="border border-black p-4">
 										<div className="font-bold mb-2 text-black">For</div>
 										{isEditingReceipt && editableReceiptData ? (
 											<div className="text-sm text-black space-y-2">
@@ -4018,7 +4022,7 @@ export default function Billing() {
 													type="text"
 													value={editableReceiptData.doctor || ''}
 													onChange={e => setEditableReceiptData({ ...editableReceiptData, doctor: e.target.value })}
-													placeholder="Doctor Name"
+													placeholder="Specialist Name"
 													className="w-full border border-gray-300 px-2 py-1 rounded"
 												/>
 												<div className="flex items-center gap-2">
@@ -4043,25 +4047,18 @@ export default function Billing() {
 												)}
 											</div>
 										) : (
-											<div className="text-sm text-black">
-												{editableReceiptData?.appointmentId || selectedBill.appointmentId || ''}
+											<div className="text-sm text-black space-y-1">
+												<div>{editableReceiptData?.appointmentId || selectedBill.appointmentId || ''}</div>
 												{(editableReceiptData?.doctor || selectedBill.doctor) && (
-													<>
-														<br />
-														Doctor: {editableReceiptData?.doctor || selectedBill.doctor}
-													</>
+													<div>Specialist: {editableReceiptData?.doctor || selectedBill.doctor}</div>
 												)}
-												<br />
-												Payment Mode: {editableReceiptData?.paymentMode || selectedBill.paymentMode || 'Cash'}
+												<div>Payment Mode: {editableReceiptData?.paymentMode || selectedBill.paymentMode || 'Cash'}</div>
 												{(editableReceiptData?.utr || selectedBill.utr) && (
-													<>
-														<br />
-														UTR: {editableReceiptData?.utr || selectedBill.utr}
-													</>
+													<div>UTR: {editableReceiptData?.utr || selectedBill.utr}</div>
 												)}
 											</div>
 										)}
-										<div className="absolute bottom-3 left-0 right-0 text-center text-xs font-bold text-black">
+										<div className="mt-3 pt-2 border-t border-black text-center text-xs font-bold text-black">
 											Digitally Signed
 										</div>
 									</div>
