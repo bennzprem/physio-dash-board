@@ -280,6 +280,9 @@ interface RegisterFormState {
 }
 
 interface PackageSetupFormState {
+	clientType: 'professional' | 'student' | '';
+	category: 'strength' | 'physio' | 'individual' | '';
+	selectedPackage: string;
 	totalNoOfSessions: string;
 	paymentType: PaymentTypeOption | '';
 	paymentDescription: string;
@@ -332,6 +335,60 @@ const PAYMENT_OPTIONS: Array<{ value: PaymentTypeOption; label: string }> = [
 	{ value: 'without', label: 'Without Concession' },
 ];
 
+interface PackageOption {
+	id: string;
+	label: string;
+	sessions: number;
+	amount: number;
+	category: 'strength' | 'physio' | 'individual';
+}
+
+const PROFESSIONAL_PACKAGES: PackageOption[] = [
+	{ id: 'sc-1m-12', label: 'Strength & Conditioning - 1 Month (12 Sessions)', sessions: 12, amount: 11000, category: 'strength' },
+	{ id: 'sc-1m-16', label: 'Strength & Conditioning - 1 Month (16 Sessions + 4 Rehab)', sessions: 20, amount: 14600, category: 'strength' },
+	{ id: 'sc-3m-36', label: 'Strength & Conditioning - 3 Month (36 Sessions)', sessions: 36, amount: 30500, category: 'strength' },
+	{ id: 'sc-3m-48', label: 'Strength & Conditioning - 3 Month (48 Sessions + Rehab)', sessions: 52, amount: 40700, category: 'strength' },
+	{ id: 'phy-1m-12', label: 'Physiotherapy - 1 Month (12 Sessions)', sessions: 12, amount: 9000, category: 'physio' },
+	{ id: 'phy-3m-36', label: 'Physiotherapy - 3 Month (36 Sessions)', sessions: 36, amount: 27000, category: 'physio' },
+	{ id: 'phy-acute', label: 'Physiotherapy - Acute (24 Sessions/Month)', sessions: 24, amount: 18000, category: 'physio' },
+	{ id: 'ind-consultation', label: 'Consultation', sessions: 1, amount: 1000, category: 'individual' },
+	{ id: 'ind-session', label: 'Per Session', sessions: 1, amount: 800, category: 'individual' },
+	{ id: 'ind-ice-bath', label: 'Ice Bath', sessions: 1, amount: 1000, category: 'individual' },
+	{ id: 'ind-cold-compression', label: 'Cold Compression', sessions: 1, amount: 700, category: 'individual' },
+	{ id: 'ind-em-stimulation', label: 'EM Stimulation', sessions: 1, amount: 400, category: 'individual' },
+	{ id: 'ind-shockwave', label: 'Shockwave', sessions: 1, amount: 350, category: 'individual' },
+	{ id: 'ind-kinesio-taping', label: 'Kinesio Taping', sessions: 1, amount: 500, category: 'individual' },
+	{ id: 'ind-dry-needling', label: 'Dry Needling', sessions: 1, amount: 500, category: 'individual' },
+	{ id: 'ind-myo-fascial', label: 'Myo Fascial Release', sessions: 1, amount: 500, category: 'individual' },
+	{ id: 'ind-ultrasound', label: 'Ultrasound', sessions: 1, amount: 250, category: 'individual' },
+	{ id: 'ind-tens', label: 'TENS', sessions: 1, amount: 250, category: 'individual' },
+	{ id: 'ind-interferential', label: 'Interferential Current', sessions: 1, amount: 250, category: 'individual' },
+	{ id: 'ind-electrical-stim', label: 'Electrical Stimulation', sessions: 1, amount: 250, category: 'individual' },
+];
+
+const STUDENT_PACKAGES: PackageOption[] = [
+	{ id: 'sc-1m-12-student', label: 'Strength & Conditioning - 1 Month (12 Sessions)', sessions: 12, amount: 8000, category: 'strength' },
+	{ id: 'sc-1m-16-student', label: 'Strength & Conditioning - 1 Month (16 Sessions + 4 Rehab)', sessions: 20, amount: 10600, category: 'strength' },
+	{ id: 'sc-3m-36-student', label: 'Strength & Conditioning - 3 Month (36 Sessions)', sessions: 36, amount: 21000, category: 'strength' },
+	{ id: 'sc-3m-48-student', label: 'Strength & Conditioning - 3 Month (48 Sessions + Rehab)', sessions: 52, amount: 28000, category: 'strength' },
+	{ id: 'phy-1m-12-student', label: 'Physiotherapy - 1 Month (12 Sessions)', sessions: 12, amount: 6000, category: 'physio' },
+	{ id: 'phy-3m-36-student', label: 'Physiotherapy - 3 Month (36 Sessions)', sessions: 36, amount: 18000, category: 'physio' },
+	{ id: 'phy-acute-student', label: 'Physiotherapy - Acute (24 Sessions/Month)', sessions: 24, amount: 12000, category: 'physio' },
+	{ id: 'ind-consultation-student', label: 'Consultation', sessions: 1, amount: 1500, category: 'individual' },
+	{ id: 'ind-session-student', label: 'Per Session', sessions: 1, amount: 950, category: 'individual' },
+	{ id: 'ind-ice-bath-student', label: 'Ice Bath', sessions: 1, amount: 800, category: 'individual' },
+	{ id: 'ind-cold-compression-student', label: 'Cold Compression', sessions: 1, amount: 500, category: 'individual' },
+	{ id: 'ind-em-stimulation-student', label: 'EM Stimulation', sessions: 1, amount: 350, category: 'individual' },
+	{ id: 'ind-shockwave-student', label: 'Shockwave', sessions: 1, amount: 300, category: 'individual' },
+	{ id: 'ind-kinesio-taping-student', label: 'Kinesio Taping', sessions: 1, amount: 500, category: 'individual' },
+	{ id: 'ind-dry-needling-student', label: 'Dry Needling', sessions: 1, amount: 500, category: 'individual' },
+	{ id: 'ind-myo-fascial-student', label: 'Myo Fascial Release', sessions: 1, amount: 500, category: 'individual' },
+	{ id: 'ind-ultrasound-student', label: 'Ultrasound', sessions: 1, amount: 200, category: 'individual' },
+	{ id: 'ind-tens-student', label: 'TENS', sessions: 1, amount: 200, category: 'individual' },
+	{ id: 'ind-interferential-student', label: 'Interferential Current', sessions: 1, amount: 200, category: 'individual' },
+	{ id: 'ind-electrical-stim-student', label: 'Electrical Stimulation', sessions: 1, amount: 200, category: 'individual' },
+];
+
 const PHONE_REGEX = /^[0-9]{10,15}$/;
 const SLOT_INTERVAL_MINUTES = 30;
 const MAX_BLOCK_DURATION_MINUTES = 120;
@@ -358,6 +415,9 @@ const REGISTER_FORM_INITIAL_STATE: RegisterFormState = {
 };
 
 const PACKAGE_FORM_INITIAL_STATE: PackageSetupFormState = {
+	clientType: '',
+	category: '',
+	selectedPackage: '',
 	totalNoOfSessions: '',
 	paymentType: '',
 	paymentDescription: '',
@@ -1230,8 +1290,11 @@ export default function Patients() {
 	const handleOpenPackageModal = (patient: FrontdeskPatient) => {
 		setPackageModalPatient(patient);
 		setPackageForm({
+			clientType: '',
+			category: '',
+			selectedPackage: '',
 			totalNoOfSessions: patient.totalSessionsRequired ? String(patient.totalSessionsRequired) : '',
-			paymentType: patient.paymentType ?? '',
+			paymentType: (patient as { paymentType?: PaymentTypeOption }).paymentType ?? '',
 			paymentDescription: patient.paymentDescription ?? '',
 			packageAmount: patient.packageAmount ? String(patient.packageAmount) : '',
 			concessionPercent: patient.concessionPercent != null ? String(patient.concessionPercent) : '',
@@ -1250,19 +1313,68 @@ export default function Patients() {
 	const handlePackageFormChange =
 		(field: keyof PackageSetupFormState) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
 			const { value } = event.target;
-			setPackageForm(prev => ({
-				...prev,
-				[field]: value,
-				...(field === 'paymentType' && value !== 'with' ? { concessionPercent: '' } : {}),
-			}));
-			setPackageFormErrors(prev => ({
-				...prev,
-				[field]: undefined,
-			}));
+			setPackageForm(prev => {
+				const updated = {
+					...prev,
+					[field]: value,
+					...(field === 'paymentType' && value !== 'with' ? { concessionPercent: '' } : {}),
+				};
+				if (field === 'clientType') {
+					updated.category = '';
+					updated.selectedPackage = '';
+					updated.totalNoOfSessions = '';
+					updated.packageAmount = '';
+				} else if (field === 'category') {
+					updated.selectedPackage = '';
+					updated.totalNoOfSessions = '';
+					updated.packageAmount = '';
+				} else if (field === 'selectedPackage') {
+					if (value === 'custom') {
+						updated.totalNoOfSessions = '';
+						updated.packageAmount = '';
+					} else if (value) {
+						const allPackages = prev.clientType === 'professional'
+							? PROFESSIONAL_PACKAGES
+							: prev.clientType === 'student'
+								? STUDENT_PACKAGES
+								: [...PROFESSIONAL_PACKAGES, ...STUDENT_PACKAGES];
+						const selectedPkg = allPackages.find(pkg => pkg.id === value);
+						if (selectedPkg) {
+							updated.totalNoOfSessions = selectedPkg.category === 'individual' ? '1' : String(selectedPkg.sessions);
+							updated.packageAmount = String(selectedPkg.amount);
+						}
+					} else {
+						updated.totalNoOfSessions = '';
+						updated.packageAmount = '';
+					}
+				} else if (field === 'totalNoOfSessions' && prev.selectedPackage && prev.selectedPackage !== 'custom') {
+					const allPackages = prev.clientType === 'professional'
+						? PROFESSIONAL_PACKAGES
+						: prev.clientType === 'student'
+							? STUDENT_PACKAGES
+							: [...PROFESSIONAL_PACKAGES, ...STUDENT_PACKAGES];
+					const selectedPkg = allPackages.find(pkg => pkg.id === prev.selectedPackage);
+					if (selectedPkg && selectedPkg.category === 'individual') {
+						const sessions = Number(value) || 1;
+						updated.packageAmount = String(sessions * selectedPkg.amount);
+					}
+				}
+				return updated;
+			});
+			setPackageFormErrors(prev => ({ ...prev, [field]: undefined }));
 		};
 
 	const validatePackageForm = () => {
 		const errors: Partial<Record<keyof PackageSetupFormState, string>> = {};
+		if (!packageForm.clientType) {
+			errors.clientType = 'Please select a client type.';
+		}
+		if (!packageForm.category) {
+			errors.category = 'Please select a category.';
+		}
+		if (!packageForm.selectedPackage) {
+			errors.selectedPackage = 'Please select a package.';
+		}
 		const totalSessionsValue = Number(packageForm.totalNoOfSessions);
 		if (!packageForm.totalNoOfSessions.trim()) {
 			errors.totalNoOfSessions = 'Please enter the total number of sessions.';
@@ -1348,6 +1460,30 @@ export default function Patients() {
 				updatedAt: serverTimestamp(),
 			});
 
+			const allPackages = [...PROFESSIONAL_PACKAGES, ...STUDENT_PACKAGES];
+			const selectedPkg = allPackages.find(pkg => pkg.id === packageForm.selectedPackage);
+			const packageCategory = selectedPkg?.category || packageForm.category || 'individual';
+
+			for (let i = 1; i <= totalSessionsValue; i++) {
+				const appointmentId = `APT-${packageModalPatient.patientId}-${Date.now()}-${i}`;
+				await addDoc(collection(db, 'appointments'), {
+					appointmentId,
+					patientId: packageModalPatient.patientId,
+					patient: packageModalPatient.name,
+					doctor: '',
+					date: '',
+					time: '',
+					status: 'pending',
+					notes: null,
+					isConsultation: false,
+					sessionNumber: i,
+					totalSessions: totalSessionsValue,
+					packageBillingId: billingId,
+					packageCategory,
+					createdAt: serverTimestamp(),
+				});
+			}
+
 			setPatients(prev =>
 				prev.map(p =>
 					p.id === packageModalPatient.id
@@ -1376,7 +1512,7 @@ export default function Patients() {
 					: prev
 			);
 
-			alert('Package details saved. Billing entry created.');
+			alert(`Package details saved. Billing entry created. ${totalSessionsValue} appointment${totalSessionsValue > 1 ? 's' : ''} created.`);
 			handleClosePackageModal();
 		} catch (error) {
 			console.error('Failed to save package details', error);
@@ -4589,7 +4725,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 				</div>
 			)}
 
-			{/* Package Setup Modal */}
+			{/* Package Setup Modal - same as Clinical-team View/Edit Report "Set up package" */}
 			{showPackageModal && packageModalPatient && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
 					<div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -4613,31 +4749,154 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 						</header>
 						<div className="px-6 py-4 space-y-4">
 							<div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-								<p className="font-semibold text-slate-800">Consultation completed</p>
+								<p className="font-semibold text-slate-800">Package Setup</p>
 								<p>
-									Record the patient's package payment details. This will create a billing entry and update the patient
-									record.
+									Record the patient's package payment details for future sessions. This will create a package billing entry (separate from consultation billing, which is handled by front desk) and update the patient record.
 								</p>
 							</div>
 
 							<div className="grid gap-4 md:grid-cols-12">
+								<div className="md:col-span-4">
+									<label className="block text-sm font-medium text-slate-700">
+										Client Type <span className="text-rose-600">*</span>
+									</label>
+									<select
+										value={packageForm.clientType}
+										onChange={handlePackageFormChange('clientType')}
+										className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+										required
+										disabled={packageSubmitting}
+									>
+										<option value="">Select client type</option>
+										<option value="professional">Professionals & Elite Athletes</option>
+										<option value="student">Students & Govt Employees</option>
+									</select>
+									{packageFormErrors.clientType && (
+										<p className="mt-1 text-xs text-rose-500">{packageFormErrors.clientType}</p>
+									)}
+								</div>
+								<div className="md:col-span-4">
+									<label className="block text-sm font-medium text-slate-700">
+										Category <span className="text-rose-600">*</span>
+									</label>
+									<select
+										value={packageForm.category}
+										onChange={handlePackageFormChange('category')}
+										className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+										required
+										disabled={packageSubmitting || !packageForm.clientType}
+									>
+										<option value="">Select category</option>
+										<option value="strength">Strength & Conditioning</option>
+										<option value="physio">Physiotherapy</option>
+										<option value="individual">Individual Treatments</option>
+									</select>
+									{packageFormErrors.category && (
+										<p className="mt-1 text-xs text-rose-500">{packageFormErrors.category}</p>
+									)}
+								</div>
+								<div className="md:col-span-4">
+									<label className="block text-sm font-medium text-slate-700">
+										Select Package <span className="text-rose-600">*</span>
+									</label>
+									<select
+										value={packageForm.selectedPackage}
+										onChange={handlePackageFormChange('selectedPackage')}
+										className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+										required
+										disabled={packageSubmitting || !packageForm.clientType || !packageForm.category}
+									>
+										<option value="">Select a package</option>
+										{(() => {
+											const availablePackages = packageForm.clientType === 'professional'
+												? PROFESSIONAL_PACKAGES
+												: packageForm.clientType === 'student'
+													? STUDENT_PACKAGES
+													: [];
+											const filteredPackages = availablePackages
+												.filter(p => p.category === packageForm.category)
+												.map(pkg => (
+													<option key={pkg.id} value={pkg.id}>
+														{pkg.label} - ₹{pkg.amount.toLocaleString()}{pkg.category === 'individual' ? ' per session' : ''}
+													</option>
+												));
+											return (
+												<>
+													{filteredPackages}
+													<option value="custom">Custom Package</option>
+												</>
+											);
+										})()}
+									</select>
+									{packageFormErrors.selectedPackage && (
+										<p className="mt-1 text-xs text-rose-500">{packageFormErrors.selectedPackage}</p>
+									)}
+								</div>
 								<div className="md:col-span-6">
 									<label className="block text-sm font-medium text-slate-700">
 										Total No of Session <span className="text-rose-600">*</span>
 									</label>
-									<input
-										type="number"
-										min="1"
-										step="1"
-										value={packageForm.totalNoOfSessions}
-										onChange={handlePackageFormChange('totalNoOfSessions')}
-										className="input-base mt-2"
-										placeholder="Enter total number of sessions"
-										required
-										disabled={packageSubmitting}
-									/>
+									{(() => {
+										const allPackages = [...PROFESSIONAL_PACKAGES, ...STUDENT_PACKAGES];
+										const selected = allPackages.find(p => p.id === packageForm.selectedPackage);
+										const isIndividual = selected?.category === 'individual';
+										const isCustom = packageForm.selectedPackage === 'custom';
+										return (
+											<input
+												type="number"
+												min="1"
+												step="1"
+												value={packageForm.totalNoOfSessions}
+												onChange={handlePackageFormChange('totalNoOfSessions')}
+												className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+												placeholder={isCustom ? 'Enter number of sessions' : isIndividual ? 'Enter number of sessions (default: 1)' : 'Auto-filled from package'}
+												required
+												disabled={packageSubmitting || (!!packageForm.selectedPackage && !isIndividual && !isCustom)}
+											/>
+										);
+									})()}
 									{packageFormErrors.totalNoOfSessions && (
 										<p className="mt-1 text-xs text-rose-500">{packageFormErrors.totalNoOfSessions}</p>
+									)}
+								</div>
+								<div className="md:col-span-6">
+									<label className="block text-sm font-medium text-slate-700">
+										Package Amount <span className="text-rose-600">*</span>
+										{(() => {
+											const allPackages = [...PROFESSIONAL_PACKAGES, ...STUDENT_PACKAGES];
+											const selected = allPackages.find(p => p.id === packageForm.selectedPackage);
+											if (selected?.category === 'individual') {
+												return <span className="ml-2 text-xs font-normal text-slate-500">(calculated: {selected.amount} × sessions)</span>;
+											}
+											return null;
+										})()}
+									</label>
+									<div className="relative mt-2">
+										<span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-500">
+											₹
+										</span>
+										{(() => {
+											const allPackages = [...PROFESSIONAL_PACKAGES, ...STUDENT_PACKAGES];
+											const selected = allPackages.find(p => p.id === packageForm.selectedPackage);
+											const isIndividual = selected?.category === 'individual';
+											const isCustom = packageForm.selectedPackage === 'custom';
+											return (
+												<input
+													type="number"
+													min="0"
+													step="0.01"
+													value={packageForm.packageAmount}
+													onChange={handlePackageFormChange('packageAmount')}
+													className="w-full rounded-md border border-slate-300 pl-8 pr-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+													placeholder={isCustom ? 'Enter package amount' : isIndividual ? 'Auto-calculated' : 'Auto-filled from package'}
+													required
+													disabled={packageSubmitting || (!!packageForm.selectedPackage && !isCustom && !isIndividual)}
+												/>
+											);
+										})()}
+									</div>
+									{packageFormErrors.packageAmount && (
+										<p className="mt-1 text-xs text-rose-500">{packageFormErrors.packageAmount}</p>
 									)}
 								</div>
 								<div className="md:col-span-6">
@@ -4647,7 +4906,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 									<select
 										value={packageForm.paymentType}
 										onChange={handlePackageFormChange('paymentType')}
-										className="select-base mt-2"
+										className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
 										required
 										disabled={packageSubmitting}
 									>
@@ -4662,19 +4921,6 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 										<p className="mt-1 text-xs text-rose-500">{packageFormErrors.paymentType}</p>
 									)}
 								</div>
-								<div className="md:col-span-6">
-									<label className="block text-sm font-medium text-slate-700">
-										Payment Description / Concession Reason
-									</label>
-									<input
-										type="text"
-										value={packageForm.paymentDescription}
-										onChange={handlePackageFormChange('paymentDescription')}
-										className="input-base mt-2"
-										placeholder="Enter details (if any)"
-										disabled={packageSubmitting}
-									/>
-								</div>
 								{packageForm.paymentType === 'with' && (
 									<div className="md:col-span-6">
 										<label className="block text-sm font-medium text-slate-700">
@@ -4687,7 +4933,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 											step="0.01"
 											value={packageForm.concessionPercent ?? ''}
 											onChange={handlePackageFormChange('concessionPercent')}
-											className="input-base mt-2"
+											className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
 											placeholder="Enter percentage discount"
 											disabled={packageSubmitting}
 										/>
@@ -4696,32 +4942,18 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 										)}
 									</div>
 								)}
-							</div>
-
-							<div className="grid gap-4 md:grid-cols-12">
-								<div className="md:col-span-6">
+								<div className="md:col-span-12">
 									<label className="block text-sm font-medium text-slate-700">
-										Package Amount <span className="text-rose-600">*</span>
+										Payment Description / Concession Reason
 									</label>
-									<div className="relative mt-2">
-										<span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-500">
-											₹
-										</span>
-										<input
-											type="number"
-											min="0"
-											step="0.01"
-											value={packageForm.packageAmount}
-											onChange={handlePackageFormChange('packageAmount')}
-											className="input-base pl-8"
-											placeholder="0.00"
-											required
-											disabled={packageSubmitting}
-										/>
-									</div>
-									{packageFormErrors.packageAmount && (
-										<p className="mt-1 text-xs text-rose-500">{packageFormErrors.packageAmount}</p>
-									)}
+									<input
+										type="text"
+										value={packageForm.paymentDescription}
+										onChange={handlePackageFormChange('paymentDescription')}
+										className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 transition focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+										placeholder="Enter details (if any)"
+										disabled={packageSubmitting}
+									/>
 								</div>
 							</div>
 						</div>
@@ -4729,7 +4961,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 							<button
 								type="button"
 								onClick={handleClosePackageModal}
-								className="btn-secondary"
+								className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
 								disabled={packageSubmitting}
 							>
 								Cancel
@@ -4737,7 +4969,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 							<button
 								type="button"
 								onClick={handleSubmitPackageSetup}
-								className="btn-primary"
+								className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
 								disabled={packageSubmitting}
 							>
 								{packageSubmitting ? (
@@ -4747,7 +4979,7 @@ const handleRegisterPatient = async (event: React.FormEvent<HTMLFormElement>) =>
 									</>
 								) : (
 									<>
-										<i className="fas fa-save text-xs" aria-hidden="true" />
+										<i className="fas fa-save text-xs mr-1" aria-hidden="true" />
 										Save Package
 									</>
 								)}
