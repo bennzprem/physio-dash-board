@@ -1034,7 +1034,8 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 									JSON.stringify(formData) !== JSON.stringify(reportPatientData);
 								
 								if (!isUserEditing || !editable) {
-									setReportPatientData(patientData);
+									const dateToUse = patientData.dateOfConsultation || new Date().toISOString().split('T')[0];
+									setReportPatientData({ ...patientData, dateOfConsultation: dateToUse });
 									
 									// Check if it's a subsequent date for Physiotherapy report
 									if (patientData.dateOfConsultation) {
@@ -1361,12 +1362,13 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 										const data = docSnap.data();
 										setPsychologyData(data);
 										if (editable) {
-											setPsychologyFormData(data);
+											const dateToUse = (data?.dateOfAssessment as string) || new Date().toISOString().split('T')[0];
+											setPsychologyFormData({ ...data, dateOfAssessment: dateToUse });
 										}
 									} else {
 										setPsychologyData(null);
 										if (editable) {
-											setPsychologyFormData({});
+											setPsychologyFormData({ dateOfAssessment: new Date().toISOString().split('T')[0] });
 										}
 									}
 								} catch (err) {
@@ -1378,20 +1380,20 @@ export default function EditReportModal({ isOpen, patientId, initialTab = 'repor
 								console.error('Error loading psychology report:', error);
 								setPsychologyData(null);
 								if (editable) {
-									setPsychologyFormData({});
+									setPsychologyFormData({ dateOfAssessment: new Date().toISOString().split('T')[0] });
 								}
 								setLoadingPsychology(false);
 							});
 							
 							psychologyUnsubscribeRef.current = unsubscribe;
 						} catch (err) {
-							console.error('Failed to set up psychology report listener:', err);
-							setPsychologyData(null);
-							if (editable) {
-								setPsychologyFormData({});
+								console.error('Failed to set up psychology report listener:', err);
+								setPsychologyData(null);
+								if (editable) {
+									setPsychologyFormData({ dateOfAssessment: new Date().toISOString().split('T')[0] });
+								}
+								setLoadingPsychology(false);
 							}
-							setLoadingPsychology(false);
-						}
 					} else {
 						setLoadingPsychology(false);
 					}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, updateDoc, deleteDoc, addDoc, serverTimestamp, query, where, getDocs, getDoc, type QuerySnapshot, type Timestamp, deleteField } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
@@ -264,6 +264,8 @@ export default function Appointments() {
 	const { user } = useAuth();
 	const [extraTreatmentFlags, setExtraTreatmentFlags] = useState<Record<string, boolean>>({});
 	const [statusChangePending, setStatusChangePending] = useState<{ appointmentId: string; status: AdminAppointmentStatus; appointment: any } | null>(null);
+	const autoTransitionInProgressRef = useRef<Set<string>>(new Set());
+	const handleStatusChangeRef = useRef<(appointmentId: string, status: AdminAppointmentStatus) => Promise<void>>(() => Promise.resolve());
 	const [appointments, setAppointments] = useState<FrontdeskAppointment[]>([]);
 	const [patients, setPatients] = useState<PatientRecordWithSessions[]>([]);
 	const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -422,6 +424,54 @@ export default function Appointments() {
 
 		return () => unsubscribe();
 	}, []);
+
+	// Get slot start and end times in ms (local time). Returns null if date/time missing or invalid.
+	const getAppointmentSlotBounds = (apt: { date?: string; time?: string; duration?: number }) => {
+		if (!apt.date?.trim() || !apt.time?.trim()) return null;
+		const [h, m] = apt.time.split(':').map(Number);
+		if (Number.isNaN(h) || Number.isNaN(m)) return null;
+		const start = new Date(apt.date + 'T00:00:00');
+		start.setHours(h, m, 0, 0);
+		const durationMinutes = Math.max(1, apt.duration ?? SLOT_INTERVAL_MINUTES);
+		const end = new Date(start.getTime() + durationMinutes * 60000);
+		return { startMs: start.getTime(), endMs: end.getTime() };
+	};
+
+	// Keep ref updated so interval always calls latest handler
+	useEffect(() => {
+		handleStatusChangeRef.current = handleStatusChange;
+	});
+
+	// Auto-start session when slot begins (confirmed/pending -> ongoing), auto-complete when slot ends (ongoing -> completed)
+	useEffect(() => {
+		if (!appointments.length) return;
+		const run = () => {
+			const now = Date.now();
+			const handleChange = handleStatusChangeRef.current;
+			for (const apt of appointments) {
+				if (autoTransitionInProgressRef.current.has(apt.appointmentId)) continue;
+				const bounds = getAppointmentSlotBounds(apt);
+				if (!bounds) continue;
+				if ((apt.status === 'confirmed' || apt.status === 'pending') && now >= bounds.startMs) {
+					autoTransitionInProgressRef.current.add(apt.appointmentId);
+					handleChange(apt.appointmentId, 'ongoing').finally(() => {
+						autoTransitionInProgressRef.current.delete(apt.appointmentId);
+					});
+					return; // one transition per tick to avoid races
+				}
+				if (apt.status === 'ongoing' && now > bounds.endMs) {
+					autoTransitionInProgressRef.current.add(apt.appointmentId);
+					handleChange(apt.appointmentId, 'completed').finally(() => {
+						autoTransitionInProgressRef.current.delete(apt.appointmentId);
+					});
+					return;
+				}
+			}
+		};
+		run();
+		const interval = setInterval(run, 60 * 1000); // every 60 seconds
+		return () => clearInterval(interval);
+	}, [appointments]);
 
 	// Load patients from Firestore for patient details
 	useEffect(() => {
@@ -1373,6 +1423,27 @@ export default function Appointments() {
 		} catch (error) {
 			console.error('Failed to update appointment status', error);
 			alert(`Failed to update appointment status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		} finally {
+			setUpdating(prev => ({ ...prev, [appointment.id]: false }));
+		}
+	};
+
+	const handleExtendSession = async (appointment: FrontdeskAppointment, addMinutes: number) => {
+		if (appointment.status !== 'ongoing') return;
+		const currentDuration = Math.max(1, appointment.duration ?? SLOT_INTERVAL_MINUTES);
+		const newDuration = currentDuration + addMinutes;
+		setUpdating(prev => ({ ...prev, [appointment.id]: true }));
+		try {
+			const appointmentRef = doc(db, 'appointments', appointment.id);
+			await updateDoc(appointmentRef, { duration: newDuration });
+			setAppointments(prev =>
+				prev.map(a =>
+					a.id === appointment.id ? { ...a, duration: newDuration } : a
+				)
+			);
+		} catch (error) {
+			console.error('Failed to extend session', error);
+			alert(`Failed to extend session: ${error instanceof Error ? error.message : 'Unknown error'}`);
 		} finally {
 			setUpdating(prev => ({ ...prev, [appointment.id]: false }));
 		}
@@ -3452,10 +3523,40 @@ export default function Appointments() {
 																	className="select-base"
 																>
 																	<option value="pending">Pending</option>
+																	<option value="confirmed">Confirmed</option>
 																	<option value="ongoing">Ongoing</option>
 																	<option value="completed">Completed</option>
 																	<option value="cancelled">Cancelled</option>
 																</select>
+																{appointment.status === 'ongoing' && (
+																	<div className="flex flex-wrap items-center gap-1 mt-1">
+																		<span className="text-xs text-slate-500 font-medium">Extend session:</span>
+																		<button
+																			type="button"
+																			onClick={() => handleExtendSession(appointment, 15)}
+																			disabled={isUpdating}
+																			className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+																		>
+																			+15 min
+																		</button>
+																		<button
+																			type="button"
+																			onClick={() => handleExtendSession(appointment, 30)}
+																			disabled={isUpdating}
+																			className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+																		>
+																			+30 min
+																		</button>
+																		<button
+																			type="button"
+																			onClick={() => handleExtendSession(appointment, 60)}
+																			disabled={isUpdating}
+																			className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+																		>
+																			+1 hr
+																		</button>
+																	</div>
+																)}
 																{patientDetails?.patientType?.toUpperCase() === 'DYES' && appointment.status !== 'completed' && (
 																	<label className="flex items-center gap-2 cursor-pointer" title="Mark as extra treatment before completing appointment">
 																		<input

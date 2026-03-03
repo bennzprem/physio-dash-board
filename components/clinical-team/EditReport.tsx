@@ -528,7 +528,7 @@ export default function EditReport() {
 	const [patientIdParam, setPatientIdParam] = useState<string | null>(null);
 	const [currentDate, setCurrentDate] = useState<string>('');
 
-	// Set current date only on client to avoid hydration mismatch
+	// Set current date only on client to avoid hydration mismatch (used when no patient selected)
 	useEffect(() => {
 		setCurrentDate(new Date().toLocaleDateString());
 	}, []);
@@ -931,7 +931,10 @@ export default function EditReport() {
 			const patient = patients.find(p => p.patientId === patientIdParam);
 			if (patient) {
 				setSelectedPatient(patient);
-				setFormData(applyCurrentSessionAdjustments(patient));
+				const adjusted = applyCurrentSessionAdjustments(patient);
+				const dateToUse = adjusted.dateOfConsultation || systemDateStr();
+				setFormData({ ...adjusted, dateOfConsultation: dateToUse });
+				setCurrentDate(new Date(dateToUse).toLocaleDateString());
 			}
 		}
 	}, [patientIdParam, patients, selectedPatient]);
@@ -967,7 +970,10 @@ export default function EditReport() {
 					setSelectedPatient(updatedPatient);
 					// Update formData only if it's empty or matches the old data
 					if (Object.keys(formData).length === 0 || JSON.stringify(formData) === JSON.stringify(applyCurrentSessionAdjustments(selectedPatient))) {
-						setFormData(applyCurrentSessionAdjustments(updatedPatient));
+						const adjusted = applyCurrentSessionAdjustments(updatedPatient);
+						const dateToUse = adjusted.dateOfConsultation || systemDateStr();
+						setFormData({ ...adjusted, dateOfConsultation: dateToUse });
+						setCurrentDate(new Date(dateToUse).toLocaleDateString());
 					}
 					
 					// Update in patients array as well
@@ -1102,9 +1108,14 @@ export default function EditReport() {
 		});
 	}, [patients, appointments, searchTerm, clinicianName, user?.displayName, showAllPatients]);
 
+	const systemDateStr = () => new Date().toISOString().split('T')[0];
+
 	const handleSelectPatient = (patient: PatientRecordFull) => {
 		setSelectedPatient(patient);
-		setFormData(applyCurrentSessionAdjustments(patient));
+		const adjusted = applyCurrentSessionAdjustments(patient);
+		const dateToUse = adjusted.dateOfConsultation || systemDateStr();
+		setFormData({ ...adjusted, dateOfConsultation: dateToUse });
+		setCurrentDate(new Date(dateToUse).toLocaleDateString());
 		router.push(`/clinical-team/edit-report?patientId=${patient.patientId}`);
 	};
 
@@ -1341,7 +1352,7 @@ export default function EditReport() {
 				rom: formData.rom || {},
 				treatmentProvided: formData.treatmentProvided || '',
 				physioName: formData.physioName || '',
-				dateOfConsultation: formData.dateOfConsultation || '',
+				dateOfConsultation: formData.dateOfConsultation || systemDateStr(),
 				referredBy: formData.referredBy || '',
 				chiefComplaint: formData.chiefComplaint || '',
 				mechanismOfInjury: formData.mechanismOfInjury || '',
