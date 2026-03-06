@@ -10,6 +10,11 @@ import DashboardWidget from '@/components/dashboard/DashboardWidget';
 import StatsChart from '@/components/dashboard/StatsChart';
 import type { PatientRecordBasic, PatientStatus } from '@/lib/types';
 
+/** Head of physiotherapy department: subordinates by login email */
+const HEAD_SUBORDINATES: Record<string, string[]> = {
+	'ashima@css.com': ['nayana@css.com', 'pravallika@css.com'],
+};
+
 interface AppointmentRecord {
 	id: string;
 	patientId?: string;
@@ -21,7 +26,7 @@ interface AppointmentRecord {
 	notes?: string;
 }
 
-type ModalView = 'caseload' | 'pending' | 'today' | 'completed' | null;
+type ModalView = 'caseload' | 'pending' | 'today' | 'completed' | 'team' | null;
 
 const STATUS_BADGES: Record<'pending' | 'ongoing' | 'completed' | 'cancelled', string> = {
 	pending: 'status-badge-pending',
@@ -196,6 +201,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
 	const [modal, setModal] = useState<ModalView>(null);
 	const [userProfile, setUserProfile] = useState<{ userName?: string; profileImage?: string }>({});
+	const [subordinateUserNames, setSubordinateUserNames] = useState<string[]>([]);
+	const [teamDateFrom, setTeamDateFrom] = useState<string>('');
+	const [teamDateTo, setTeamDateTo] = useState<string>('');
+	const [selectedTeamMember, setSelectedTeamMember] = useState<{
+		displayName: string;
+		patients: PatientRecordBasic[];
+	} | null>(null);
 
 	// Load user profile data
 	useEffect(() => {
@@ -229,6 +241,39 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
 		loadProfile();
 	}, [user]);
+
+	const subordinateEmails = useMemo(() => {
+		const email = user?.email?.trim().toLowerCase();
+		if (!email) return [];
+		return HEAD_SUBORDINATES[email] ?? [];
+	}, [user?.email]);
+
+	const isHead = subordinateEmails.length > 0;
+
+	useEffect(() => {
+		if (!isHead || subordinateEmails.length === 0) {
+			setSubordinateUserNames([]);
+			return;
+		}
+		const loadSubordinates = async () => {
+			try {
+				const staffSnap = await getDocs(collection(db, 'staff'));
+				const names: string[] = [];
+				staffSnap.docs.forEach(docSnap => {
+					const data = docSnap.data();
+					const email = (data.userEmail as string)?.trim().toLowerCase();
+					if (email && subordinateEmails.includes(email) && data.userName) {
+						names.push(String(data.userName).trim());
+					}
+				});
+				setSubordinateUserNames(names);
+			} catch (err) {
+				console.error('Failed to load subordinate staff', err);
+				setSubordinateUserNames([]);
+			}
+		};
+		loadSubordinates();
+	}, [isHead, subordinateEmails]);
 
 	useEffect(() => {
 		const unsubscribePatients = onSnapshot(
@@ -297,6 +342,86 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		return patients.filter(patient => normalize(patient.assignedDoctor) === clinicianName);
 	}, [patients, clinicianName]);
 
+	const subordinatePatientSet = useMemo(() => {
+		if (subordinateUserNames.length === 0) return new Set<string>();
+		return new Set(subordinateUserNames.map(n => normalize(n)));
+	}, [subordinateUserNames]);
+
+	const subordinatePatients = useMemo(() => {
+		if (subordinatePatientSet.size === 0) return [];
+		return patients.filter(p => p.assignedDoctor && subordinatePatientSet.has(normalize(p.assignedDoctor)));
+	}, [patients, subordinatePatientSet]);
+
+	const subordinatePatientsFiltered = useMemo(() => {
+		if (subordinatePatients.length === 0) return [];
+		const from = teamDateFrom.trim() ? new Date(teamDateFrom) : null;
+		const to = teamDateTo.trim() ? new Date(teamDateTo) : null;
+		if (!from && !to) return subordinatePatients;
+		return subordinatePatients.filter(p => {
+			const reg = p.registeredAt;
+			if (!reg) return false;
+			const d = new Date(reg);
+			if (Number.isNaN(d.getTime())) return false;
+			if (from && d < from) return false;
+			if (to) {
+				const toEnd = new Date(to);
+				toEnd.setHours(23, 59, 59, 999);
+				if (d > toEnd) return false;
+			}
+			return true;
+		});
+	}, [subordinatePatients, teamDateFrom, teamDateTo]);
+
+	function applyTeamDateFilter(list: PatientRecordBasic[]) {
+		if (list.length === 0) return list;
+		const from = teamDateFrom.trim() ? new Date(teamDateFrom) : null;
+		const to = teamDateTo.trim() ? new Date(teamDateTo) : null;
+		if (!from && !to) return list;
+		return list.filter(p => {
+			const reg = p.registeredAt;
+			if (!reg) return false;
+			const d = new Date(reg);
+			if (Number.isNaN(d.getTime())) return false;
+			if (from && d < from) return false;
+			if (to) {
+				const toEnd = new Date(to);
+				toEnd.setHours(23, 59, 59, 999);
+				if (d > toEnd) return false;
+			}
+			return true;
+		});
+	}
+
+	const teamMembersList = useMemo(() => {
+		if (!isHead) return [];
+		const list: Array<{ displayName: string; normalizedName: string }> = [];
+		const headDisplayName = userProfile.userName || user?.displayName || user?.email?.split('@')[0] || 'You';
+		list.push({
+			displayName: headDisplayName,
+			normalizedName: clinicianName || normalize(headDisplayName),
+		});
+		subordinateUserNames.forEach(name => {
+			list.push({ displayName: name, normalizedName: normalize(name) });
+		});
+		return list;
+	}, [isHead, userProfile.userName, user?.displayName, user?.email, clinicianName, subordinateUserNames]);
+
+	const patientsByTeamMember = useMemo(() => {
+		if (teamMembersList.length === 0) return [];
+		return teamMembersList.map(member => {
+			const memberPatients = patients.filter(
+				p => p.assignedDoctor && normalize(p.assignedDoctor) === member.normalizedName
+			);
+			const filtered = applyTeamDateFilter(memberPatients);
+			return {
+				displayName: member.displayName,
+				normalizedName: member.normalizedName,
+				count: filtered.length,
+				patients: filtered,
+			};
+		});
+	}, [teamMembersList, patients, teamDateFrom, teamDateTo]);
+
 	const assignedAppointments = useMemo(() => {
 		if (!clinicianName) return appointments;
 		return appointments.filter(appointment => normalize(appointment.doctor) === clinicianName);
@@ -360,6 +485,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				return "Today's Schedule";
 			case 'completed':
 				return 'Completed In The Last 7 Days';
+			case 'team':
+				return 'Total Patients (Team)';
 			default:
 				return '';
 		}
@@ -375,10 +502,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				return todaysAppointments;
 			case 'completed':
 				return completedThisWeek;
+			case 'team':
+				return subordinatePatientsFiltered;
 			default:
 				return [];
 		}
-	}, [modal, caseload, pending, todaysAppointments, completedThisWeek]);
+	}, [modal, caseload, pending, todaysAppointments, completedThisWeek, subordinatePatientsFiltered]);
 
 	const hasAssignments = clinicianName ? caseload.length > 0 || todaysAppointments.length > 0 : true;
 
@@ -460,6 +589,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		};
 	}, [completedThisWeek, today]);
 
+	const UsersIcon = () => (
+		<svg className={ICON_SIZE} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+			<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+			<circle cx="9" cy="7" r="4" />
+			<path d="M23 21v-2a4 4 0 00-3-3.87" />
+			<path d="M16 3.13a4 4 0 010 7.75" />
+		</svg>
+	);
+
 	const dashboardCards: Array<{
 		key: Exclude<ModalView, null>;
 		title: string;
@@ -468,6 +606,18 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		iconBg: string;
 		count: number;
 	}> = [
+		...(isHead
+			? [
+					{
+						key: 'team' as const,
+						title: 'Total Patients (Team)',
+						subtitle: 'Patients under your subordinates',
+						icon: <UsersIcon />,
+						iconBg: 'bg-gradient-to-br from-violet-100 to-purple-100 text-violet-700 ring-violet-200',
+						count: subordinatePatientsFiltered.length,
+					},
+				]
+			: []),
 		{
 			key: 'caseload',
 			title: 'Active Caseload',
@@ -596,6 +746,65 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 							Quick access to your caseload, appointments, and recent activity
 						</p>
 					</div>
+					{isHead && (
+						<div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-violet-200 bg-violet-50/50 px-4 py-3">
+							<span className="text-sm font-medium text-violet-800">Date filter (Team patients):</span>
+							<label className="flex items-center gap-2 text-sm text-slate-700">
+								From
+								<input
+									type="date"
+									value={teamDateFrom}
+									onChange={e => setTeamDateFrom(e.target.value)}
+									className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+								/>
+							</label>
+							<label className="flex items-center gap-2 text-sm text-slate-700">
+								To
+								<input
+									type="date"
+									value={teamDateTo}
+									onChange={e => setTeamDateTo(e.target.value)}
+									className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+								/>
+							</label>
+							{(teamDateFrom || teamDateTo) && (
+								<button
+									type="button"
+									onClick={() => {
+										setTeamDateFrom('');
+										setTeamDateTo('');
+									}}
+									className="text-sm font-medium text-violet-600 hover:text-violet-800"
+								>
+									Clear filter
+								</button>
+							)}
+						</div>
+					)}
+					{isHead && patientsByTeamMember.length > 0 && (
+						<div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+							<h3 className="text-sm font-semibold text-slate-800">Patients by team member</h3>
+							<p className="mt-1 text-xs text-slate-500">
+								Total patients per user{teamDateFrom || teamDateTo ? ' (filtered by registration date)' : ''}. Click a row to view the patient list.
+							</p>
+							<ul className="mt-4 space-y-2">
+								{patientsByTeamMember.map(({ displayName, count, patients }) => (
+									<li key={displayName}>
+										<button
+											type="button"
+											onClick={() => setSelectedTeamMember({ displayName, patients })}
+											className="flex w-full cursor-pointer items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-3 text-left transition hover:border-violet-200 hover:bg-violet-50/30 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2"
+										>
+											<span className="text-sm font-medium text-slate-800">{displayName}</span>
+											<span className="text-sm font-semibold text-violet-700">
+												Total patients ({count})
+											</span>
+										</button>
+									</li>
+								))}
+							</ul>
+						</div>
+					)}
 					<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 						{dashboardCards.map(card => (
 							<button
@@ -785,7 +994,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						<div className="flex-1 overflow-y-auto px-6 py-4">
 							{modalRows.length === 0 ? (
 								<p className="py-10 text-center text-sm text-slate-500">No records available.</p>
-							) : modal === 'caseload' || modal === 'pending' ? (
+							) : modal === 'caseload' || modal === 'pending' || modal === 'team' ? (
 								<div className="overflow-x-auto">
 									<table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
 										<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -793,6 +1002,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 												<th className="px-3 py-2 font-semibold">#</th>
 												<th className="px-3 py-2 font-semibold">Patient ID</th>
 												<th className="px-3 py-2 font-semibold">Name</th>
+												{modal === 'team' && (
+													<th className="px-3 py-2 font-semibold">Assigned to</th>
+												)}
 												<th className="px-3 py-2 font-semibold">Status</th>
 												<th className="px-3 py-2 font-semibold">Phone</th>
 												<th className="px-3 py-2 font-semibold">Email</th>
@@ -815,6 +1027,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 															{patient.patientId || '—'}
 														</td>
 														<td className="px-3 py-3 text-sm text-slate-700">{patient.name || '—'}</td>
+														{modal === 'team' && (
+															<td className="px-3 py-3 text-sm text-slate-600">{patient.assignedDoctor || '—'}</td>
+														)}
 														<td className="px-3 py-3">
 															<span
 																className={`badge-base px-3 py-1 ${STATUS_BADGES[status]}`}
@@ -881,6 +1096,90 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 							>
 								<i className="fas fa-arrow-left" aria-hidden="true" />
 								Back to Dashboard
+							</button>
+						</footer>
+					</div>
+				</div>
+			)}
+
+			{selectedTeamMember && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+					<div className="flex max-h-[85vh] w-full max-w-5xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl">
+						<header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+							<div>
+								<h2 className="text-lg font-semibold text-slate-900">
+									Patients — {selectedTeamMember.displayName}
+								</h2>
+								<p className="text-xs text-slate-500">
+									Showing {selectedTeamMember.patients.length} patient
+									{selectedTeamMember.patients.length === 1 ? '' : 's'}.
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={() => setSelectedTeamMember(null)}
+								className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:bg-slate-100 focus-visible:text-slate-600 focus-visible:outline-none"
+								aria-label="Close dialog"
+							>
+								<i className="fas fa-times" aria-hidden="true" />
+							</button>
+						</header>
+						<div className="flex-1 overflow-y-auto px-6 py-4">
+							{selectedTeamMember.patients.length === 0 ? (
+								<p className="py-10 text-center text-sm text-slate-500">No patients for this team member.</p>
+							) : (
+								<div className="overflow-x-auto">
+									<table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
+										<thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+											<tr>
+												<th className="px-3 py-2 font-semibold">#</th>
+												<th className="px-3 py-2 font-semibold">Patient ID</th>
+												<th className="px-3 py-2 font-semibold">Name</th>
+												<th className="px-3 py-2 font-semibold">Status</th>
+												<th className="px-3 py-2 font-semibold">Phone</th>
+												<th className="px-3 py-2 font-semibold">Email</th>
+											</tr>
+										</thead>
+										<tbody className="divide-y divide-slate-100">
+											{selectedTeamMember.patients.map((patient, index) => {
+												const rawStatus = (patient.status ?? 'pending') as PatientStatus;
+												const status =
+													rawStatus === 'pending' ||
+													rawStatus === 'ongoing' ||
+													rawStatus === 'completed' ||
+													rawStatus === 'cancelled'
+														? rawStatus
+														: 'pending';
+												return (
+													<tr key={patient.id}>
+														<td className="px-3 py-3 text-xs text-slate-500">{index + 1}</td>
+														<td className="px-3 py-3 text-sm font-medium text-slate-800">
+															{patient.patientId || '—'}
+														</td>
+														<td className="px-3 py-3 text-sm text-slate-700">{patient.name || '—'}</td>
+														<td className="px-3 py-3">
+															<span className={`badge-base px-3 py-1 ${STATUS_BADGES[status]}`}>
+																{status.charAt(0).toUpperCase() + status.slice(1)}
+															</span>
+														</td>
+														<td className="px-3 py-3 text-sm text-slate-600">{patient.phone || '—'}</td>
+														<td className="px-3 py-3 text-sm text-slate-600">{patient.email || '—'}</td>
+													</tr>
+												);
+											})}
+										</tbody>
+									</table>
+								</div>
+							)}
+						</div>
+						<footer className="flex items-center justify-end border-t border-slate-200 px-6 py-4">
+							<button
+								type="button"
+								onClick={() => setSelectedTeamMember(null)}
+								className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 focus-visible:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+							>
+								<i className="fas fa-arrow-left" aria-hidden="true" />
+								Back to list
 							</button>
 						</footer>
 					</div>
