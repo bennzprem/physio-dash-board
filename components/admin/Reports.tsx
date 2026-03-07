@@ -17,10 +17,17 @@ import { generatePhysiotherapyReportPDF, generateStrengthConditioningPDF, type S
 interface StaffMember {
 	id: string;
 	userName: string;
+	userEmail?: string;
 	role: string;
 	status: string;
 	profileImage?: string;
 }
+
+/** Department name -> staff emails (first match wins for users in multiple departments) */
+const DEPARTMENT_STAFF_EMAILS: Record<string, string[]> = {
+	'Physiotherapy Department': ['ashima@css.com', 'nayana@css.com', 'pravallika@css.com', 'dharanjay@css.com'],
+	'Strength and Conditioning Department': ['anchalsingh@css.com', 'uddalokdas@css.com', 'johnbenedict@css.com'],
+};
 
 type StatusFilter = 'all' | AdminPatientStatus;
 type DateFilter = 'all' | '7' | '30' | '180' | '365';
@@ -142,6 +149,7 @@ export default function Reports() {
 	const [loadingStrengthConditioning, setLoadingStrengthConditioning] = useState(false);
 	const [selectedPatientForSC, setSelectedPatientForSC] = useState<AdminPatientRecord | null>(null);
 	const strengthConditioningUnsubscribeRef = useRef<(() => void) | null>(null);
+	const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null);
 
 	// Load patients from Firestore
 	useEffect(() => {
@@ -230,6 +238,7 @@ export default function Reports() {
 					return {
 						id: docSnap.id,
 						userName: data.userName ? String(data.userName) : '',
+						userEmail: data.userEmail ? String(data.userEmail).trim().toLowerCase() : undefined,
 						role: data.role ? String(data.role) : '',
 						status: data.status ? String(data.status) : '',
 						profileImage: data.profileImage ? String(data.profileImage) : undefined,
@@ -940,6 +949,71 @@ export default function Reports() {
 				},
 			],
 		};
+	}, [staff, billing, patients, analyticsFromDate, analyticsToDate]);
+
+	// Revenue by department: staff assigned to departments; click department to see individual revenue + total
+	const revenueByDepartmentData = useMemo(() => {
+		const clinicalStaff = staff.filter(
+			m => (m.role === 'ClinicalTeam' || m.role === 'Physiotherapist' || m.role === 'StrengthAndConditioning') && m.status === 'Active'
+		);
+		let filteredBilling = billing.filter(bill => bill.status === 'Completed' || bill.status === 'Auto-Paid');
+		if (analyticsFromDate || analyticsToDate) {
+			filteredBilling = filteredBilling.filter(bill => {
+				if (!bill.date) return false;
+				const billDate = new Date(bill.date);
+				if (Number.isNaN(billDate.getTime())) return false;
+				const billDateOnly = new Date(billDate.getFullYear(), billDate.getMonth(), billDate.getDate());
+				if (analyticsFromDate) {
+					const from = new Date(analyticsFromDate);
+					from.setHours(0, 0, 0, 0);
+					if (billDateOnly < from) return false;
+				}
+				if (analyticsToDate) {
+					const to = new Date(analyticsToDate);
+					to.setHours(23, 59, 59, 999);
+					if (billDateOnly > to) return false;
+				}
+				return true;
+			});
+		}
+		const emailToDepartment = new Map<string, string>();
+		Object.entries(DEPARTMENT_STAFF_EMAILS).forEach(([deptName, emails]) => {
+			emails.forEach(email => {
+				const key = email.trim().toLowerCase();
+				if (!emailToDepartment.has(key)) emailToDepartment.set(key, deptName);
+			});
+		});
+		const revenueByStaff = new Map<string, number>();
+		clinicalStaff.forEach(member => {
+			const memberBilling = filteredBilling.filter(bill => {
+				const attrib = (bill.revenueAttributedTo || bill.doctor)?.toLowerCase().trim();
+				const match = attrib === (member.userName || '').toLowerCase().trim();
+				if (!match) return false;
+				const patient = patients.find(p => p.patientId === bill.patientId);
+				const isVIP = patient && (patient.patientType || '').toUpperCase() === 'VIP';
+				const isReferral = patient && (patient.patientType || '').toUpperCase() === 'REFERRAL';
+				if (isVIP || isReferral) return false;
+				return true;
+			});
+			const total = memberBilling.reduce((sum, bill) => sum + (Number.isFinite(bill.amount) && bill.amount > 0 ? bill.amount : 0), 0);
+			revenueByStaff.set(member.userName, total);
+		});
+		type DeptRow = { departmentName: string; totalRevenue: number; members: Array<{ userName: string; revenue: number }> };
+		const byDepartment = new Map<string, DeptRow>();
+		Object.keys(DEPARTMENT_STAFF_EMAILS).forEach(deptName => {
+			byDepartment.set(deptName, { departmentName: deptName, totalRevenue: 0, members: [] });
+		});
+		byDepartment.set('No department', { departmentName: 'No department', totalRevenue: 0, members: [] });
+		clinicalStaff.forEach(member => {
+			const rev = revenueByStaff.get(member.userName) ?? 0;
+			const email = (member.userEmail || '').trim().toLowerCase();
+			const dept = email ? emailToDepartment.get(email) : null;
+			const key = dept ?? 'No department';
+			const row = byDepartment.get(key)!;
+			row.members.push({ userName: member.userName, revenue: rev });
+			row.totalRevenue += rev;
+		});
+		return Array.from(byDepartment.values()).filter(row => row.members.length > 0 || row.totalRevenue > 0);
 	}, [staff, billing, patients, analyticsFromDate, analyticsToDate]);
 
 	const openModal = (row: PatientRow) => {
@@ -2071,6 +2145,80 @@ export default function Reports() {
 						)}
 					</table>
 				</div>
+			</section>
+
+			{/* Revenue by Department */}
+			<section className="mx-auto mt-8 max-w-6xl rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
+				<div className="mb-4">
+					<h2 className="text-lg font-semibold text-slate-900">Revenue by Department</h2>
+					<p className="mt-1 text-sm text-slate-500">
+						Revenue by department (uses same date range as Analytics above). Click a department to see individual revenue and total.
+					</p>
+				</div>
+				<div className="space-y-2">
+					{revenueByDepartmentData.map(row => (
+						<div
+							key={row.departmentName}
+							className="rounded-xl border border-slate-200 overflow-hidden"
+						>
+							<button
+								type="button"
+								onClick={() => setExpandedDepartment(expandedDepartment === row.departmentName ? null : row.departmentName)}
+								className="flex w-full items-center justify-between bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-inset"
+							>
+								<span className="font-medium text-slate-900">{row.departmentName}</span>
+								<span className="flex items-center gap-2 text-slate-700">
+									<span className="font-semibold text-emerald-700">
+										₹{row.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+									</span>
+									<i
+										className={`fas fa-chevron-${expandedDepartment === row.departmentName ? 'up' : 'down'} text-sm text-slate-500`}
+										aria-hidden="true"
+									/>
+								</span>
+							</button>
+							{expandedDepartment === row.departmentName && (
+								<div className="border-t border-slate-200 bg-white px-4 py-3">
+									<table className="w-full text-sm">
+										<thead>
+											<tr className="border-b border-slate-100 text-left text-slate-600">
+												<th className="pb-2 font-semibold">#</th>
+												<th className="pb-2 font-semibold">Name</th>
+												<th className="pb-2 text-right font-semibold">Revenue (₹)</th>
+											</tr>
+										</thead>
+										<tbody>
+											{row.members.map((member, idx) => (
+												<tr key={member.userName} className="border-b border-slate-50">
+													<td className="py-2 text-slate-600">{idx + 1}</td>
+													<td className="py-2 font-medium text-slate-800">{member.userName}</td>
+													<td className="py-2 text-right font-semibold text-emerald-700">
+														{member.revenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+													</td>
+												</tr>
+											))}
+										</tbody>
+										<tfoot className="bg-slate-50">
+											<tr>
+												<td className="py-3 font-semibold text-slate-900" colSpan={2}>
+													Total
+												</td>
+												<td className="py-3 text-right font-bold text-emerald-800">
+													₹{row.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+												</td>
+											</tr>
+										</tfoot>
+									</table>
+								</div>
+							)}
+						</div>
+					))}
+				</div>
+				{revenueByDepartmentData.length === 0 && (
+					<p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+						No department revenue data. Ensure staff have userEmail set and match department config.
+					</p>
+				)}
 			</section>
 
 			{isModalOpen && modalContext && (

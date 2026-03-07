@@ -10,10 +10,26 @@ import DashboardWidget from '@/components/dashboard/DashboardWidget';
 import StatsChart from '@/components/dashboard/StatsChart';
 import type { PatientRecordBasic, PatientStatus } from '@/lib/types';
 
-/** Head of physiotherapy department: subordinates by login email */
+/** Head of department → subordinates by login email (Physiotherapy, Strength and Conditioning, etc.) */
 const HEAD_SUBORDINATES: Record<string, string[]> = {
-	'ashima@css.com': ['nayana@css.com', 'pravallika@css.com'],
+	'ashima@css.com': ['nayana@css.com', 'pravallika@css.com', 'dharanjay@css.com'],
+	'anchalsingh@css.com': ['uddalokdas@css.com', 'johnbenedict@css.com', 'dharanjay@css.com'],
 };
+
+/** Department display name for each head (shown above "Patients by team member") */
+const HEAD_DEPARTMENT_NAMES: Record<string, string> = {
+	'ashima@css.com': 'Physiotherapy Department',
+	'anchalsingh@css.com': 'Strength and Conditioning Department',
+};
+
+/** Report type used for "Total patients" count per department (unique patients per report type) */
+const HEAD_DEPARTMENT_REPORT_TYPE: Record<string, 'physiotherapy' | 'strength-and-conditioning'> = {
+	'ashima@css.com': 'physiotherapy',
+	'anchalsingh@css.com': 'strength-and-conditioning',
+};
+
+/** Only this user's "Total patients" count is based on reports filled; all others use assignedDoctor. */
+const REPORT_BASED_COUNT_EMAIL = 'dharanjay@css.com';
 
 interface AppointmentRecord {
 	id: string;
@@ -202,8 +218,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	const [modal, setModal] = useState<ModalView>(null);
 	const [userProfile, setUserProfile] = useState<{ userName?: string; profileImage?: string }>({});
 	const [subordinateUserNames, setSubordinateUserNames] = useState<string[]>([]);
+	/** Subordinates with both email and userName for report-based matching */
+	const [subordinateStaff, setSubordinateStaff] = useState<Array<{ email: string; userName: string }>>([]);
 	const [teamDateFrom, setTeamDateFrom] = useState<string>('');
 	const [teamDateTo, setTeamDateTo] = useState<string>('');
+	/** When true, "Patients by team member" shows counts for appointments today only */
+	const [teamDateFilterToday, setTeamDateFilterToday] = useState<boolean>(false);
+	/** Report-based: normalized(createdBy/updatedBy) -> Set of patient IDs (for current department) */
+	const [reportPatientIdsByCreator, setReportPatientIdsByCreator] = useState<Record<string, Set<string>>>({});
 	const [selectedTeamMember, setSelectedTeamMember] = useState<{
 		displayName: string;
 		patients: PatientRecordBasic[];
@@ -253,27 +275,96 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	useEffect(() => {
 		if (!isHead || subordinateEmails.length === 0) {
 			setSubordinateUserNames([]);
+			setSubordinateStaff([]);
 			return;
 		}
 		const loadSubordinates = async () => {
 			try {
 				const staffSnap = await getDocs(collection(db, 'staff'));
 				const names: string[] = [];
+				const staffList: Array<{ email: string; userName: string }> = [];
 				staffSnap.docs.forEach(docSnap => {
 					const data = docSnap.data();
 					const email = (data.userEmail as string)?.trim().toLowerCase();
 					if (email && subordinateEmails.includes(email) && data.userName) {
-						names.push(String(data.userName).trim());
+						const userName = String(data.userName).trim();
+						names.push(userName);
+						staffList.push({ email, userName });
 					}
 				});
 				setSubordinateUserNames(names);
+				setSubordinateStaff(staffList);
 			} catch (err) {
 				console.error('Failed to load subordinate staff', err);
 				setSubordinateUserNames([]);
+				setSubordinateStaff([]);
 			}
 		};
 		loadSubordinates();
 	}, [isHead, subordinateEmails]);
+
+	const headEmail = useMemo(() => user?.email?.trim().toLowerCase() ?? '', [user?.email]);
+	const departmentReportType = useMemo(
+		() => (headEmail ? HEAD_DEPARTMENT_REPORT_TYPE[headEmail] : null),
+		[headEmail]
+	);
+
+	/** Today's date as YYYY-MM-DD for appointment date filter */
+	const todayISODate = useMemo(() => {
+		const d = new Date();
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	}, []);
+
+	useEffect(() => {
+		if (!isHead || !departmentReportType) {
+			setReportPatientIdsByCreator({});
+			return;
+		}
+		const loadReportData = async () => {
+			try {
+				const byCreator: Record<string, Set<string>> = {};
+				const add = (creatorKey: string, patientId: string) => {
+					if (!creatorKey || !patientId) return;
+					if (!byCreator[creatorKey]) byCreator[creatorKey] = new Set();
+					byCreator[creatorKey].add(patientId);
+				};
+				if (departmentReportType === 'physiotherapy') {
+					let snap;
+					try {
+						const q = query(
+							collection(db, 'reportVersions'),
+							where('reportType', '==', 'physiotherapy')
+						);
+						snap = await getDocs(q);
+					} catch {
+						const snapAll = await getDocs(collection(db, 'reportVersions'));
+						snap = snapAll;
+					}
+					snap.docs.forEach(docSnap => {
+						const d = docSnap.data();
+						const reportType = (d.reportType as string) || '';
+						if (reportType !== 'physiotherapy' && reportType !== '') return;
+						const createdBy = (d.createdBy as string) ?? '';
+						const patientId = (d.patientId as string) ?? '';
+						add(normalize(createdBy), patientId);
+					});
+				} else {
+					const snap = await getDocs(collection(db, 'strengthConditioningReports'));
+					snap.docs.forEach(docSnap => {
+						const d = docSnap.data();
+						const updatedBy = (d.updatedBy as string) ?? '';
+						const patientId = docSnap.id;
+						add(normalize(updatedBy), patientId);
+					});
+				}
+				setReportPatientIdsByCreator(byCreator);
+			} catch (err) {
+				console.error('Failed to load report data for department', err);
+				setReportPatientIdsByCreator({});
+			}
+		};
+		loadReportData();
+	}, [isHead, departmentReportType]);
 
 	useEffect(() => {
 		const unsubscribePatients = onSnapshot(
@@ -394,33 +485,152 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
 	const teamMembersList = useMemo(() => {
 		if (!isHead) return [];
-		const list: Array<{ displayName: string; normalizedName: string }> = [];
+		const list: Array<{ displayName: string; normalizedName: string; email: string }> = [];
 		const headDisplayName = userProfile.userName || user?.displayName || user?.email?.split('@')[0] || 'You';
+		const headEmailVal = user?.email?.trim().toLowerCase() ?? '';
 		list.push({
 			displayName: headDisplayName,
 			normalizedName: clinicianName || normalize(headDisplayName),
+			email: headEmailVal,
 		});
-		subordinateUserNames.forEach(name => {
-			list.push({ displayName: name, normalizedName: normalize(name) });
+		subordinateStaff.forEach(({ email, userName }) => {
+			list.push({ displayName: userName, normalizedName: normalize(userName), email });
 		});
 		return list;
-	}, [isHead, userProfile.userName, user?.displayName, user?.email, clinicianName, subordinateUserNames]);
+	}, [isHead, userProfile.userName, user?.displayName, user?.email, clinicianName, subordinateStaff]);
 
 	const patientsByTeamMember = useMemo(() => {
 		if (teamMembersList.length === 0) return [];
-		return teamMembersList.map(member => {
+		const reportBasedEmailNorm = normalize(REPORT_BASED_COUNT_EMAIL);
+		return teamMembersList.map((member, index) => {
+			const useReportBased =
+				!teamDateFilterToday &&
+				departmentReportType != null &&
+				normalize(member.email) === reportBasedEmailNorm;
+			let memberPatientIds: Set<string>;
+			if (teamDateFilterToday) {
+				// "Today" mode: count unique patients each user had an appointment with today
+				const doctorNames = new Set<string>([member.normalizedName]);
+				if (index === 0 && clinicianName) doctorNames.add(clinicianName);
+				memberPatientIds = new Set(
+					appointments
+						.filter(
+							apt =>
+								apt.date === todayISODate &&
+								apt.doctor &&
+								doctorNames.has(normalize(apt.doctor))
+						)
+						.map(apt => apt.patientId)
+						.filter((id): id is string => Boolean(id))
+				);
+			} else if (useReportBased) {
+				const set1 = reportPatientIdsByCreator[normalize(member.email)] ?? new Set();
+				const set2 = reportPatientIdsByCreator[member.normalizedName] ?? new Set();
+				memberPatientIds = new Set([...set1, ...set2]);
+			} else {
+				// Match My Performance "Overall Patients Attended": same doctor matching (staffName/displayName) and unique patient IDs from appointments
+				const doctorNames = new Set<string>([member.normalizedName]);
+				if (index === 0 && clinicianName) doctorNames.add(clinicianName);
+				memberPatientIds = new Set(
+					appointments
+						.filter(
+							apt =>
+								apt.doctor && doctorNames.has(normalize(apt.doctor))
+						)
+						.map(apt => apt.patientId)
+						.filter((id): id is string => Boolean(id))
+				);
+			}
 			const memberPatients = patients.filter(
-				p => p.assignedDoctor && normalize(p.assignedDoctor) === member.normalizedName
+				p => memberPatientIds.has(p.patientId ?? '') || memberPatientIds.has(p.id ?? '')
 			);
-			const filtered = applyTeamDateFilter(memberPatients);
+			// For report-based (dharanjay) apply registration date filter when not "Today"; for others use raw list
+			const filtered = useReportBased ? applyTeamDateFilter(memberPatients) : memberPatients;
+			const count = teamDateFilterToday ? memberPatientIds.size : (useReportBased ? filtered.length : memberPatientIds.size);
 			return {
 				displayName: member.displayName,
 				normalizedName: member.normalizedName,
-				count: filtered.length,
-				patients: filtered,
+				count,
+				patients: teamDateFilterToday ? memberPatients : filtered,
 			};
 		});
-	}, [teamMembersList, patients, teamDateFrom, teamDateTo]);
+	}, [
+		teamMembersList,
+		patients,
+		appointments,
+		teamDateFrom,
+		teamDateTo,
+		teamDateFilterToday,
+		todayISODate,
+		reportPatientIdsByCreator,
+		departmentReportType,
+		clinicianName,
+	]);
+
+	/** Union of subordinate patient IDs for team modal: report-based only for dharanjay, appointments-based (Overall Patients Attended) for others */
+	const subordinateTeamModalPatientIds = useMemo(() => {
+		const ids = new Set<string>();
+		const reportBasedEmailNorm = normalize(REPORT_BASED_COUNT_EMAIL);
+		subordinateStaff.forEach(({ email, userName }) => {
+			if (departmentReportType != null && normalize(email) === reportBasedEmailNorm) {
+				const set1 = reportPatientIdsByCreator[normalize(email)] ?? new Set();
+				const set2 = reportPatientIdsByCreator[normalize(userName)] ?? new Set();
+				set1.forEach(id => ids.add(id));
+				set2.forEach(id => ids.add(id));
+			} else {
+				appointments
+					.filter(apt => apt.doctor && normalize(apt.doctor) === normalize(userName))
+					.forEach(apt => {
+						if (apt.patientId) ids.add(apt.patientId);
+					});
+			}
+		});
+		return ids;
+	}, [
+		departmentReportType,
+		subordinateStaff,
+		reportPatientIdsByCreator,
+		appointments,
+	]);
+
+	const subordinatePatientsFilteredForModal = useMemo(() => {
+		if (teamDateFilterToday) {
+			const subordinateNames = new Set(subordinateStaff.map(({ userName }) => normalize(userName)));
+			const todayIds = new Set(
+				appointments
+					.filter(
+						apt =>
+							apt.date === todayISODate &&
+							apt.doctor &&
+							subordinateNames.has(normalize(apt.doctor))
+					)
+					.map(apt => apt.patientId)
+					.filter((id): id is string => Boolean(id))
+			);
+			return patients.filter(
+				p => todayIds.has(p.patientId ?? '') || todayIds.has(p.id ?? '')
+			);
+		}
+		if (subordinateTeamModalPatientIds.size > 0) {
+			const list = patients.filter(
+				p =>
+					subordinateTeamModalPatientIds.has(p.patientId ?? '') ||
+					subordinateTeamModalPatientIds.has(p.id ?? '')
+			);
+			return applyTeamDateFilter(list);
+		}
+		return subordinatePatientsFiltered;
+	}, [
+		teamDateFilterToday,
+		todayISODate,
+		subordinateStaff,
+		appointments,
+		patients,
+		subordinateTeamModalPatientIds,
+		subordinatePatientsFiltered,
+		teamDateFrom,
+		teamDateTo,
+	]);
 
 	const assignedAppointments = useMemo(() => {
 		if (!clinicianName) return appointments;
@@ -503,11 +713,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 			case 'completed':
 				return completedThisWeek;
 			case 'team':
-				return subordinatePatientsFiltered;
+				return subordinatePatientsFilteredForModal;
 			default:
 				return [];
 		}
-	}, [modal, caseload, pending, todaysAppointments, completedThisWeek, subordinatePatientsFiltered]);
+	}, [modal, caseload, pending, todaysAppointments, completedThisWeek, subordinatePatientsFilteredForModal]);
 
 	const hasAssignments = clinicianName ? caseload.length > 0 || todaysAppointments.length > 0 : true;
 
@@ -614,7 +824,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						subtitle: 'Patients under your subordinates',
 						icon: <UsersIcon />,
 						iconBg: 'bg-gradient-to-br from-violet-100 to-purple-100 text-violet-700 ring-violet-200',
-						count: subordinatePatientsFiltered.length,
+						count: patientsByTeamMember.length > 1
+							? patientsByTeamMember.slice(1).reduce((s, m) => s + m.count, 0)
+							: subordinatePatientsFiltered.length,
 					},
 				]
 			: []),
@@ -749,12 +961,30 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 					{isHead && (
 						<div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-violet-200 bg-violet-50/50 px-4 py-3">
 							<span className="text-sm font-medium text-violet-800">Date filter (Team patients):</span>
+							<button
+								type="button"
+								onClick={() => {
+									setTeamDateFilterToday(true);
+									setTeamDateFrom('');
+									setTeamDateTo('');
+								}}
+								className={`rounded-lg px-3 py-1.5 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-1 ${
+									teamDateFilterToday
+										? 'bg-violet-600 text-white shadow-sm'
+										: 'bg-white border border-slate-300 text-slate-700 hover:border-violet-400 hover:bg-violet-50'
+								}`}
+							>
+								Today
+							</button>
 							<label className="flex items-center gap-2 text-sm text-slate-700">
 								From
 								<input
 									type="date"
 									value={teamDateFrom}
-									onChange={e => setTeamDateFrom(e.target.value)}
+									onChange={e => {
+										setTeamDateFrom(e.target.value);
+										setTeamDateFilterToday(false);
+									}}
 									className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
 								/>
 							</label>
@@ -763,16 +993,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 								<input
 									type="date"
 									value={teamDateTo}
-									onChange={e => setTeamDateTo(e.target.value)}
+									onChange={e => {
+										setTeamDateTo(e.target.value);
+										setTeamDateFilterToday(false);
+									}}
 									className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
 								/>
 							</label>
-							{(teamDateFrom || teamDateTo) && (
+							{(teamDateFrom || teamDateTo || teamDateFilterToday) && (
 								<button
 									type="button"
 									onClick={() => {
 										setTeamDateFrom('');
 										setTeamDateTo('');
+										setTeamDateFilterToday(false);
 									}}
 									className="text-sm font-medium text-violet-600 hover:text-violet-800"
 								>
@@ -783,9 +1017,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 					)}
 					{isHead && patientsByTeamMember.length > 0 && (
 						<div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+							{user?.email && HEAD_DEPARTMENT_NAMES[user.email.trim().toLowerCase()] && (
+								<p className="mb-3 text-lg font-bold text-slate-900">
+									{HEAD_DEPARTMENT_NAMES[user.email.trim().toLowerCase()]}
+								</p>
+							)}
 							<h3 className="text-sm font-semibold text-slate-800">Patients by team member</h3>
 							<p className="mt-1 text-xs text-slate-500">
-								Total patients per user{teamDateFrom || teamDateTo ? ' (filtered by registration date)' : ''}. Click a row to view the patient list.
+								Total patients per user
+								{teamDateFilterToday
+									? ' (attended today)'
+									: teamDateFrom || teamDateTo
+										? ' (filtered by registration date)'
+										: ''}
+								. Click a row to view the patient list.
 							</p>
 							<ul className="mt-4 space-y-2">
 								{patientsByTeamMember.map(({ displayName, count, patients }) => (
@@ -802,6 +1047,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 										</button>
 									</li>
 								))}
+								<li className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-100/80 px-4 py-3">
+									<span className="text-sm font-semibold text-slate-800">Total</span>
+									<span className="text-sm font-bold text-violet-800">
+										Total patients ({patientsByTeamMember.reduce((sum, m) => sum + m.count, 0)})
+									</span>
+								</li>
 							</ul>
 						</div>
 					)}
