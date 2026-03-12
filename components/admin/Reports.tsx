@@ -150,6 +150,11 @@ export default function Reports() {
 	const [selectedPatientForSC, setSelectedPatientForSC] = useState<AdminPatientRecord | null>(null);
 	const strengthConditioningUnsubscribeRef = useRef<(() => void) | null>(null);
 	const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null);
+	// Revenue by clinician section filters
+	const [revenueByClinicianFromDate, setRevenueByClinicianFromDate] = useState<string>('');
+	const [revenueByClinicianToDate, setRevenueByClinicianToDate] = useState<string>('');
+	type RevenueByClinicianPatientType = 'all' | 'DYES' | 'VIP' | 'PAID' | 'GETHNA' | 'STAFF' | 'REFERRAL' | 'OTHERS';
+	const [revenueByClinicianPatientType, setRevenueByClinicianPatientType] = useState<RevenueByClinicianPatientType>('all');
 
 	// Load patients from Firestore
 	useEffect(() => {
@@ -1015,6 +1020,55 @@ export default function Reports() {
 		});
 		return Array.from(byDepartment.values()).filter(row => row.members.length > 0 || row.totalRevenue > 0);
 	}, [staff, billing, patients, analyticsFromDate, analyticsToDate]);
+
+	// Revenue by clinician: all clinicians (clinical team), with date and patient type filters
+	const revenueByClinicianList = useMemo(() => {
+		let filteredBilling = billing.filter(bill => bill.status === 'Completed' || bill.status === 'Auto-Paid');
+		if (revenueByClinicianFromDate || revenueByClinicianToDate) {
+			filteredBilling = filteredBilling.filter(bill => {
+				if (!bill.date) return false;
+				const billDate = new Date(bill.date);
+				if (Number.isNaN(billDate.getTime())) return false;
+				const billDateOnly = new Date(billDate.getFullYear(), billDate.getMonth(), billDate.getDate());
+				if (revenueByClinicianFromDate) {
+					const from = new Date(revenueByClinicianFromDate);
+					from.setHours(0, 0, 0, 0);
+					if (billDateOnly < from) return false;
+				}
+				if (revenueByClinicianToDate) {
+					const to = new Date(revenueByClinicianToDate);
+					to.setHours(23, 59, 59, 999);
+					if (billDateOnly > to) return false;
+				}
+				return true;
+			});
+		}
+		const patientTypeFilter = revenueByClinicianPatientType;
+		const list: Array<{ clinicianName: string; revenue: number }> = doctorOptions.map(clinicianName => {
+			const sel = clinicianName.toLowerCase().trim();
+			const clinicianBilling = filteredBilling.filter(bill => {
+				const d = (bill.revenueAttributedTo || bill.doctor)?.toLowerCase().trim();
+				if (!d) return false;
+				if (d === sel) return true;
+				if (d.includes(sel) || sel.includes(d)) return true;
+				return false;
+			});
+			let revenue = 0;
+			const knownTypes = new Set(['DYES', 'VIP', 'PAID', 'GETHNA', 'STAFF', 'REFERRAL', 'OTHERS']);
+			clinicianBilling.forEach(bill => {
+				const patient = patients.find(p => p.patientId === bill.patientId);
+				const patientType = (patient?.patientType || '').toUpperCase().trim() || 'OTHERS';
+				const normalizedType = knownTypes.has(patientType) ? patientType : 'OTHERS';
+				if (patientTypeFilter !== 'all' && normalizedType !== patientTypeFilter) return;
+				const amount = Number.isFinite(bill.amount) ? bill.amount : 0;
+				revenue += amount > 0 ? amount : 0;
+			});
+			return { clinicianName, revenue };
+		});
+		const sorted = list.sort((a, b) => a.clinicianName.localeCompare(b.clinicianName, undefined, { sensitivity: 'base' }));
+		const totalRevenue = sorted.reduce((sum, row) => sum + row.revenue, 0);
+		return { rows: sorted, totalRevenue };
+	}, [doctorOptions, billing, patients, revenueByClinicianFromDate, revenueByClinicianToDate, revenueByClinicianPatientType]);
 
 	const openModal = (row: PatientRow) => {
 		setModalContext({ patient: row.patient, doctors: row.doctors });
@@ -2145,6 +2199,109 @@ export default function Reports() {
 						)}
 					</table>
 				</div>
+			</section>
+
+			{/* Revenue by Clinician */}
+			<section className="mx-auto mt-8 max-w-6xl rounded-2xl bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.07)]">
+				<div className="mb-4">
+					<h2 className="text-lg font-semibold text-slate-900">Revenue by Clinician</h2>
+					<p className="mt-1 text-sm text-slate-500">
+						Revenue per clinician from the clinical team. Use the date and patient type filters below, then view the list of all clinicians and their revenue.
+					</p>
+				</div>
+				<div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3">
+					<span className="text-sm font-medium text-slate-700">Date range:</span>
+					<div className="flex items-center gap-2">
+						<label htmlFor="revenueByClinicianFrom" className="text-sm text-slate-600 whitespace-nowrap">From</label>
+						<input
+							type="date"
+							id="revenueByClinicianFrom"
+							value={revenueByClinicianFromDate}
+							onChange={e => {
+								const date = e.target.value;
+								setRevenueByClinicianFromDate(date);
+								if (revenueByClinicianToDate && date > revenueByClinicianToDate) setRevenueByClinicianToDate(date);
+							}}
+							max={revenueByClinicianToDate || new Date().toISOString().split('T')[0]}
+							className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+						/>
+					</div>
+					<div className="flex items-center gap-2">
+						<label htmlFor="revenueByClinicianTo" className="text-sm text-slate-600 whitespace-nowrap">To</label>
+						<input
+							type="date"
+							id="revenueByClinicianTo"
+							value={revenueByClinicianToDate}
+							onChange={e => {
+								const date = e.target.value;
+								setRevenueByClinicianToDate(date);
+								if (revenueByClinicianFromDate && date < revenueByClinicianFromDate) setRevenueByClinicianFromDate(date);
+							}}
+							min={revenueByClinicianFromDate || undefined}
+							max={new Date().toISOString().split('T')[0]}
+							className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+						/>
+					</div>
+					{(revenueByClinicianFromDate || revenueByClinicianToDate) && (
+						<button
+							type="button"
+							onClick={() => { setRevenueByClinicianFromDate(''); setRevenueByClinicianToDate(''); }}
+							className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+						>
+							Clear dates
+						</button>
+					)}
+					<span className="text-sm font-medium text-slate-700 ml-2">Patient type:</span>
+					<select
+						value={revenueByClinicianPatientType}
+						onChange={e => setRevenueByClinicianPatientType(e.target.value as RevenueByClinicianPatientType)}
+						className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+					>
+						<option value="all">All</option>
+						<option value="DYES">DYES</option>
+						<option value="VIP">VIP</option>
+						<option value="PAID">PAID</option>
+						<option value="GETHNA">GETHNA</option>
+						<option value="STAFF">STAFF</option>
+						<option value="REFERRAL">Referral</option>
+						<option value="OTHERS">Others</option>
+					</select>
+				</div>
+				<div className="overflow-x-auto rounded-xl border border-slate-200">
+					<table className="min-w-full text-sm">
+						<thead>
+							<tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-700">
+								<th className="px-4 py-3 font-semibold">#</th>
+								<th className="px-4 py-3 font-semibold">Clinician</th>
+								<th className="px-4 py-3 text-right font-semibold">Revenue (₹)</th>
+							</tr>
+						</thead>
+						<tbody>
+							{revenueByClinicianList.rows.map((row, idx) => (
+								<tr key={row.clinicianName} className="border-b border-slate-100 hover:bg-slate-50/50">
+									<td className="px-4 py-3 text-slate-600">{idx + 1}</td>
+									<td className="px-4 py-3 font-medium text-slate-900">{row.clinicianName}</td>
+									<td className="px-4 py-3 text-right font-semibold text-emerald-700">
+										₹{row.revenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+									</td>
+								</tr>
+							))}
+						</tbody>
+						<tfoot className="bg-slate-100">
+							<tr>
+								<td className="px-4 py-3 font-semibold text-slate-900" colSpan={2}>Total</td>
+								<td className="px-4 py-3 text-right font-bold text-emerald-800">
+									₹{revenueByClinicianList.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+								</td>
+							</tr>
+						</tfoot>
+					</table>
+				</div>
+				{revenueByClinicianList.rows.length === 0 && (
+					<p className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+						No revenue data for the selected filters. Try adjusting the date range or patient type.
+					</p>
+				)}
 			</section>
 
 			{/* Revenue by Department */}
