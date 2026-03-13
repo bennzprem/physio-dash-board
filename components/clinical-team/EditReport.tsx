@@ -20,6 +20,7 @@ import TransferConfirmationDialog from '@/components/transfers/TransferConfirmat
 import PatientProgressAnalytics from '@/components/patient/PatientProgressAnalytics';
 import AnalyticsModal from '@/components/AnalyticsModal';
 import { MAX_TOTAL_SESSIONS_PER_PATIENT, parseAndCapTotalSessions } from '@/lib/constants';
+import * as XLSX from 'xlsx';
 
 type PaymentTypeOption = 'with' | 'without';
 
@@ -769,6 +770,7 @@ export default function EditReport() {
 									? Number(data.remainingSessions)
 									: undefined,
 						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
+						patientType: data.patientType ? String(data.patientType) : undefined,
 						reportAccessDoctors: data.reportAccessDoctors ? (data.reportAccessDoctors as string[]) : undefined,
 						packageAmount: typeof data.packageAmount === 'number' ? data.packageAmount : undefined,
 						concessionPercent: typeof data.concessionPercent === 'number' ? data.concessionPercent : undefined,
@@ -1107,6 +1109,58 @@ export default function EditReport() {
 			);
 		});
 	}, [patients, appointments, searchTerm, clinicianName, user?.displayName, showAllPatients]);
+
+	const [exportingExcel, setExportingExcel] = useState(false);
+	const handleExportPatientsExcel = async () => {
+		if (filteredPatients.length === 0) {
+			alert('No patients to export.');
+			return;
+		}
+		setExportingExcel(true);
+		try {
+			const billingSnap = await getDocs(collection(db, 'billing'));
+			const revenueByPatientId = new Map<string, number>();
+			billingSnap.docs.forEach(docSnap => {
+				const data = docSnap.data() as { patientId?: string; amount?: number; status?: string };
+				const patientId = data.patientId ? String(data.patientId) : '';
+				const status = (data.status || '').toString();
+				if (status !== 'Completed' && status !== 'Auto-Paid') return;
+				const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount) || 0;
+				if (!patientId) return;
+				revenueByPatientId.set(patientId, (revenueByPatientId.get(patientId) ?? 0) + (amount > 0 ? amount : 0));
+			});
+			const rows: (string | number)[][] = [
+				['Patient ID', 'Name', 'Phone', 'Email', 'Status', 'Patient Type', 'Revenue (₹)'],
+				...filteredPatients.map(p => [
+					p.patientId ?? '',
+					p.name ?? '',
+					p.phone ?? '',
+					p.email ?? '',
+					(p.status ?? '').toString(),
+					(p as { patientType?: string }).patientType ?? '',
+					revenueByPatientId.get(p.patientId ?? '') ?? 0,
+				]),
+			];
+			const ws = XLSX.utils.aoa_to_sheet(rows);
+			ws['!cols'] = [
+				{ wch: 18 },
+				{ wch: 28 },
+				{ wch: 16 },
+				{ wch: 28 },
+				{ wch: 12 },
+				{ wch: 14 },
+				{ wch: 14 },
+			];
+			const wb = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(wb, ws, 'Patients & Revenue');
+			XLSX.writeFile(wb, `patients-revenue-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
+		} catch (err) {
+			console.error('Export Excel failed:', err);
+			alert('Failed to export. Please try again.');
+		} finally {
+			setExportingExcel(false);
+		}
+	};
 
 	const systemDateStr = () => new Date().toISOString().split('T')[0];
 
@@ -3132,11 +3186,31 @@ export default function EditReport() {
 					</section>
 
 					<section className="section-card">
-						<header className="mb-4">
-							<h2 className="text-lg font-semibold text-slate-900">Patient queue</h2>
-							<p className="text-sm text-slate-500">
-								{filteredPatients.length} patient{filteredPatients.length === 1 ? '' : 's'}
-							</p>
+						<header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+							<div>
+								<h2 className="text-lg font-semibold text-slate-900">Patient queue</h2>
+								<p className="text-sm text-slate-500">
+									{filteredPatients.length} patient{filteredPatients.length === 1 ? '' : 's'}
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={handleExportPatientsExcel}
+								disabled={exportingExcel || filteredPatients.length === 0}
+								className="inline-flex items-center gap-2 rounded-lg border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none"
+							>
+								{exportingExcel ? (
+									<>
+										<span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true" />
+										Exporting…
+									</>
+								) : (
+									<>
+										<i className="fas fa-file-excel" aria-hidden="true" />
+										Export Excel
+									</>
+								)}
+							</button>
 						</header>
 
 						{loading ? (
