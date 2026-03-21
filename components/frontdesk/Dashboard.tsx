@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { collection, onSnapshot, query, where, getDocs, type QuerySnapshot, type Timestamp } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 
 import PageHeader from '@/components/PageHeader';
 import DashboardWidget from '@/components/dashboard/DashboardWidget';
@@ -161,6 +162,55 @@ interface DashboardProps {
 	onNavigate?: (page: string) => void;
 }
 
+function dateOnly(d: Date): Date {
+	return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function getThisWeekRange(): { from: Date; to: Date } {
+	const now = new Date();
+	const day = now.getDay();
+	const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+	const monday = new Date(now);
+	monday.setDate(diff);
+	monday.setHours(0, 0, 0, 0);
+	const sunday = new Date(monday);
+	sunday.setDate(monday.getDate() + 6);
+	sunday.setHours(23, 59, 59, 999);
+	return { from: monday, to: sunday };
+}
+
+function getThisMonthRange(): { from: Date; to: Date } {
+	const now = new Date();
+	const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+	const to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+	return { from, to };
+}
+
+function isDateStrInRange(dateStr: string | undefined, from: Date, to: Date): boolean {
+	if (!dateStr) return false;
+	const parts = dateStr.split('T')[0].split('-');
+	if (parts.length !== 3) return false;
+	const y = Number(parts[0]);
+	const m = Number(parts[1]) - 1;
+	const d = Number(parts[2]);
+	const dt = new Date(y, m, d);
+	if (Number.isNaN(dt.getTime())) return false;
+	const dOnly = dateOnly(dt);
+	return dOnly >= dateOnly(from) && dOnly <= dateOnly(to);
+}
+
+function isRegisteredInRange(registeredAt: string | undefined, from: Date, to: Date): boolean {
+	if (!registeredAt) return false;
+	const dt = new Date(registeredAt);
+	if (Number.isNaN(dt.getTime())) return false;
+	const dOnly = dateOnly(dt);
+	return dOnly >= dateOnly(from) && dOnly <= dateOnly(to);
+}
+
+function formatRangeLabel(from: Date, to: Date): string {
+	return `${from.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} – ${to.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+}
+
 export default function Dashboard({ onNavigate }: DashboardProps) {
 	const { user } = useAuth();
 	const [patients, setPatients] = useState<PatientRecordBasic[]>([]);
@@ -168,6 +218,22 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	const [staff, setStaff] = useState<StaffMember[]>([]);
 	const [modal, setModal] = useState<ModalType>(null);
 	const [userProfile, setUserProfile] = useState<{ userName?: string; profileImage?: string }>({});
+	const [exportMenuOpen, setExportMenuOpen] = useState(false);
+	const [showCustomExportModal, setShowCustomExportModal] = useState(false);
+	const [customExportFrom, setCustomExportFrom] = useState('');
+	const [customExportTo, setCustomExportTo] = useState('');
+	const [exportLoading, setExportLoading] = useState(false);
+	const exportMenuRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const handleClickOutside = (e: MouseEvent) => {
+			if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+				setExportMenuOpen(false);
+			}
+		};
+		document.addEventListener('mousedown', handleClickOutside);
+		return () => document.removeEventListener('mousedown', handleClickOutside);
+	}, []);
 
 	// Load user profile data
 	useEffect(() => {
@@ -221,6 +287,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						complaint: data.complaint ? String(data.complaint) : undefined,
 						status: (data.status as PatientStatus) ?? 'pending',
 						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : undefined,
+						patientType: data.patientType ? String(data.patientType) : undefined,
 						registeredAt: created ? created.toISOString() : (data.registeredAt as string | undefined),
 					};
 				});
@@ -547,12 +614,238 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		}
 	};
 
+	useEffect(() => {
+		if (showCustomExportModal) {
+			const d = new Date();
+			const iso = d.toISOString().slice(0, 10);
+			const first = new Date(d.getFullYear(), d.getMonth(), 1);
+			const isoFirst = first.toISOString().slice(0, 10);
+			setCustomExportFrom(isoFirst);
+			setCustomExportTo(iso);
+		}
+	}, [showCustomExportModal]);
+
+	const runDashboardExport = async (from: Date, to: Date, periodLabel: string) => {
+		setExportLoading(true);
+		setExportMenuOpen(false);
+		setShowCustomExportModal(false);
+		try {
+			const billingSnap = await getDocs(collection(db, 'billing'));
+			const bills: Array<{ patientId: string; amount: number; status: string; date: string }> = [];
+			billingSnap.docs.forEach(docSnap => {
+				const data = docSnap.data() as Record<string, unknown>;
+				const patientId = data.patientId ? String(data.patientId) : '';
+				const status = (data.status || '').toString();
+				const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount) || 0;
+				const date = data.date ? String(data.date) : '';
+				bills.push({ patientId, amount, status, date });
+			});
+
+			type RowAgg = {
+				patient: PatientRecordBasic;
+				registeredInPeriod: boolean;
+				sessionsCompleted: number;
+				revenue: number;
+			};
+			const included: RowAgg[] = [];
+
+			for (const p of patients) {
+				const pid = p.patientId;
+				if (!pid) continue;
+				const registeredInPeriod = isRegisteredInRange(p.registeredAt, from, to);
+				let sessionsCompleted = 0;
+				for (const apt of appointments) {
+					if (apt.patientId !== pid) continue;
+					if ((apt.status ?? '').toLowerCase() !== 'completed') continue;
+					if (!isDateStrInRange(apt.date, from, to)) continue;
+					sessionsCompleted++;
+				}
+				let revenue = 0;
+				for (const b of bills) {
+					if (b.patientId !== pid) continue;
+					if (b.status !== 'Completed' && b.status !== 'Auto-Paid') continue;
+					if (!isDateStrInRange(b.date, from, to)) continue;
+					if (b.amount > 0) revenue += b.amount;
+				}
+				if (registeredInPeriod || sessionsCompleted > 0 || revenue > 0) {
+					included.push({ patient: p, registeredInPeriod, sessionsCompleted, revenue });
+				}
+			}
+
+			included.sort((a, b) =>
+				(a.patient.name || '').localeCompare(b.patient.name || '', undefined, { sensitivity: 'base' })
+			);
+
+			const totalRegisteredInPeriod = included.filter(x => x.registeredInPeriod).length;
+			const totalSessionsInPeriod = included.reduce((s, x) => s + x.sessionsCompleted, 0);
+			const totalRevenueSum = included.reduce((s, x) => s + x.revenue, 0);
+
+			const rows: (string | number)[][] = [
+				['Front Desk Dashboard Export'],
+				['Period', periodLabel],
+				['Date range', formatRangeLabel(from, to)],
+				[],
+				['Total patients registered in period', totalRegisteredInPeriod],
+				['Total sessions completed (period)', totalSessionsInPeriod],
+				['Total revenue (₹)', totalRevenueSum],
+				[],
+				[
+					'Patient ID',
+					'Name',
+					'Phone',
+					'Email',
+					'Patient Type',
+					'Registered on',
+					'Registered in period (Yes/No)',
+					'Sessions completed (period)',
+					'Revenue (₹) (period)',
+				],
+				...included.map(({ patient: p, registeredInPeriod, sessionsCompleted, revenue }) => {
+					const regOn = p.registeredAt;
+					const regStr = regOn
+						? new Date(regOn).toLocaleDateString('en-IN', {
+								day: 'numeric',
+								month: 'short',
+								year: 'numeric',
+							})
+						: '';
+					return [
+						p.patientId ?? '',
+						p.name ?? '',
+						p.phone ?? '',
+						p.email ?? '',
+						(p as { patientType?: string }).patientType ?? '',
+						regStr,
+						registeredInPeriod ? 'Yes' : 'No',
+						sessionsCompleted,
+						revenue,
+					];
+				}),
+			];
+
+			const ws = XLSX.utils.aoa_to_sheet(rows);
+			ws['!cols'] = [
+				{ wch: 18 },
+				{ wch: 28 },
+				{ wch: 14 },
+				{ wch: 28 },
+				{ wch: 12 },
+				{ wch: 14 },
+				{ wch: 22 },
+				{ wch: 26 },
+				{ wch: 18 },
+			];
+			const wb = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(wb, ws, 'Export');
+			const safeLabel = periodLabel.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase();
+			XLSX.writeFile(wb, `frontdesk-dashboard-export-${safeLabel}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+		} catch (err) {
+			console.error('Dashboard export failed:', err);
+			alert('Failed to export. Please try again.');
+		} finally {
+			setExportLoading(false);
+		}
+	};
+
+	const handleExportThisWeek = () => {
+		const { from, to } = getThisWeekRange();
+		void runDashboardExport(from, to, 'This week');
+	};
+
+	const handleExportThisMonth = () => {
+		const { from, to } = getThisMonthRange();
+		void runDashboardExport(from, to, 'This month');
+	};
+
+	const handleExportCustomRange = () => {
+		if (!customExportFrom || !customExportTo) {
+			alert('Please select both From and To dates.');
+			return;
+		}
+		const from = new Date(customExportFrom + 'T00:00:00');
+		const to = new Date(customExportTo + 'T23:59:59.999');
+		if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+			alert('Invalid dates.');
+			return;
+		}
+		if (from > to) {
+			alert('From date must be before To date.');
+			return;
+		}
+		void runDashboardExport(from, to, 'Custom range');
+	};
 
 	return (
 		<div className="min-h-svh bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 px-6 py-10">
 			<div className="mx-auto max-w-6xl space-y-10">
 				<PageHeader
 					title="Front Desk Dashboard"
+					actions={
+						<div className="relative" ref={exportMenuRef}>
+							<button
+								type="button"
+								onClick={() => setExportMenuOpen(o => !o)}
+								disabled={exportLoading}
+								className="inline-flex items-center gap-2 rounded-lg border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50"
+							>
+								{exportLoading ? (
+									<>
+										<span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" aria-hidden="true" />
+										Exporting…
+									</>
+								) : (
+									<>
+										<i className="fas fa-file-excel" aria-hidden="true" />
+										Export Excel
+										<i className="fas fa-chevron-down text-xs opacity-90" aria-hidden="true" />
+									</>
+								)}
+							</button>
+							{exportMenuOpen && !exportLoading && (
+								<div
+									className="absolute right-0 z-50 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-black/5"
+									role="menu"
+								>
+									<button
+										type="button"
+										role="menuitem"
+										className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-800 hover:bg-emerald-50"
+										onClick={() => {
+											setExportMenuOpen(false);
+											handleExportThisWeek();
+										}}
+									>
+										<i className="fas fa-calendar-week w-5 text-emerald-600" aria-hidden="true" />
+										Export this week
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-800 hover:bg-emerald-50"
+										onClick={() => {
+											setExportMenuOpen(false);
+											handleExportThisMonth();
+										}}
+									>
+										<i className="fas fa-calendar-alt w-5 text-emerald-600" aria-hidden="true" />
+										Export this month
+									</button>
+									<button
+										type="button"
+										role="menuitem"
+										className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-800 hover:bg-emerald-50"
+										onClick={() => {
+											setExportMenuOpen(false);
+											setShowCustomExportModal(true);
+										}}
+									>
+										<i className="fas fa-calendar-day w-5 text-emerald-600" aria-hidden="true" />
+										Export custom date range
+									</button>
+								</div>
+							)}
+						</div>
+					}
 					statusCard={{
 						label: 'Today\'s Overview',
 						value: (
@@ -752,6 +1045,64 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 					</DashboardWidget>
 				</section>
 			</div>
+
+			{showCustomExportModal && (
+				<div
+					className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 px-4 py-6"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="custom-export-title"
+				>
+					<div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+						<h2 id="custom-export-title" className="text-lg font-semibold text-slate-900">
+							Export custom date range
+						</h2>
+						<p className="mt-1 text-sm text-slate-500">
+							Include patients with registration, completed sessions, or billing in this range.
+						</p>
+						<div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+							<label className="flex flex-1 flex-col gap-1 text-sm text-slate-700">
+								<span>From</span>
+								<input
+									type="date"
+									value={customExportFrom}
+									onChange={e => setCustomExportFrom(e.target.value)}
+									max={customExportTo || undefined}
+									className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+								/>
+							</label>
+							<label className="flex flex-1 flex-col gap-1 text-sm text-slate-700">
+								<span>To</span>
+								<input
+									type="date"
+									value={customExportTo}
+									onChange={e => setCustomExportTo(e.target.value)}
+									min={customExportFrom || undefined}
+									max={new Date().toISOString().slice(0, 10)}
+									className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+								/>
+							</label>
+						</div>
+						<div className="mt-6 flex justify-end gap-2">
+							<button
+								type="button"
+								onClick={() => setShowCustomExportModal(false)}
+								className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleExportCustomRange}
+								disabled={exportLoading}
+								className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+							>
+								Export
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{modal && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
