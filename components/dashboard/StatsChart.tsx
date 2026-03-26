@@ -50,9 +50,11 @@ interface StatsChartProps {
 	title?: string;
 	height?: number;
 	indexAxis?: 'x' | 'y';
+	/** When true, doughnut slices show count and percentage at the center of each arc. */
+	doughnutSegmentLabels?: boolean;
 }
 
-export default function StatsChart({ type, data, title, height = 200, indexAxis = 'x' }: StatsChartProps) {
+export default function StatsChart({ type, data, title, height = 200, indexAxis = 'x', doughnutSegmentLabels = false }: StatsChartProps) {
 	const chartRef = useRef<ChartJS>(null);
 
 	const options = {
@@ -114,6 +116,26 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 						let label = context.dataset.label || '';
 						if (label) {
 							label += ': ';
+						}
+						// Doughnut / pie: parsed is the numeric value (not {x,y})
+						if (type === 'doughnut') {
+							const raw = context.raw;
+							const parsed = context.parsed;
+							const value =
+								typeof parsed === 'number'
+									? parsed
+									: typeof raw === 'number'
+										? raw
+										: Number(parsed);
+							const values = (context.dataset.data as number[]) ?? [];
+							const total = values.reduce((a, b) => a + Number(b), 0);
+							const pct = total > 0 ? Math.round((Number(value) / total) * 100) : 0;
+							if (label.includes('Revenue')) {
+								label += `₹${Number(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+							} else {
+								label += `${value} (${pct}%)`;
+							}
+							return label;
 						}
 						// For horizontal bar charts (indexAxis="y"), the value is in parsed.x
 						// For vertical bar/line charts, the value is in parsed.y
@@ -372,6 +394,38 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 		},
 	};
 
+	const doughnutSegmentLabelPlugin = {
+		id: 'doughnutSegmentLabels',
+		afterDatasetsDraw: (chart: Chart) => {
+			if (type !== 'doughnut' || !doughnutSegmentLabels) return;
+			const ctx = chart.ctx;
+			const meta = chart.getDatasetMeta(0);
+			const dataset = chart.data.datasets[0];
+			const values = (dataset?.data as number[]) ?? [];
+			const total = values.reduce((a, b) => a + Number(b), 0);
+			meta.data.forEach((element, i) => {
+				const value = Number(values[i]);
+				if (!value || !element) return;
+				const arc = element as ArcElement;
+				const pos = arc.getCenterPoint(false);
+				const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+				ctx.save();
+				ctx.font = '600 13px system-ui, sans-serif';
+				ctx.fillStyle = '#ffffff';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+				ctx.shadowBlur = 3;
+				ctx.fillText(String(value), pos.x, pos.y - 7);
+				ctx.font = '500 11px system-ui, sans-serif';
+				ctx.fillText(`${pct}%`, pos.x, pos.y + 8);
+				ctx.restore();
+			});
+		},
+	};
+
+	const doughnutPlugins = doughnutSegmentLabels ? [gradientPlugin, doughnutSegmentLabelPlugin] : [gradientPlugin];
+
 	return (
 		<div 
 			style={{ height: `${height}px` }}
@@ -387,7 +441,7 @@ export default function StatsChart({ type, data, title, height = 200, indexAxis 
 			)}
 			{type === 'doughnut' && (
 				// @ts-expect-error - Chart.js type system limitations with generic chart component
-				<Doughnut ref={chartRef} data={data} options={options} plugins={[gradientPlugin]} />
+				<Doughnut ref={chartRef} data={data} options={options} plugins={doughnutPlugins} />
 			)}
 		</div>
 	);

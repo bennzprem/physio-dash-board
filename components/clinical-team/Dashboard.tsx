@@ -426,7 +426,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		};
 	}, []);
 
-	const clinicianName = useMemo(() => normalize(user?.displayName ?? ''), [user?.displayName]);
+	/** Match Frontdesk assignment: `assignedDoctor` is staff display name (userName), same as appointment `doctor`. */
+	const clinicianName = useMemo(() => {
+		const fromDisplay = normalize(user?.displayName ?? '');
+		const fromStaff = normalize(userProfile.userName ?? '');
+		return fromDisplay || fromStaff;
+	}, [user?.displayName, userProfile.userName]);
 
 	const assignedPatients = useMemo(() => {
 		if (!clinicianName) return patients;
@@ -774,6 +779,60 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		};
 	}, [pending.length, caseload, assignedPatients]);
 
+	/** Gender from patient records (Frontdesk registration); counts only patients assigned to you. */
+	const genderRatioData = useMemo(() => {
+		let male = 0;
+		let female = 0;
+		let other = 0;
+		let unspecified = 0;
+		for (const p of assignedPatients) {
+			const g = normalize(p.gender ?? '');
+			if (g === 'male' || g === 'm') male += 1;
+			else if (g === 'female' || g === 'f') female += 1;
+			else if (g === 'other') other += 1;
+			else unspecified += 1;
+		}
+		const totalPatients = assignedPatients.length;
+		const pct = (n: number) => (totalPatients > 0 ? Math.round((n / totalPatients) * 100) : 0);
+		const segments: { label: string; count: number; color: string }[] = [];
+		if (male > 0)
+			segments.push({
+				label: `Male (${male}) · ${pct(male)}%`,
+				count: male,
+				color: 'rgba(59, 130, 246, 0.88)',
+			});
+		if (female > 0)
+			segments.push({
+				label: `Female (${female}) · ${pct(female)}%`,
+				count: female,
+				color: 'rgba(236, 72, 153, 0.88)',
+			});
+		if (other > 0)
+			segments.push({
+				label: `Other (${other}) · ${pct(other)}%`,
+				count: other,
+				color: 'rgba(139, 92, 246, 0.88)',
+			});
+		if (unspecified > 0)
+			segments.push({
+				label: `Not specified (${unspecified}) · ${pct(unspecified)}%`,
+				count: unspecified,
+				color: 'rgba(148, 163, 184, 0.88)',
+			});
+		return {
+			labels: segments.map(s => s.label),
+			datasets: [
+				{
+					label: 'Patients',
+					data: segments.map(s => s.count),
+					backgroundColor: segments.map(s => s.color),
+					borderColor: '#ffffff',
+					borderWidth: 1,
+				},
+			],
+		};
+	}, [assignedPatients]);
+
 	// Chart data for weekly completion
 	const weeklyCompletionData = useMemo(() => {
 		const weekDays = Array.from({ length: 7 }, (_, index) => {
@@ -1089,7 +1148,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 				<section>
 					<DashboardWidget title="Analytics Overview" icon="fas fa-chart-line" collapsible className="space-y-6">
 						<p className="text-sm text-slate-500">
-							Visualize your appointment trends, patient distribution, and workload in real time.
+							Visualize your appointment trends, patient distribution, gender mix from registration, and workload in real time.
 						</p>
 						<div className="grid gap-6 lg:grid-cols-2">
 							<div className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50/50 to-emerald-50/30 p-4 shadow-md hover:shadow-lg transition-shadow">
@@ -1112,6 +1171,26 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 									<p className="text-xs text-slate-500">Completed sessions this week.</p>
 									<div className="mt-4">
 										<StatsChart type="bar" data={weeklyCompletionData} height={220} />
+									</div>
+								</div>
+								<div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-violet-50/30 p-4 shadow-md hover:shadow-lg transition-shadow sm:col-span-2">
+									<p className="text-sm font-semibold text-indigo-900">Patient gender ratio</p>
+									<p className="text-xs text-indigo-700">
+										Based on gender captured at front desk registration, for patients currently assigned to you.
+									</p>
+									<div className="mt-4">
+										{assignedPatients.length === 0 ? (
+											<p className="rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-10 text-center text-sm text-slate-500">
+												No patients assigned to you yet. When the front desk assigns patients, their registration gender will appear here.
+											</p>
+										) : (
+											<StatsChart
+												type="doughnut"
+												data={genderRatioData}
+												height={240}
+												doughnutSegmentLabels
+											/>
+										)}
 									</div>
 								</div>
 							</div>
