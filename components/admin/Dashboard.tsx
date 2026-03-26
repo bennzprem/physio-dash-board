@@ -18,6 +18,8 @@ interface PatientRecord {
 	id: string;
 	patientId: string;
 	name: string;
+	gender?: string;
+	assignedDoctor?: string;
 	status: AdminPatientStatus;
 }
 
@@ -56,9 +58,34 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 	const [patients, setPatients] = useState<PatientRecord[]>([]);
 	const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
 	const [staff, setStaff] = useState<StaffMember[]>([]);
+	const [genderDepartmentFilter, setGenderDepartmentFilter] = useState<'all' | 'Physiotherapist' | 'StrengthAndConditioning'>('all');
 	const [users, setUsers] = useState<UserRecord[]>([]);
 	const [userProfile, setUserProfile] = useState<{ userName?: string; profileImage?: string }>({});
 	const [recentAuditLogs, setRecentAuditLogs] = useState<AuditLogEntry[]>([]);
+
+	const normalizeStaffName = (value?: string) =>
+		String(value ?? '')
+			.trim()
+			.toLowerCase()
+			.replace(/^dr\.?\s*/i, '')
+			.replace(/\s+/g, ' ');
+
+	const roleDepartment = (value?: string): 'physio' | 'sc' | null => {
+		const normalized = String(value ?? '')
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z]/g, '');
+		if (!normalized) return null;
+		if (normalized.includes('strengthandconditioning') || normalized === 'sc') return 'sc';
+		if (
+			normalized.includes('physio') ||
+			normalized.includes('clinicalteam') ||
+			normalized === 'clinic'
+		) {
+			return 'physio';
+		}
+		return null;
+	};
 
 		// Check for birthdays on dashboard load (only once per day)
 		useEffect(() => {
@@ -173,6 +200,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 						id: docSnap.id,
 						patientId: data.patientId ? String(data.patientId) : '',
 						name: data.name ? String(data.name) : '',
+						gender: data.gender ? String(data.gender) : '',
+						assignedDoctor: data.assignedDoctor ? String(data.assignedDoctor) : '',
 						status: (data.status as AdminPatientStatus) ?? 'pending',
 					} as PatientRecord;
 				});
@@ -430,6 +459,112 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 		};
 	}, [stats.appointmentsByStaff]);
 
+	// Chart data for patient gender ratio (from Frontdesk registration)
+	const filteredPatientsForGenderChart = useMemo(() => {
+		if (genderDepartmentFilter === 'all') return patients;
+
+		const staffDepartmentByName = new Map<string, string>();
+		for (const member of staff) {
+			const key = normalizeStaffName(member.userName);
+			if (!key) continue;
+			staffDepartmentByName.set(key, member.role);
+		}
+
+		const doctorsByPatientId = new Map<string, Set<string>>();
+		for (const apt of appointments) {
+			const pid = String(apt.patientId ?? '').trim();
+			const doctor = normalizeStaffName(apt.doctor);
+			if (!pid || !doctor) continue;
+			if (!doctorsByPatientId.has(pid)) doctorsByPatientId.set(pid, new Set<string>());
+			doctorsByPatientId.get(pid)!.add(doctor);
+		}
+
+		const wantsDepartment = genderDepartmentFilter === 'StrengthAndConditioning' ? 'sc' : 'physio';
+
+		return patients.filter(patient => {
+			const candidateDoctors = new Set<string>();
+			const assignedDoctor = normalizeStaffName(patient.assignedDoctor);
+			if (assignedDoctor) candidateDoctors.add(assignedDoctor);
+			const patientId = String(patient.patientId ?? '').trim();
+			const fromAppointments = doctorsByPatientId.get(patientId);
+			if (fromAppointments) {
+				fromAppointments.forEach(name => candidateDoctors.add(name));
+			}
+
+			if (candidateDoctors.size === 0) return false;
+
+			for (const doctor of candidateDoctors) {
+				const department = roleDepartment(staffDepartmentByName.get(doctor));
+				if (department === wantsDepartment) return true;
+			}
+			return false;
+		});
+	}, [patients, staff, appointments, genderDepartmentFilter]);
+
+	const genderRatioData = useMemo(() => {
+		let male = 0;
+		let female = 0;
+		let other = 0;
+		let unspecified = 0;
+
+		for (const patient of filteredPatientsForGenderChart) {
+			const gender = String(patient.gender ?? '').trim().toLowerCase();
+			if (gender === 'male' || gender === 'm') male += 1;
+			else if (gender === 'female' || gender === 'f') female += 1;
+			else if (gender === 'other') other += 1;
+			else unspecified += 1;
+		}
+
+		const total = filteredPatientsForGenderChart.length;
+		const pct = (count: number) => (total > 0 ? Math.round((count / total) * 100) : 0);
+		const segments: { label: string; count: number; color: string }[] = [];
+
+		if (male > 0) {
+			segments.push({
+				label: `Male (${male}) · ${pct(male)}%`,
+				count: male,
+				color: 'rgba(59, 130, 246, 0.88)',
+			});
+		}
+		if (female > 0) {
+			segments.push({
+				label: `Female (${female}) · ${pct(female)}%`,
+				count: female,
+				color: 'rgba(236, 72, 153, 0.88)',
+			});
+		}
+		if (other > 0) {
+			segments.push({
+				label: `Other (${other}) · ${pct(other)}%`,
+				count: other,
+				color: 'rgba(139, 92, 246, 0.88)',
+			});
+		}
+		if (unspecified > 0) {
+			segments.push({
+				label: `Not specified (${unspecified}) · ${pct(unspecified)}%`,
+				count: unspecified,
+				color: 'rgba(148, 163, 184, 0.88)',
+			});
+		}
+
+		return {
+			labels: segments.map(segment => segment.label),
+			datasets: [
+				{
+					label: 'Patients',
+					data: segments.map(segment => segment.count),
+					backgroundColor: segments.map(segment => segment.color),
+					borderColor: '#ffffff',
+					borderWidth: 3,
+					hoverBorderWidth: 4,
+					hoverOffset: 8,
+					spacing: 2,
+				},
+			],
+		};
+	}, [filteredPatientsForGenderChart]);
+
 	const handleQuickLinkClick = (href: string) => {
 		if (onNavigate) {
 			onNavigate(href);
@@ -570,6 +705,49 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 									<p className="text-xs text-blue-700 mb-4">Active appointments by clinician.</p>
 									<div className="mt-2">
 										<StatsChart type="bar" data={staffLoadData} height={220} />
+									</div>
+								</div>
+								<div className="rounded-2xl border border-blue-200 bg-white p-5 shadow-lg hover:shadow-xl transition-shadow duration-300 sm:col-span-2">
+									<div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+										<div>
+											<p className="text-sm font-semibold text-blue-900 mb-1">Patient Gender Ratio</p>
+										</div>
+										<div className="flex items-center gap-2">
+											<label htmlFor="gender-department-filter" className="text-xs font-medium text-blue-800">
+												Department
+											</label>
+											<select
+												id="gender-department-filter"
+												value={genderDepartmentFilter}
+												onChange={event =>
+													setGenderDepartmentFilter(
+														event.target.value as 'all' | 'Physiotherapist' | 'StrengthAndConditioning'
+													)
+												}
+												className="rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs text-blue-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+											>
+												<option value="all">All Departments</option>
+												<option value="Physiotherapist">Physiotherapy</option>
+												<option value="StrengthAndConditioning">Strength & Conditioning</option>
+											</select>
+										</div>
+									</div>
+									<p className="text-xs text-blue-700 mb-4">
+										Based on gender captured in Frontdesk registration (shows count and percentage).
+									</p>
+									<div className="mt-2">
+										{filteredPatientsForGenderChart.length === 0 ? (
+											<p className="rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-10 text-center text-sm text-slate-500">
+												No patients found for the selected department.
+											</p>
+										) : (
+											<StatsChart
+												type="doughnut"
+												data={genderRatioData}
+												height={240}
+												doughnutSegmentLabels
+											/>
+										)}
 									</div>
 								</div>
 							</div>
