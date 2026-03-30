@@ -85,6 +85,7 @@ export default function InventoryManagement() {
 	const [submitting, setSubmitting] = useState(false);
 	const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 	const [searchTerm, setSearchTerm] = useState('');
+	const [issuedSearchTerm, setIssuedSearchTerm] = useState('');
 	const [categoryFilter, setCategoryFilter] = useState<'all' | 'consumable' | 'non-consumable'>('all');
 	const [typeFilter, setTypeFilter] = useState<'all' | ItemType>('all');
 
@@ -721,6 +722,37 @@ export default function InventoryManagement() {
 		return filtered;
 	}, [items, searchTerm, categoryFilter, typeFilter]);
 
+	const filteredIssueRecords = useMemo(() => {
+		const q = issuedSearchTerm.trim().toLowerCase();
+		if (!q) return issueRecords;
+		return issueRecords.filter(record => {
+			const statusLabel =
+				record.status === 'acknowledged'
+					? 'acknowledged'
+					: record.status === 'returned'
+						? 'returned'
+						: 'pending acknowledgment';
+			const haystack = [
+				record.itemName,
+				record.itemType,
+				record.itemId,
+				String(record.quantity),
+				String(record.returnedQuantity ?? 0),
+				record.issuedBy,
+				record.issuedByName,
+				record.issuedTo,
+				record.issuedToName,
+				record.issuedToEmail ?? '',
+				record.remarks ?? '',
+				record.status,
+				statusLabel,
+			]
+				.join(' ')
+				.toLowerCase();
+			return haystack.includes(q);
+		});
+	}, [issueRecords, issuedSearchTerm]);
+
 	// Filter out-of-stock consumable items for local alerts
 	const outOfStockConsumables = useMemo(() => {
 		return items.filter(item => 
@@ -1254,7 +1286,7 @@ export default function InventoryManagement() {
 
 				{/* Issue Records */}
 				<section className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200">
-					<div className="flex items-center justify-between mb-4">
+					<div className="flex flex-wrap items-center justify-between gap-3 mb-4">
 						<h2 className="text-lg font-semibold text-slate-900">Items Issued</h2>
 						{canManageInventory && (
 							<button
@@ -1268,8 +1300,32 @@ export default function InventoryManagement() {
 						)}
 					</div>
 
+					<div className="relative mb-4">
+						<i className="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" aria-hidden="true" />
+						<input
+							type="search"
+							placeholder="Search by item, type, person, status, quantity, remarks…"
+							value={issuedSearchTerm}
+							onChange={e => setIssuedSearchTerm(e.target.value)}
+							className="w-full pl-10 pr-10 py-2.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+							aria-label="Search issued items"
+						/>
+						{issuedSearchTerm && (
+							<button
+								type="button"
+								onClick={() => setIssuedSearchTerm('')}
+								className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+								aria-label="Clear search"
+							>
+								<i className="fas fa-times" aria-hidden="true" />
+							</button>
+						)}
+					</div>
+
 					{issueRecords.length === 0 ? (
 						<div className="text-center py-8 text-slate-500">No issue records found</div>
+					) : filteredIssueRecords.length === 0 ? (
+						<div className="text-center py-8 text-slate-500">No issue records match your search</div>
 					) : (
 						<div className="overflow-x-auto max-h-[600px] overflow-y-auto border border-slate-200 rounded-lg">
 							<table className="min-w-full divide-y divide-slate-200">
@@ -1290,7 +1346,7 @@ export default function InventoryManagement() {
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-slate-100 bg-white">
-									{issueRecords.map((record, index) => {
+									{filteredIssueRecords.map((record, index) => {
 										const remainingToReturn = record.quantity - (record.returnedQuantity || 0);
 										const isConsumable = record.itemCategory === 'consumable';
 										const canReturn = isAdminOrSuperAdmin && remainingToReturn > 0 && !isConsumable;
