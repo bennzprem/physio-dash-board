@@ -1648,12 +1648,32 @@ export default function Patients() {
 	};
 
 	const handleExportCsv = () => {
-		if (!patients.length) {
+		if (!filteredPatients.length) {
 			alert('No patients found to export.');
 			return;
 		}
 
+		const orderedPatients = [...filteredPatients]
+			.sort((a, b) => {
+				const timeA = a.patient.registeredAt ? new Date(a.patient.registeredAt).getTime() : 0;
+				const timeB = b.patient.registeredAt ? new Date(b.patient.registeredAt).getTime() : 0;
+
+				if (timeA !== timeB) {
+					return timeA - timeB;
+				}
+
+				const nameA = (a.patient.name || '').toLowerCase();
+				const nameB = (b.patient.name || '').toLowerCase();
+				if (nameA !== nameB) {
+					return nameA.localeCompare(nameB);
+				}
+
+				return (a.patient.patientId || '').localeCompare(b.patient.patientId || '');
+			})
+			.map(({ patient }) => patient);
+
 		const headers = [
+			'srNo',
 			'patientId',
 			'name',
 			'dob',
@@ -1661,19 +1681,38 @@ export default function Patients() {
 			'phone',
 			'email',
 			'address',
-			'complaint',
+			'assignedDoctor',
+			'referredBy',
+			'patientType',
+			'totalSessionsRequired',
+			'remainingSessions',
 			'status',
 			'registeredAt',
 		] as const;
 
-		const rows = patients.map(patient =>
-			headers
-				.map(key => {
-					const value = patient[key] ?? '';
-					return `"${String(value).replace(/"/g, '""')}"`;
-				})
-				.join(',')
-		);
+		const rows = orderedPatients.map((patient, index) => {
+			const row = {
+				srNo: index + 1,
+				patientId: patient.patientId ?? '',
+				name: patient.name ?? '',
+				dob: patient.dob ?? '',
+				gender: patient.gender ?? '',
+				phone: patient.phone ?? '',
+				email: patient.email ?? '',
+				address: patient.address ?? '',
+				assignedDoctor: patient.assignedDoctor ?? '',
+				referredBy: patient.referredBy ?? '',
+				patientType: patient.patientType ?? '',
+				totalSessionsRequired: patient.totalSessionsRequired ?? '',
+				remainingSessions: patient.remainingSessions ?? '',
+				status: patient.status ?? '',
+				registeredAt: patient.registeredAt ?? '',
+			};
+
+			return headers
+				.map(key => `"${String(row[key] ?? '').replace(/"/g, '""')}"`)
+				.join(',');
+		});
 
 		const csvContent = [headers.join(','), ...rows].join('\n');
 		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1681,7 +1720,7 @@ export default function Patients() {
 
 		const tempLink = document.createElement('a');
 		tempLink.href = url;
-		tempLink.setAttribute('download', `patients-${new Date().toISOString().slice(0, 10)}.csv`);
+		tempLink.setAttribute('download', `patient-reports-ordered-${new Date().toISOString().slice(0, 10)}.csv`);
 		document.body.appendChild(tempLink);
 		tempLink.click();
 		document.body.removeChild(tempLink);
@@ -2005,24 +2044,35 @@ export default function Patients() {
 					<PageHeader
 						title="Patient Management"
 					/>
-					<button
-						type="button"
-						onClick={syncPatientStatuses}
-						disabled={isSyncingStatuses}
-						className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-					>
-						{isSyncingStatuses ? (
-							<>
-								<div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-								Syncing...
-							</>
-						) : (
-							<>
-								<i className="fas fa-sync-alt" />
-								Sync Patient Statuses
-							</>
-						)}
-					</button>
+					<div className="flex items-center gap-3">
+						<button
+							type="button"
+							onClick={handleExportCsv}
+							disabled={filteredPatients.length === 0}
+							className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							<i className="fas fa-file-export" />
+							Export Reports
+						</button>
+						<button
+							type="button"
+							onClick={syncPatientStatuses}
+							disabled={isSyncingStatuses}
+							className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{isSyncingStatuses ? (
+								<>
+									<div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+									Syncing...
+								</>
+							) : (
+								<>
+									<i className="fas fa-sync-alt" />
+									Sync Patient Statuses
+								</>
+							)}
+						</button>
+					</div>
 				</div>
 
 				<div className="border-t border-slate-200" />
@@ -2175,7 +2225,7 @@ export default function Patients() {
 													role="menuitem"
 												>
 													<i className="fas fa-file-csv text-blue-600" aria-hidden="true" />
-													<span className="font-medium">Export CSV</span>
+													<span className="font-medium">Export Ordered Report CSV</span>
 							</button>
 							<button
 								type="button"
